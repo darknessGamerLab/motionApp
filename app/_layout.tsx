@@ -1,19 +1,21 @@
-import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Platform } from 'react-native';
-import { GestureHandlerRootView, Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, {
-  useSharedValue,
-  withSpring,
-  useAnimatedReaction,
-  runOnJS,
-} from 'react-native-reanimated';
-import { useState } from 'react';
-import 'react-native-reanimated';
 import { MainPager, MainPagerHelpers } from '@/components/MainPager';
 import { VerticalVideoPagerHelpers } from '@/components/VerticalVideoPager';
+import { StatusBar } from 'expo-status-bar';
+import { useState } from 'react';
+import { Dimensions, Platform, StyleSheet } from 'react-native';
+import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
+import 'react-native-reanimated';
+import {
+    runOnJS,
+    useAnimatedReaction,
+    useSharedValue
+} from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import CreateScreen from './CreateScreen';
 import HomeScreen from './HomeScreen';
 import MeScreen from './MeScreen';
+
+const SCREEN_HEIGHT = Dimensions.get('screen').height;
 
 /**
  * RootLayout - Ana layout
@@ -26,6 +28,8 @@ import MeScreen from './MeScreen';
  * - Page 2: Me
  */
 export default function RootLayout() {
+  const insets = useSafeAreaInsets();
+  
   // MainPager shared values
   const mainTranslateX = useSharedValue(0);
   const mainCurrentPage = useSharedValue(1);
@@ -33,6 +37,9 @@ export default function RootLayout() {
   // VerticalVideoPager shared values (sadece HomeScreen için)
   const videoTranslateY = useSharedValue(0);
   const videoCurrentIndex = useSharedValue(0);
+  
+  // Video height: ekran yüksekliği - navigation bar yüksekliği
+  const videoHeight = SCREEN_HEIGHT - insets.bottom;
 
   // HomeScreen aktif durumu için state
   const [isHomeActive, setIsHomeActive] = useState(true);
@@ -95,7 +102,8 @@ export default function RootLayout() {
           event.velocityY,
           videoTranslateY,
           videoCurrentIndex,
-          3 // video count (SAMPLE_VIDEOS.length)
+          3, // video count (SAMPLE_VIDEOS.length)
+          videoHeight
         );
         lastTranslationY.value = event.translationY;
       }
@@ -115,7 +123,8 @@ export default function RootLayout() {
           videoTranslateY,
           videoCurrentIndex,
           3,
-          handleVideoChange
+          handleVideoChange,
+          videoHeight
         );
       }
       directionLock.value = 'none';

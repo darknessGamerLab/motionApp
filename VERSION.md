@@ -1,5 +1,26 @@
 # Motion App - Versiyon Geçmişi
 
+## Version 1.0.1 - İlk Frame Düzeltmesi
+
+**Tarih:** 2025-01-XX
+
+### Düzeltmeler
+
+⚠️ **Bilinen Sorun:**
+- İlk frame yanlış çiziliyor
+- Element konumlandırma ve video yüksekliği ilk frame için hatalı hesaplanıyor
+- Video container ve overlay elementleri ilk render'da yanlış konumda görünüyor
+
+### Değişiklikler
+
+- Instagram benzeri UI tasarımı eklendi
+- Avatar, username, follow butonu alt tarafta konumlandırıldı
+- Action buttons (like, share, save, category) sağ altta konumlandırıldı
+- Video container navigation bar'ın üstünde kalacak şekilde ayarlandı
+- `useWindowDimensions` yerine `Dimensions.get('screen')` kullanılıyor
+
+---
+
 ## Version 1.0.0 - İlk Stabil Versiyon
 
 **Tarih:** 2025-12-04
@@ -72,4 +93,5 @@ Bu versiyona geri dönmek için:
    - `app/CreateScreen.tsx`
    - `app/MeScreen.tsx`
    - `hooks/useDirectionLock.ts`
+
 

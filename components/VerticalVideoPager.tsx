@@ -8,6 +8,7 @@ import Animated, {
   SharedValue,
 } from 'react-native-reanimated';
 import { Video, ResizeMode } from 'expo-av';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const screenData = Dimensions.get('screen');
 const SCREEN_WIDTH = screenData.width;
@@ -41,12 +42,16 @@ export function VerticalVideoPager({
   currentIndex,
   isActive = true,
 }: VerticalVideoPagerProps) {
+  const insets = useSafeAreaInsets();
   const videoRefs = useRef<{ [key: string]: Video | null }>({});
   const videoPositions = useRef<{ [key: string]: number }>({});
   const [currentVideoIndex, setCurrentVideoIndex] = useState(initialIndex);
+  
+  // Video container yüksekliği: ekran yüksekliği - navigation bar yüksekliği
+  const VIDEO_HEIGHT = SCREEN_HEIGHT - insets.bottom;
 
   React.useEffect(() => {
-    translateY.value = -SCREEN_HEIGHT * initialIndex;
+    translateY.value = -VIDEO_HEIGHT * initialIndex;
     currentIndex.value = initialIndex;
   }, []);
 
@@ -142,7 +147,10 @@ export function VerticalVideoPager({
     <Animated.View 
       style={[
         styles.container,
-        { height: SCREEN_HEIGHT * videos.length },
+        { 
+          height: VIDEO_HEIGHT * videos.length,
+          paddingBottom: insets.bottom,
+        },
         animatedStyle
       ]}
     >
@@ -152,7 +160,8 @@ export function VerticalVideoPager({
           style={[
             styles.videoContainer,
             { 
-              top: index * SCREEN_HEIGHT,
+              top: index * VIDEO_HEIGHT,
+              height: VIDEO_HEIGHT,
             }
           ]}
         >
@@ -181,13 +190,14 @@ export const VerticalVideoPagerHelpers = {
     velocityY: number,
     translateY: SharedValue<number>,
     currentIndex: SharedValue<number>,
-    videoCount: number
+    videoCount: number,
+    videoHeight: number
   ) => {
     'worklet';
     const newTranslateY = translateY.value + deltaTranslationY;
     
     // Sınırları kontrol et
-    const minTranslateY = -SCREEN_HEIGHT * (videoCount - 1);
+    const minTranslateY = -videoHeight * (videoCount - 1);
     const maxTranslateY = 0;
     
     if (newTranslateY >= minTranslateY && newTranslateY <= maxTranslateY) {
@@ -200,11 +210,12 @@ export const VerticalVideoPagerHelpers = {
     translateY: SharedValue<number>,
     currentIndex: SharedValue<number>,
     videoCount: number,
-    onVideoChange?: (index: number) => void
+    onVideoChange?: (index: number) => void,
+    videoHeight: number
   ) => {
     'worklet';
     const currentTranslateY = translateY.value;
-    const videoIndex = Math.round(-currentTranslateY / SCREEN_HEIGHT);
+    const videoIndex = Math.round(-currentTranslateY / videoHeight);
     
     // Velocity'e göre video değiştir (flick gesture)
     let targetIndex = videoIndex;
@@ -220,7 +231,7 @@ export const VerticalVideoPagerHelpers = {
     targetIndex = Math.max(0, Math.min(videoCount - 1, targetIndex));
     
     currentIndex.value = targetIndex;
-    translateY.value = withSpring(-SCREEN_HEIGHT * targetIndex, {
+    translateY.value = withSpring(-videoHeight * targetIndex, {
       damping: 25,
       stiffness: 120,
       mass: 0.8,
@@ -235,14 +246,13 @@ export const VerticalVideoPagerHelpers = {
 const styles = StyleSheet.create({
   container: {
     width: SCREEN_WIDTH,
-    height: SCREEN_HEIGHT,
     position: 'relative',
   },
   videoContainer: {
     position: 'absolute',
     width: SCREEN_WIDTH,
-    height: SCREEN_HEIGHT,
     left: 0,
     backgroundColor: '#000',
   },
 });
+
