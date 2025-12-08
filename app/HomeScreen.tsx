@@ -80,6 +80,9 @@ interface HomeScreenProps {
   currentVideoIndex: SharedValue<number>;
   onVideoChange?: (index: number) => void;
   isActive?: boolean;
+  videoHeight: number;
+  layoutReady: boolean;
+  pageWidth: number;
 }
 
 // Video Overlay Bileşeni
@@ -192,6 +195,9 @@ export default function HomeScreen({
   currentVideoIndex,
   onVideoChange,
   isActive = true,
+  videoHeight,
+  layoutReady,
+  pageWidth,
 }: HomeScreenProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [videos, setVideos] = useState(SAMPLE_VIDEOS);
@@ -233,6 +239,10 @@ export default function HomeScreen({
 
   const currentVideo = videos[currentIndex] || videos[0];
 
+  if (!layoutReady || videoHeight <= 0 || pageWidth <= 0) {
+    return <View style={styles.container} />;
+  }
+
   return (
     <View style={styles.container}>
       <VerticalVideoPager
@@ -242,15 +252,19 @@ export default function HomeScreen({
         translateY={translateY}
         currentIndex={currentVideoIndex}
         isActive={isActive}
+        videoHeight={videoHeight}
+        pageWidth={pageWidth}
       />
-      <VideoOverlay
-        video={currentVideo}
-        onLike={handleLike}
-        onShare={handleShare}
-        onSave={handleSave}
-        onCategory={handleCategory}
-        onFollow={handleFollow}
-      />
+      {layoutReady && (
+        <VideoOverlay
+          video={currentVideo}
+          onLike={handleLike}
+          onShare={handleShare}
+          onSave={handleSave}
+          onCategory={handleCategory}
+          onFollow={handleFollow}
+        />
+      )}
     </View>
   );
 }

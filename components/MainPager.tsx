@@ -1,16 +1,11 @@
 import React from 'react';
-import { StyleSheet, Dimensions } from 'react-native';
+import { StyleSheet } from 'react-native';
 import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withSpring,
   runOnJS,
   SharedValue,
+  useAnimatedStyle,
+  withSpring,
 } from 'react-native-reanimated';
-
-const screenData = Dimensions.get('screen');
-const SCREEN_WIDTH = screenData.width;
-const SCREEN_HEIGHT = screenData.height;
 
 interface MainPagerProps {
   children: React.ReactNode[];
@@ -18,6 +13,8 @@ interface MainPagerProps {
   onPageChange?: (page: number) => void;
   translateX: SharedValue<number>;
   currentPage: SharedValue<number>;
+  pageWidth: number;
+  pageHeight: number;
 }
 
 /**
@@ -33,24 +30,29 @@ export function MainPager({
   onPageChange,
   translateX,
   currentPage,
+  pageWidth,
+  pageHeight,
 }: MainPagerProps) {
-  React.useEffect(() => {
-    translateX.value = -SCREEN_WIDTH * initialPage;
-    currentPage.value = initialPage;
-  }, []);
-
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: translateX.value }],
   }));
 
+  if (pageWidth <= 0 || pageHeight <= 0) {
+    return null;
+  }
+
   return (
-    <Animated.View style={[styles.container, animatedStyle]}>
+    <Animated.View style={[styles.container, { width: pageWidth * 3 }, animatedStyle]}>
       {children.map((child, index) => (
         <Animated.View 
           key={index} 
           style={[
             styles.page,
-            { left: index * SCREEN_WIDTH }
+            { 
+              left: index * pageWidth,
+              width: pageWidth,
+              height: pageHeight,
+            }
           ]}
         >
           {child}
@@ -67,13 +69,14 @@ export const MainPagerHelpers = {
     velocityX: number,
     translateX: SharedValue<number>,
     currentPage: SharedValue<number>,
-    pageCount: number
+    pageCount: number,
+    pageWidth: number
   ) => {
     'worklet';
     const newTranslateX = translateX.value + deltaTranslationX;
     
     // Sınırları kontrol et
-    const minTranslateX = -SCREEN_WIDTH * (pageCount - 1);
+    const minTranslateX = -pageWidth * (pageCount - 1);
     const maxTranslateX = 0;
     
     if (newTranslateX >= minTranslateX && newTranslateX <= maxTranslateX) {
@@ -86,11 +89,12 @@ export const MainPagerHelpers = {
     translateX: SharedValue<number>,
     currentPage: SharedValue<number>,
     pageCount: number,
+    pageWidth: number,
     onPageChange?: (page: number) => void
   ) => {
     'worklet';
     const currentTranslateX = translateX.value;
-    const pageIndex = Math.round(-currentTranslateX / SCREEN_WIDTH);
+    const pageIndex = Math.round(-currentTranslateX / pageWidth);
     
     // Velocity'e göre sayfa değiştir
     let targetPage = pageIndex;
@@ -106,7 +110,7 @@ export const MainPagerHelpers = {
     targetPage = Math.max(0, Math.min(pageCount - 1, targetPage));
     
     currentPage.value = targetPage;
-    translateX.value = withSpring(-SCREEN_WIDTH * targetPage, {
+    translateX.value = withSpring(-pageWidth * targetPage, {
       damping: 25,
       stiffness: 120,
       mass: 0.8,
@@ -121,19 +125,17 @@ export const MainPagerHelpers = {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    width: SCREEN_WIDTH * 3, // 3 sayfa için toplam genişlik
     position: 'relative',
     marginTop: 0,
     paddingTop: 0,
   },
   page: {
     position: 'absolute',
-    width: SCREEN_WIDTH,
-    height: SCREEN_HEIGHT,
     top: 0,
     left: 0,
     marginTop: 0,
     paddingTop: 0,
   },
 });
+
 

@@ -1,5 +1,53 @@
 # Motion App - Versiyon Geçmişi
 
+## Version 1.0.2 - Profil ve Create Ekranları
+
+**Tarih:** 2025-01-XX
+
+### Düzeltmeler
+
+✅ **Çözülen Sorunlar:**
+- İlk frame'in yanlış hesaplanması sorunu çözüldü
+- Root level `onLayout` ile dinamik boyut hesaplama eklendi
+- Layout hazır olmadan render engellendi
+
+### Yeni Özellikler
+
+✅ **Profil Ekranı (MeScreen)**
+- Modern profil sayfası tasarımı
+- Profil fotoğrafları (ana + 2 yan fotoğraf)
+- Kullanıcı bilgileri (ad, yetenek alanları)
+- İstatistikler (Videos, Followers, Following)
+- Action butonları (Edit Profile, Invite)
+- Video grid (3 sütun, dikey format)
+- Scroll desteği (sadece aktifken)
+
+✅ **Create Ekranı (CreateScreen)**
+- Snapchat benzeri kamera UI
+- Kamera ve mikrofon izinleri
+- Fotoğraf çekme ve video kaydetme
+- Kamera flip ve flash toggle
+- Sadece aktifken kamera çalışır
+
+✅ **Aktif Ekran Yönetimi**
+- Sadece aktif ekran çalışır, diğerleri durur
+- HomeScreen: Video oynatımı sadece aktifken
+- CreateScreen: Kamera sadece aktifken
+- MeScreen: Scroll sadece aktifken
+
+### Değişiklikler
+
+- `app/_layout.tsx`: Root level `onLayout` eklendi, her ekran için aktif durum takibi
+- `app/MeScreen.tsx`: Profil sayfası tamamen yeniden tasarlandı
+- `app/CreateScreen.tsx`: Kamera UI eklendi, aktif/pasif kontrolü
+- `app/HomeScreen.tsx`: `isActive` prop'u zaten mevcuttu
+- `components/VerticalVideoPager.tsx`: Video oynatımı aktif/pasif kontrolü zaten mevcuttu
+
+⚠️ **Bilinen Sorun:**
+- Android gezinme çubuğu bazen şeffaf oluyor. Bir sonraki versiyonda bu sorun da çözülmüş olacak
+
+---
+
 ## Version 1.0.1 - İlk Frame Düzeltmesi
 
 **Tarih:** 2025-01-XX

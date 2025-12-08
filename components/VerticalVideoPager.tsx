@@ -1,18 +1,13 @@
-import React, { useRef, useState, useEffect } from 'react';
-import { StyleSheet, Dimensions } from 'react-native';
+import { ResizeMode, Video } from 'expo-av';
+import React, { useEffect, useRef, useState } from 'react';
+import { StyleSheet } from 'react-native';
 import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withSpring,
   runOnJS,
   SharedValue,
+  useAnimatedStyle,
+  withSpring
 } from 'react-native-reanimated';
-import { Video, ResizeMode } from 'expo-av';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-
-const screenData = Dimensions.get('screen');
-const SCREEN_WIDTH = screenData.width;
-const SCREEN_HEIGHT = screenData.height;
 
 interface VideoItem {
   id: string;
@@ -26,6 +21,8 @@ interface VerticalVideoPagerProps {
   translateY: SharedValue<number>;
   currentIndex: SharedValue<number>;
   isActive?: boolean;
+  videoHeight: number;
+  pageWidth: number;
 }
 
 /**
@@ -41,19 +38,13 @@ export function VerticalVideoPager({
   translateY,
   currentIndex,
   isActive = true,
+  videoHeight,
+  pageWidth,
 }: VerticalVideoPagerProps) {
   const insets = useSafeAreaInsets();
   const videoRefs = useRef<{ [key: string]: Video | null }>({});
   const videoPositions = useRef<{ [key: string]: number }>({});
   const [currentVideoIndex, setCurrentVideoIndex] = useState(initialIndex);
-  
-  // Video container yüksekliği: ekran yüksekliği - navigation bar yüksekliği
-  const VIDEO_HEIGHT = SCREEN_HEIGHT - insets.bottom;
-
-  React.useEffect(() => {
-    translateY.value = -VIDEO_HEIGHT * initialIndex;
-    currentIndex.value = initialIndex;
-  }, []);
 
   // Aktif/pasif durumuna göre videoları yönet
   useEffect(() => {
@@ -139,7 +130,7 @@ export function VerticalVideoPager({
     transform: [{ translateY: translateY.value }],
   }));
 
-  if (videos.length === 0) {
+  if (videos.length === 0 || videoHeight <= 0 || pageWidth <= 0) {
     return null;
   }
 
@@ -148,7 +139,8 @@ export function VerticalVideoPager({
       style={[
         styles.container,
         { 
-          height: VIDEO_HEIGHT * videos.length,
+          width: pageWidth,
+          height: videoHeight * videos.length,
           paddingBottom: insets.bottom,
         },
         animatedStyle
@@ -160,13 +152,14 @@ export function VerticalVideoPager({
           style={[
             styles.videoContainer,
             { 
-              top: index * VIDEO_HEIGHT,
-              height: VIDEO_HEIGHT,
+              width: pageWidth,
+              top: index * videoHeight,
+              height: videoHeight,
             }
           ]}
         >
           <Video
-            ref={(ref) => {
+            ref={(ref: Video | null) => {
               videoRefs.current[video.id] = ref;
             }}
             style={StyleSheet.absoluteFill}
@@ -210,8 +203,8 @@ export const VerticalVideoPagerHelpers = {
     translateY: SharedValue<number>,
     currentIndex: SharedValue<number>,
     videoCount: number,
-    onVideoChange?: (index: number) => void,
-    videoHeight: number
+    videoHeight: number,
+    onVideoChange?: (index: number) => void
   ) => {
     'worklet';
     const currentTranslateY = translateY.value;
@@ -245,12 +238,10 @@ export const VerticalVideoPagerHelpers = {
 
 const styles = StyleSheet.create({
   container: {
-    width: SCREEN_WIDTH,
     position: 'relative',
   },
   videoContainer: {
     position: 'absolute',
-    width: SCREEN_WIDTH,
     left: 0,
     backgroundColor: '#000',
   },
