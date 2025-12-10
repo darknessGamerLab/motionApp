@@ -1,5 +1,4 @@
-viimport React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { router } from 'expo-router';
+import React, { createContext, useContext, useState, useMemo, ReactNode } from 'react';
 
 export type UserType = 'individual' | 'corporate' | null;
 export type AuthState = {
@@ -14,59 +13,81 @@ export type AuthState = {
 
 type AuthContextType = {
   authState: AuthState;
-  login: (email: string, userType: UserType) => void;
-  signup: (email: string, userType: UserType, userData?: any) => void;
+  login: (email: string, password: string) => Promise<void>;
+  signup: (email: string, password: string, username: string, fullName: string) => Promise<void>;
   logout: () => void;
   setUserData: (data: any) => void;
 };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-export function AuthProvider({ children }: { children: ReactNode }) {
-  const [authState, setAuthState] = useState<AuthState>({
-    isAuthenticated: false,
-    userType: null,
-    userEmail: null,
-    userData: null,
-  });
+// State'i component dışında tutarak yeniden mount'ta korunmasını sağla
+let globalAuthState: AuthState = {
+  isAuthenticated: false,
+  userType: null,
+  userEmail: null,
+  userData: null,
+};
 
-  const login = (email: string, userType: UserType) => {
-    setAuthState({
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const [authState, setAuthState] = useState<AuthState>(globalAuthState);
+
+  const login = async (email: string, password: string) => {
+    // TODO: API call yapılacak
+    // Şimdilik mock login
+    const newState = {
       isAuthenticated: true,
-      userType,
+      userType: 'individual' as UserType,
       userEmail: email,
       userData: null,
-    });
+    };
+    globalAuthState = newState;
+    setAuthState(newState);
   };
 
-  const signup = (email: string, userType: UserType, userData?: any) => {
-    setAuthState({
+  const signup = async (email: string, password: string, username: string, fullName: string) => {
+    // TODO: API call yapılacak
+    // Şimdilik mock signup
+    const newState = {
       isAuthenticated: true,
-      userType,
+      userType: 'individual' as UserType,
       userEmail: email,
-      userData: userData || null,
-    });
+      userData: {
+        username,
+        fullName,
+      },
+    };
+    globalAuthState = newState;
+    setAuthState(newState);
   };
 
   const logout = () => {
-    setAuthState({
+    const newState = {
       isAuthenticated: false,
       userType: null,
       userEmail: null,
       userData: null,
-    });
-    router.replace('/auth/login');
+    };
+    globalAuthState = newState;
+    setAuthState(newState);
   };
 
   const setUserData = (data: any) => {
-    setAuthState((prev) => ({
-      ...prev,
+    const newState = {
+      ...authState,
       userData: data,
-    }));
+    };
+    globalAuthState = newState;
+    setAuthState(newState);
   };
 
+  const value = useMemo(
+    () => ({ authState, login, signup, logout, setUserData }),
+    [authState]
+  );
+
   return (
-    <AuthContext.Provider value={{ authState, login, signup, logout, setUserData }}>
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );

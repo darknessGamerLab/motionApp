@@ -1,5 +1,5 @@
 import { ResizeMode, Video } from 'expo-av';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { StyleSheet } from 'react-native';
 import Animated, {
   runOnJS,
@@ -25,13 +25,17 @@ interface VerticalVideoPagerProps {
   pageWidth: number;
 }
 
+export interface VerticalVideoPagerRef {
+  togglePlayPause: () => void;
+}
+
 /**
  * VerticalVideoPager - Dikey video geçişleri için pager
  * 
  * Her video full screen olur
  * Gesture handling root seviyesinde yapılır
  */
-export function VerticalVideoPager({
+export const VerticalVideoPager = forwardRef<VerticalVideoPagerRef, VerticalVideoPagerProps>(({
   videos,
   initialIndex = 0,
   onVideoChange,
@@ -40,11 +44,34 @@ export function VerticalVideoPager({
   isActive = true,
   videoHeight,
   pageWidth,
-}: VerticalVideoPagerProps) {
+}, ref) => {
   const insets = useSafeAreaInsets();
   const videoRefs = useRef<{ [key: string]: Video | null }>({});
   const videoPositions = useRef<{ [key: string]: number }>({});
   const [currentVideoIndex, setCurrentVideoIndex] = useState(initialIndex);
+  const [isPlaying, setIsPlaying] = useState(true);
+
+  // Expose togglePlayPause function to parent
+  useImperativeHandle(ref, () => ({
+    togglePlayPause: () => {
+      const currentVideo = videoRefs.current[videos[currentVideoIndex]?.id];
+      if (currentVideo) {
+        currentVideo.getStatusAsync().then((status) => {
+          if (status.isLoaded) {
+            if (status.isPlaying) {
+              currentVideo.pauseAsync();
+              setIsPlaying(false);
+            } else {
+              currentVideo.playAsync();
+              setIsPlaying(true);
+            }
+          }
+        }).catch(() => {
+          // Ignore errors
+        });
+      }
+    },
+  }));
 
   // Aktif/pasif durumuna göre videoları yönet
   useEffect(() => {
@@ -121,6 +148,7 @@ export function VerticalVideoPager({
 
   const handleVideoChange = (index: number) => {
     setCurrentVideoIndex(index);
+    setIsPlaying(true); // Yeni video oynatılmaya başladığında playing state'ini true yap
     if (onVideoChange) {
       onVideoChange(index);
     }
@@ -165,16 +193,16 @@ export function VerticalVideoPager({
             style={StyleSheet.absoluteFill}
             source={{ uri: video.uri }}
             resizeMode={ResizeMode.COVER}
-            shouldPlay={index === currentVideoIndex}
+            shouldPlay={index === currentVideoIndex && isPlaying}
             isLooping
             isMuted={false}
             useNativeControls={false}
           />
         </Animated.View>
-      ))}
+      )      )}
     </Animated.View>
   );
-}
+});
 
 // Export helper functions for gesture handling
 export const VerticalVideoPagerHelpers = {

@@ -1,7 +1,8 @@
-import { VerticalVideoPager } from '@/components/VerticalVideoPager';
+import { VerticalVideoPager, VerticalVideoPagerRef } from '@/components/VerticalVideoPager';
 import { Ionicons } from '@expo/vector-icons';
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { runOnJS, SharedValue, useAnimatedReaction } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -201,6 +202,7 @@ export default function HomeScreen({
 }: HomeScreenProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [videos, setVideos] = useState(SAMPLE_VIDEOS);
+  const videoPagerRef = useRef<VerticalVideoPagerRef>(null);
 
   // currentVideoIndex değişikliklerini takip et
   useAnimatedReaction(
@@ -237,6 +239,25 @@ export default function HomeScreen({
     console.log('Follow pressed for user:', videos[currentIndex].user.username);
   };
 
+  const handleTogglePlayPause = useCallback(() => {
+    videoPagerRef.current?.togglePlayPause();
+  }, []);
+
+  // Single tap gesture for play/pause
+  // Alt kısımdaki butonları ignore et (yaklaşık 200px'den aşağısı)
+  // useMemo ile sarmalayarak stable reference sağla
+  const singleTap = useMemo(() => {
+    const bottomInfoStartY = videoHeight - 200; // Alt kısımdaki butonların başladığı Y koordinatı
+    return Gesture.Tap()
+      .numberOfTaps(1)
+      .onEnd((event) => {
+        // Alt kısımdaki butonlara tıklanmışsa ignore et
+        if (event.y < bottomInfoStartY) {
+          runOnJS(handleTogglePlayPause)();
+        }
+      });
+  }, [videoHeight, handleTogglePlayPause]);
+
   const currentVideo = videos[currentIndex] || videos[0];
 
   if (!layoutReady || videoHeight <= 0 || pageWidth <= 0) {
@@ -245,16 +266,21 @@ export default function HomeScreen({
 
   return (
     <View style={styles.container}>
-      <VerticalVideoPager
-        videos={SAMPLE_VIDEOS.map(v => ({ id: v.id, uri: v.uri }))}
-        initialIndex={0}
-        onVideoChange={handleVideoChange}
-        translateY={translateY}
-        currentIndex={currentVideoIndex}
-        isActive={isActive}
-        videoHeight={videoHeight}
-        pageWidth={pageWidth}
-      />
+      <GestureDetector gesture={singleTap}>
+        <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+          <VerticalVideoPager
+            ref={videoPagerRef}
+            videos={SAMPLE_VIDEOS.map(v => ({ id: v.id, uri: v.uri }))}
+            initialIndex={0}
+            onVideoChange={handleVideoChange}
+            translateY={translateY}
+            currentIndex={currentVideoIndex}
+            isActive={isActive}
+            videoHeight={videoHeight}
+            pageWidth={pageWidth}
+          />
+        </View>
+      </GestureDetector>
       {layoutReady && (
         <VideoOverlay
           video={currentVideo}
