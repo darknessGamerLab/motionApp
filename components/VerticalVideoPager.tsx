@@ -4,6 +4,7 @@ import { StyleSheet } from 'react-native';
 import Animated, {
   runOnJS,
   SharedValue,
+  useAnimatedReaction,
   useAnimatedStyle,
   withSpring
 } from 'react-native-reanimated';
@@ -73,86 +74,59 @@ export const VerticalVideoPager = forwardRef<VerticalVideoPagerRef, VerticalVide
     },
   }));
 
-  // Aktif/pasif durumuna göre videoları yönet
+  // Video pozisyonlarını kaydet ve shouldPlay prop'una göre oynatma/durdurma yap
   useEffect(() => {
     if (!isActive) {
       // Sayfa inaktif olduğunda tüm videoları durdur ve pozisyonlarını kaydet
-      const saveAllPositions = async () => {
-        for (const video of videos) {
-          const videoRef = videoRefs.current[video.id];
-          if (videoRef) {
-            try {
-              await videoRef.pauseAsync();
-              const status = await videoRef.getStatusAsync();
+      for (const video of videos) {
+        const videoRef = videoRefs.current[video.id];
+        if (videoRef) {
+          videoRef.pauseAsync().then(() => {
+            videoRef.getStatusAsync().then((status) => {
               if (status.isLoaded && status.positionMillis !== undefined) {
                 videoPositions.current[video.id] = status.positionMillis;
               }
-            } catch (error) {
-              console.log('Error saving video position:', error);
-            }
-          }
+            }).catch(() => {});
+          }).catch(() => {});
         }
-      };
-      saveAllPositions();
+      }
       return;
     }
 
-    // Sayfa aktif olduğunda
-    // Önceki videoyu durdur ve pozisyonunu kaydet
-    const prevIndex = currentVideoIndex - 1;
-    const nextIndex = currentVideoIndex + 1;
-    
-    const saveVideoPosition = async (videoId: string) => {
-      const video = videoRefs.current[videoId];
-      if (video) {
-        try {
-          const status = await video.getStatusAsync();
-          if (status.isLoaded && status.positionMillis !== undefined) {
-            videoPositions.current[videoId] = status.positionMillis;
-          }
-        } catch (error) {
-          // Ignore errors
+    // Sayfa aktif olduğunda - aktif olmayan videoların pozisyonlarını kaydet
+    // Oynatma/durdurma shouldPlay prop'u ile yönetiliyor
+    for (let i = 0; i < videos.length; i++) {
+      if (i !== currentVideoIndex) {
+        const videoRef = videoRefs.current[videos[i].id];
+        if (videoRef) {
+          videoRef.pauseAsync().then(() => {
+            videoRef.getStatusAsync().then((status) => {
+              if (status.isLoaded && status.positionMillis !== undefined) {
+                videoPositions.current[videos[i].id] = status.positionMillis;
+              }
+            }).catch(() => {});
+          }).catch(() => {});
         }
-      }
-    };
-    
-    if (prevIndex >= 0 && videoRefs.current[videos[prevIndex]?.id]) {
-      const prevVideo = videoRefs.current[videos[prevIndex].id];
-      prevVideo?.pauseAsync();
-      saveVideoPosition(videos[prevIndex].id);
-    }
-    if (nextIndex < videos.length && videoRefs.current[videos[nextIndex]?.id]) {
-      const nextVideo = videoRefs.current[videos[nextIndex].id];
-      nextVideo?.pauseAsync();
-      saveVideoPosition(videos[nextIndex].id);
-    }
-    
-    // Mevcut videoyu oynat (kaldığı yerden)
-    const currentVideo = videoRefs.current[videos[currentVideoIndex]?.id];
-    if (currentVideo) {
-      const savedPosition = videoPositions.current[videos[currentVideoIndex].id];
-      if (savedPosition !== undefined && savedPosition > 0) {
-        // Kaldığı yerden devam et
-        currentVideo.setPositionAsync(savedPosition).then(() => {
-          currentVideo.playAsync();
-        }).catch(() => {
-          // Hata olursa baştan başlat
-          currentVideo.playAsync();
-        });
-      } else {
-        // İlk kez oynatılıyorsa baştan başlat
-        currentVideo.playAsync();
       }
     }
   }, [isActive, currentVideoIndex, videos]);
 
-  const handleVideoChange = (index: number) => {
-    setCurrentVideoIndex(index);
-    setIsPlaying(true); // Yeni video oynatılmaya başladığında playing state'ini true yap
-    if (onVideoChange) {
-      onVideoChange(index);
+  // currentIndex shared value'dan currentVideoIndex state'ini senkronize et
+  const lastIndexRef = useRef<number | null>(null);
+  
+  useAnimatedReaction(
+    () => Math.round(currentIndex.value),
+    (roundedIndex) => {
+      // Sadece değiştiğinde güncelle (sonsuz döngüyü önlemek için)
+      if (lastIndexRef.current !== roundedIndex) {
+        lastIndexRef.current = roundedIndex;
+        runOnJS(setCurrentVideoIndex)(roundedIndex);
+        runOnJS(setIsPlaying)(true); // Yeni video oynatılmaya başladığında playing state'ini true yap
+        // onVideoChange çağrısı kaldırıldı: shared value zaten üst komponentten güncelleniyor,
+        // burada tekrar çağırmak gereksiz döngüye yol açabiliyor.
+      }
     }
-  };
+  );
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: translateY.value }],
@@ -192,11 +166,22 @@ export const VerticalVideoPager = forwardRef<VerticalVideoPagerRef, VerticalVide
             }}
             style={StyleSheet.absoluteFill}
             source={{ uri: video.uri }}
-            resizeMode={ResizeMode.COVER}
-            shouldPlay={index === currentVideoIndex && isPlaying}
+            resizeMode={ResizeMode.CONTAIN}
+            shouldPlay={index === currentVideoIndex && isPlaying && isActive}
             isLooping
             isMuted={false}
             useNativeControls={false}
+            onLoad={() => {
+              // Video yüklendiğinde, eğer bu aktif video ise ve kaydedilmiş pozisyon varsa oradan başlat
+              const currentIndexValue = Math.round(currentIndex.value);
+              if (currentIndexValue === index && isActive) {
+                const savedPosition = videoPositions.current[video.id];
+                const videoRef = videoRefs.current[video.id];
+                if (videoRef && savedPosition !== undefined && savedPosition > 0) {
+                  videoRef.setPositionAsync(savedPosition).catch(() => {});
+                }
+              }
+            }}
           />
         </Animated.View>
       )      )}

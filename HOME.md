@@ -1102,3 +1102,4 @@ Bu dosya, HomeScreen (Ana Sayfa) ile ilgili tüm kodları içermektedir.
 **Versiyon:** 1.0.2+
 
 
+

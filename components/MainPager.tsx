@@ -42,7 +42,7 @@ export function MainPager({
   }
 
   return (
-    <Animated.View style={[styles.container, { width: pageWidth * 3 }, animatedStyle]}>
+    <Animated.View style={[styles.container, { width: pageWidth * children.length }, animatedStyle]}>
       {children.map((child, index) => (
         <Animated.View 
           key={index} 
@@ -126,15 +126,11 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     position: 'relative',
-    marginTop: 0,
-    paddingTop: 0,
   },
   page: {
     position: 'absolute',
     top: 0,
     left: 0,
-    marginTop: 0,
-    paddingTop: 0,
   },
 });
 

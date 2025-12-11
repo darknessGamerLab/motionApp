@@ -1,29 +1,37 @@
-import { MainPager, MainPagerHelpers } from '@/components/MainPager';
-import { VerticalVideoPagerHelpers } from '@/components/VerticalVideoPager';
+import { MainPager } from '@/components/MainPager';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useState } from 'react';
-import { LayoutChangeEvent, Platform, StyleSheet, View } from 'react-native';
-import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  LayoutChangeEvent,
+  Platform,
+  StyleSheet,
+  View,
+  TouchableOpacity,
+  Text
+} from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { Ionicons } from '@expo/vector-icons';
 import 'react-native-reanimated';
 import {
   runOnJS,
   useAnimatedReaction,
-  useSharedValue
+  useSharedValue,
+  withSpring
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import CreateScreen from './CreateScreen';
 import HomeScreen from './HomeScreen';
 import MeScreen from './MeScreen';
+import InspirationScreen from './InspirationScreen';
+import NotificationsScreen from './NotificationsScreen';
+import UserProfileScreen from './UserProfileScreen';
 
 /**
- * MainLayout - Ana uygulama layout'u
+ * MainLayout - TikTok benzeri layout
  * 
- * Navbar yok
- * Tek bir gesture handler ile tüm gesture'ları yönetir
- * Direction lock ile yatay/dikey hareketleri ayırır
- * - Page 0: Create
- * - Page 1: Home (ana ekran) - burada dikey video geçişi de var
- * - Page 2: Me
+ * - Alt tarafta 5 sekmeli navbar: Home, Inspiration, Create, Notifications, Me
+ * - Home ekranında dikey video geçişi
+ * - Yatay geçişler kapalı, tab bar ile sayfa değişiyor
  */
 export default function MainLayout() {
   const insets = useSafeAreaInsets();
@@ -33,22 +41,28 @@ export default function MainLayout() {
   const [layoutHeight, setLayoutHeight] = useState(0);
   const [layoutReady, setLayoutReady] = useState(false);
   const [insetsReady, setInsetsReady] = useState(false);
+  const [navbarHeight, setNavbarHeight] = useState(0);
+  
+  // User profile overlay
+  const [showUserProfile, setShowUserProfile] = useState(false);
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   
   // MainPager shared values
   const mainTranslateX = useSharedValue(0);
-  const mainCurrentPage = useSharedValue(1);
+  const mainCurrentPage = useSharedValue(0); // 0: Home, 1: Inspiration, 2: Create, 3: Notifications, 4: Me
   
   // VerticalVideoPager shared values (sadece HomeScreen için)
   const videoTranslateY = useSharedValue(0);
   const videoCurrentIndex = useSharedValue(0);
   
-  // Video height: layout height - navigation bar yüksekliği
-  const videoHeight = layoutHeight > 0 ? layoutHeight - insets.bottom : 0;
+  // Video height: layout height - navbar height
+  const videoHeight = layoutHeight > 0 && navbarHeight > 0 ? layoutHeight - navbarHeight : 0;
+  
+  // Page height: layout height - navbar height (for screens in MainPager)
+  const pageHeight = layoutHeight > 0 && navbarHeight > 0 ? layoutHeight - navbarHeight : 0;
 
-  // Her ekranın aktif durumu için state
-  const [isHomeActive, setIsHomeActive] = useState(true);
-  const [isCreateActive, setIsCreateActive] = useState(false);
-  const [isMeActive, setIsMeActive] = useState(false);
+  // Her ekranın aktif durumu için state (mainCurrentPage'den türetiliyor)
+  const [activePageIndex, setActivePageIndex] = useState(0);
   
   // Layout ölçümü
   const handleLayout = (event: LayoutChangeEvent) => {
@@ -60,9 +74,17 @@ export default function MainLayout() {
     }
   };
   
+  // Navbar yüksekliğini ölç
+  const handleNavbarLayout = (event: LayoutChangeEvent) => {
+    const { height } = event.nativeEvent.layout;
+    if (height > 0) {
+      setNavbarHeight(height);
+    }
+  };
+
+  
   // Insets hazır mı kontrol et
   useEffect(() => {
-    // Insets genellikle hemen hazır olur, ama emin olmak için küçük bir delay
     if (insets.bottom >= 0) {
       const timer = setTimeout(() => {
         setInsetsReady(true);
@@ -74,23 +96,15 @@ export default function MainLayout() {
   // Shared value'ların initial değerlerini ayarla (sadece layoutReady + insetsReady olduktan sonra)
   useEffect(() => {
     if (layoutReady && insetsReady && layoutWidth > 0 && layoutHeight > 0) {
-      // MainPager initial değerleri
-      mainTranslateX.value = -layoutWidth * 1; // initialPage = 1
-      mainCurrentPage.value = 1;
+      mainTranslateX.value = -layoutWidth * 0;
+      mainCurrentPage.value = 0;
       
-      // VerticalVideoPager initial değerleri
       if (videoHeight > 0) {
-        videoTranslateY.value = -videoHeight * 0; // initialIndex = 0
+        videoTranslateY.value = -videoHeight * 0;
         videoCurrentIndex.value = 0;
       }
     }
   }, [layoutReady, insetsReady, layoutWidth, layoutHeight, videoHeight]);
-
-  // Direction lock
-  const directionLock = useSharedValue<'none' | 'horizontal' | 'vertical'>('none');
-  const LOCK_THRESHOLD = 15;
-  const lastTranslationX = useSharedValue(0);
-  const lastTranslationY = useSharedValue(0);
 
   const handlePageChange = (page: number) => {
     console.log('Page changed to:', page);
@@ -100,117 +114,125 @@ export default function MainLayout() {
     console.log('Video changed to index:', index);
   };
 
-  // Her ekranın aktif durumunu takip et
+  // Aktif sayfa index'ini takip et
   useAnimatedReaction(
     () => mainCurrentPage.value,
     (currentPage) => {
-      runOnJS(setIsCreateActive)(currentPage === 0);
-      runOnJS(setIsHomeActive)(currentPage === 1);
-      runOnJS(setIsMeActive)(currentPage === 2);
+      runOnJS(setActivePageIndex)(currentPage);
     }
   );
 
-  const panGesture = Gesture.Pan()
-    .onStart(() => {
-      directionLock.value = 'none';
-      lastTranslationX.value = 0;
-      lastTranslationY.value = 0;
-    })
-    .onUpdate((event) => {
-      const deltaX = Math.abs(event.translationX);
-      const deltaY = Math.abs(event.translationY);
+  const isReady = layoutReady && insetsReady && layoutWidth > 0 && layoutHeight > 0 && navbarHeight > 0;
 
-      // Yön henüz belirlenmediyse
-      if (directionLock.value === 'none') {
-        if (deltaX > LOCK_THRESHOLD || deltaY > LOCK_THRESHOLD) {
-          directionLock.value = deltaX > deltaY ? 'horizontal' : 'vertical';
-        }
-      }
+  const tabs = useMemo(() => ([
+    { key: 'home', label: 'Home', icon: 'square', index: 0 },
+    { key: 'inspiration', label: 'Inspiration', icon: 'compass', index: 1 },
+    { key: 'create', label: 'Create', icon: 'add', index: 2 },
+    { key: 'notifications', label: 'Notifications', icon: 'heart', index: 3 },
+    { key: 'me', label: 'Me', icon: 'person', index: 4 },
+  ]), []);
 
-      // Yön belirlendikten sonra ilgili gesture'ı işle
-      if (directionLock.value === 'horizontal') {
-        const deltaTranslationX = event.translationX - lastTranslationX.value;
-        MainPagerHelpers.handleHorizontalGesture(
-          deltaTranslationX,
-          event.velocityX,
-          mainTranslateX,
-          mainCurrentPage,
-          3, // page count
-          layoutWidth
-        );
-        lastTranslationX.value = event.translationX;
-      } else if (directionLock.value === 'vertical' && mainCurrentPage.value === 1) {
-        // Sadece HomeScreen'deyken dikey gesture'ı işle
-        // MeScreen'de (page 2) ScrollView kendi gesture'ını yönetir
-        const deltaTranslationY = event.translationY - lastTranslationY.value;
-        VerticalVideoPagerHelpers.handleVerticalGesture(
-          deltaTranslationY,
-          event.velocityY,
-          videoTranslateY,
-          videoCurrentIndex,
-          3, // video count (SAMPLE_VIDEOS.length)
-          videoHeight
-        );
-        lastTranslationY.value = event.translationY;
-      }
-      // MeScreen'de (page 2) dikey gesture'ları ignore et - ScrollView kendi gesture'ını yönetir
-    })
-    .onEnd((event) => {
-      if (directionLock.value === 'horizontal') {
-        MainPagerHelpers.handleHorizontalGestureEnd(
-          event.velocityX,
-          mainTranslateX,
-          mainCurrentPage,
-          3,
-          layoutWidth,
-          handlePageChange
-        );
-      } else if (directionLock.value === 'vertical' && mainCurrentPage.value === 1) {
-        VerticalVideoPagerHelpers.handleVerticalGestureEnd(
-          event.velocityY,
-          videoTranslateY,
-          videoCurrentIndex,
-          3,
-          videoHeight,
-          handleVideoChange
-        );
-      }
-      directionLock.value = 'none';
-      lastTranslationX.value = 0;
-      lastTranslationY.value = 0;
+  const handleTabPress = (index: number) => {
+    mainCurrentPage.value = index;
+    mainTranslateX.value = withSpring(-layoutWidth * index, {
+      damping: 20,
+      stiffness: 90,
+      mass: 0.8,
     });
+  };
 
-  const isReady = layoutReady && insetsReady && layoutWidth > 0 && layoutHeight > 0;
+  const handleUserPress = (userId: string, username: string) => {
+    setSelectedUserId(userId);
+    setShowUserProfile(true);
+  };
+
+  const handleCloseUserProfile = () => {
+    setShowUserProfile(false);
+    setSelectedUserId(null);
+  };
 
   return (
     <GestureHandlerRootView style={styles.container}>
       <View style={styles.container} onLayout={handleLayout}>
         {isReady && (
-          <GestureDetector gesture={panGesture}>
-            <MainPager 
-              initialPage={1}
+          <>
+            <MainPager
+              initialPage={0}
               onPageChange={handlePageChange}
               translateX={mainTranslateX}
               currentPage={mainCurrentPage}
               pageWidth={layoutWidth}
-              pageHeight={layoutHeight}
+              pageHeight={pageHeight}
             >
-              <CreateScreen isActive={isCreateActive} />
-              <HomeScreen 
-                translateY={videoTranslateY}
-                currentVideoIndex={videoCurrentIndex}
-                onVideoChange={handleVideoChange}
-                isActive={isHomeActive}
-                videoHeight={videoHeight}
-                layoutReady={isReady}
-                pageWidth={layoutWidth}
-              />
-              <MeScreen isActive={isMeActive} />
+            <HomeScreen 
+              translateY={videoTranslateY}
+              currentVideoIndex={videoCurrentIndex}
+              onVideoChange={handleVideoChange}
+              isActive={activePageIndex === 0}
+              videoHeight={videoHeight}
+              layoutReady={isReady}
+              pageWidth={layoutWidth}
+              onUserPress={handleUserPress}
+            />
+              <InspirationScreen isActive={activePageIndex === 1} />
+              <View style={{ width: layoutWidth, height: pageHeight, backgroundColor: '#000' }} />
+              <NotificationsScreen isActive={activePageIndex === 3} />
+              <View style={{ width: layoutWidth, height: pageHeight, backgroundColor: '#000' }} />
             </MainPager>
-          </GestureDetector>
+            {/* Create Screen - Full screen overlay */}
+            {activePageIndex === 2 && (
+              <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 10 }}>
+                <CreateScreen isActive={true} onClose={() => handleTabPress(0)} />
+              </View>
+            )}
+            {/* Me Screen - Full screen overlay */}
+            {activePageIndex === 4 && (
+              <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 10 }}>
+                <MeScreen 
+                  isActive={true} 
+                  onBackPress={() => handleTabPress(0)}
+                />
+              </View>
+            )}
+            {/* User Profile Screen - Full screen overlay */}
+            {showUserProfile && (
+              <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 15 }}>
+                <UserProfileScreen 
+                  isActive={true} 
+                  onBackPress={handleCloseUserProfile}
+                  userId={selectedUserId || undefined}
+                />
+              </View>
+            )}
+          </>
         )}
         <StatusBar style="light" translucent={Platform.OS === 'android'} hidden={false} />
-      </View>
+        {/* Bottom Tab Bar - Hidden on Create and Me screens */}
+        {activePageIndex !== 2 && activePageIndex !== 4 && (
+          <View style={[styles.tabBar, { height: 48 + (insets.bottom || 12) }]} onLayout={handleNavbarLayout}>
+          {tabs.map((tab) => {
+            const isActive = activePageIndex === tab.index;
+            return (
+              <TouchableOpacity
+                key={tab.key}
+                style={styles.tabItem}
+                onPress={() => handleTabPress(tab.index)}
+                activeOpacity={0.7}
+              >
+                <Ionicons
+                  name={tab.icon as any}
+                  size={24}
+                  color={isActive ? '#fff' : '#888'}
+                />
+                <Text style={[styles.tabLabel, { color: isActive ? '#fff' : '#888' }]}>
+                  {tab.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+          </View>
+        )}
+          </View>
     </GestureHandlerRootView>
   );
 }
@@ -220,8 +242,30 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#000',
     overflow: 'hidden',
-    marginTop: 0,
-    paddingTop: 0,
+  },
+  tabBar: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    backgroundColor: 'rgba(0,0,0,0.75)',
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.1)',
+  },
+  tabItem: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 3,
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+  },
+  tabLabel: {
+    fontSize: 9,
+    fontWeight: '400',
   },
 });
 

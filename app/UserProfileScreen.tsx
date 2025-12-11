@@ -9,6 +9,8 @@ import {
   TouchableOpacity,
   View,
   Animated,
+  Alert,
+  Modal,
 } from 'react-native';
 import { ScrollView } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -18,15 +20,18 @@ const GRID_COLUMNS = 3;
 const GRID_GAP = 2;
 const GRID_ITEM_WIDTH = (SCREEN_WIDTH - (GRID_GAP * (GRID_COLUMNS - 1))) / GRID_COLUMNS;
 
-interface MeScreenProps {
+interface UserProfileScreenProps {
   isActive?: boolean;
   onBackPress?: () => void;
+  userId?: string; // For fetching user data
 }
 
-export default function MeScreen({ isActive = false, onBackPress }: MeScreenProps) {
+export default function UserProfileScreen({ isActive = false, onBackPress, userId }: UserProfileScreenProps) {
   const insets = useSafeAreaInsets();
-  const [activeTab, setActiveTab] = useState<'videos' | 'saved'>('videos');
+  const [activeTab, setActiveTab] = useState<'videos' | 'private'>('videos');
   const [activeProfileIndex, setActiveProfileIndex] = useState(1);
+  const [showReportMenu, setShowReportMenu] = useState(false);
+  const [isFollowing, setIsFollowing] = useState(false);
   const tabIndicatorPosition = useRef(new Animated.Value(0)).current;
   const contentPosition = useRef(new Animated.Value(0)).current;
 
@@ -46,34 +51,43 @@ export default function MeScreen({ isActive = false, onBackPress }: MeScreenProp
   }, [activeTab]);
 
   const user = {
-    username: 'johndoe',
-    fullName: 'John Doe',
-    bio: 'Digital Creator 📸\nSharing my creative journey',
+    username: 'janedoe',
+    fullName: 'Jane Doe',
+    bio: 'Travel enthusiast 🌍 Photographer 📷',
     avatars: [
-      'https://i.pravatar.cc/300?img=1',
-      'https://i.pravatar.cc/300?img=11',
-      'https://i.pravatar.cc/300?img=12',
+      'https://i.pravatar.cc/300?img=5',
+      'https://i.pravatar.cc/300?img=15',
+      'https://i.pravatar.cc/300?img=25',
     ],
-    skills: ['Photography', 'Travel', 'Adventure'],
-    following: 340,
-    followers: 1250,
-    videos: 8900,
+    skills: ['Travel', 'Photography', 'Food'],
+    following: 520,
+    followers: 2840,
+    videos: 12300,
   };
 
   const videos = useMemo(() => Array.from({ length: 12 }, (_, i) => ({
     id: `video-${i + 1}`,
-    thumbnail: `https://picsum.photos/400/600?random=${i + 1}`,
+    thumbnail: `https://picsum.photos/400/600?random=${i + 50}`,
     views: Math.floor(Math.random() * 100000) + 1000,
   })), []);
 
-  const savedVideos = useMemo(() => Array.from({ length: 9 }, (_, i) => ({
-    id: `saved-${i + 1}`,
-    thumbnail: `https://picsum.photos/400/600?random=${i + 20}`,
+  const privateVideos = useMemo(() => Array.from({ length: 6 }, (_, i) => ({
+    id: `private-${i + 1}`,
+    thumbnail: `https://picsum.photos/400/600?random=${i + 70}`,
     views: Math.floor(Math.random() * 50000) + 500,
   })), []);
 
   const changeProfile = (index: number) => {
     setActiveProfileIndex(index);
+  };
+
+  const handleReport = () => {
+    setShowReportMenu(false);
+    Alert.alert('Report', 'This user has been reported.');
+  };
+
+  const handleShare = () => {
+    Alert.alert('Share', 'Share this profile');
   };
 
   const renderVideoItem = (totalLength: number) => ({ item, index }: { item: typeof videos[0]; index: number }) => {
@@ -112,8 +126,8 @@ export default function MeScreen({ isActive = false, onBackPress }: MeScreenProp
           </TouchableOpacity>
           <Text style={styles.headerUsername}>@{user.username}</Text>
         </View>
-        <TouchableOpacity style={styles.headerButton}>
-          <Ionicons name="settings-outline" size={24} color="#fff" />
+        <TouchableOpacity style={styles.headerButton} onPress={() => setShowReportMenu(true)}>
+          <Ionicons name="menu-outline" size={24} color="#fff" />
         </TouchableOpacity>
       </View>
 
@@ -142,7 +156,6 @@ export default function MeScreen({ isActive = false, onBackPress }: MeScreenProp
               );
             })}
           </View>
-
 
           {/* Full Name */}
           <Text style={styles.fullName}>{user.fullName}</Text>
@@ -179,14 +192,18 @@ export default function MeScreen({ isActive = false, onBackPress }: MeScreenProp
 
           {/* Action Buttons */}
           <View style={styles.actionButtons}>
-            <TouchableOpacity style={styles.actionButton}>
-              <Text style={styles.actionButtonText}>Edit profile</Text>
+            <TouchableOpacity 
+              style={[styles.actionButton, !isFollowing && styles.followButtonActive]}
+              onPress={() => setIsFollowing(!isFollowing)}
+            >
+              <Text style={[styles.actionButtonText, !isFollowing && styles.followButtonTextActive]}>
+                {isFollowing ? 'Followed' : 'Follow'}
+              </Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.actionButton}>
-              <Text style={styles.actionButtonText}>Invite</Text>
+            <TouchableOpacity style={styles.actionButton} onPress={handleShare}>
+              <Text style={styles.actionButtonText}>Share</Text>
             </TouchableOpacity>
           </View>
-
         </View>
 
         {/* Tabs */}
@@ -199,9 +216,9 @@ export default function MeScreen({ isActive = false, onBackPress }: MeScreenProp
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.tab}
-            onPress={() => setActiveTab('saved')}
+            onPress={() => setActiveTab('private')}
           >
-            <Ionicons name="bookmark" size={22} color={activeTab === 'saved' ? '#fff' : '#666'} />
+            <Ionicons name="lock-closed" size={22} color={activeTab === 'private' ? '#fff' : '#666'} />
           </TouchableOpacity>
           {/* Animated indicator */}
           <Animated.View
@@ -242,8 +259,8 @@ export default function MeScreen({ isActive = false, onBackPress }: MeScreenProp
           </View>
           <View style={styles.gridPage}>
             <FlatList
-              data={savedVideos}
-              renderItem={renderVideoItem(savedVideos.length)}
+              data={privateVideos}
+              renderItem={renderVideoItem(privateVideos.length)}
               keyExtractor={(item) => item.id}
               numColumns={GRID_COLUMNS}
               scrollEnabled={false}
@@ -252,6 +269,27 @@ export default function MeScreen({ isActive = false, onBackPress }: MeScreenProp
           </View>
         </Animated.View>
       </ScrollView>
+
+      {/* Report Menu Modal */}
+      <Modal
+        visible={showReportMenu}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowReportMenu(false)}
+      >
+        <TouchableOpacity 
+          style={styles.modalOverlay} 
+          activeOpacity={1} 
+          onPress={() => setShowReportMenu(false)}
+        >
+          <View style={styles.reportMenu}>
+            <TouchableOpacity style={styles.reportItem} onPress={handleReport}>
+              <Ionicons name="flag-outline" size={20} color="#ff6b6b" />
+              <Text style={styles.reportText}>Bildir</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 }
@@ -282,6 +320,8 @@ const styles = StyleSheet.create({
   actionButtons: { flexDirection: 'row', gap: 8, width: '100%', marginTop: 10 },
   actionButton: { flex: 1, paddingVertical: 10, borderRadius: 8, backgroundColor: '#1a1a1a', alignItems: 'center', justifyContent: 'center' },
   actionButtonText: { fontSize: 14, fontWeight: '600', color: '#fff' },
+  followButtonActive: { backgroundColor: 'rgba(255, 255, 255, 0.35)' },
+  followButtonTextActive: { color: '#fff' },
   tabs: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#1a1a1a', marginTop: 2, position: 'relative' },
   tab: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 12, paddingBottom: 5 },
   tabIndicator: { 
@@ -298,5 +338,10 @@ const styles = StyleSheet.create({
   videoItem: { width: GRID_ITEM_WIDTH, height: GRID_ITEM_WIDTH * 1.3, backgroundColor: '#1a1a1a' },
   videoThumbnail: { width: '100%', height: '100%' },
   viewsOverlay: { position: 'absolute', bottom: 4, left: 4, flexDirection: 'row', alignItems: 'center', gap: 4 },
-  viewsText: { color: '#fff', fontSize: 11, fontWeight: '700', textShadowColor: 'rgba(0, 0, 0, 0.75)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 3 },
+  viewsText: { color: '#fff', fontSize: 11, fontWeight: '700' },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.7)', justifyContent: 'flex-end' },
+  reportMenu: { backgroundColor: '#1a1a1a', borderTopLeftRadius: 16, borderTopRightRadius: 16, paddingVertical: 20 },
+  reportItem: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 20, paddingVertical: 16 },
+  reportText: { fontSize: 16, fontWeight: '600', color: '#ff6b6b' },
 });
+

@@ -26,7 +26,8 @@
       "predictiveBackGestureEnabled": false,
       "permissions": [
         "CAMERA",
-        "RECORD_AUDIO"
+        "RECORD_AUDIO",
+        "WAKE_LOCK"
       ]
     },
     "web": {
