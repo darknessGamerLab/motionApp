@@ -25,6 +25,25 @@ import MeScreen from './MeScreen';
 import InspirationScreen from './InspirationScreen';
 import NotificationsScreen from './NotificationsScreen';
 import UserProfileScreen from './UserProfileScreen';
+import VideoDetailsScreen from './VideoDetailsScreen';
+
+// Home feed video tipi
+interface FeedVideo {
+  id: string;
+  uri: string;
+  user: {
+    id: string;
+    username: string;
+    avatar?: string;
+  };
+  description: string;
+  soundName: string;
+  likes: number;
+  comments: number;
+  shares: number;
+  isLiked: boolean;
+  isSaved: boolean;
+}
 
 /**
  * MainLayout - TikTok benzeri layout
@@ -46,6 +65,11 @@ export default function MainLayout() {
   // User profile overlay
   const [showUserProfile, setShowUserProfile] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
+
+  // Recorded video -> details overlay
+  const [pendingVideoUri, setPendingVideoUri] = useState<string | null>(null);
+  const [showVideoDetails, setShowVideoDetails] = useState(false);
+  const [publishedVideos, setPublishedVideos] = useState<FeedVideo[]>([]);
   
   // MainPager shared values
   const mainTranslateX = useSharedValue(0);
@@ -168,11 +192,14 @@ export default function MainLayout() {
               translateY={videoTranslateY}
               currentVideoIndex={videoCurrentIndex}
               onVideoChange={handleVideoChange}
-              isActive={activePageIndex === 0}
+              // VideoDetailsScreen veya başka overlay açıkken Home feed pasif olsun (ses kesilsin)
+              isActive={activePageIndex === 0 && !showVideoDetails && !showUserProfile}
               videoHeight={videoHeight}
               layoutReady={isReady}
               pageWidth={layoutWidth}
               onUserPress={handleUserPress}
+              // Yayınlanan videolar varsa onları, yoksa default sample'ları kullan
+              videos={publishedVideos.length > 0 ? publishedVideos : undefined}
             />
               <InspirationScreen isActive={activePageIndex === 1} />
               <View style={{ width: layoutWidth, height: pageHeight, backgroundColor: '#000' }} />
@@ -182,7 +209,15 @@ export default function MainLayout() {
             {/* Create Screen - Full screen overlay */}
             {activePageIndex === 2 && (
               <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 10 }}>
-                <CreateScreen isActive={true} onClose={() => handleTabPress(0)} />
+                <CreateScreen
+                  isActive={true}
+                  onClose={() => handleTabPress(0)}
+                  onVideoRecorded={(uri) => {
+                    setPendingVideoUri(uri);
+                    setShowVideoDetails(true);
+                    handleTabPress(0);
+                  }}
+                />
               </View>
             )}
             {/* Me Screen - Full screen overlay */}
@@ -201,6 +236,47 @@ export default function MainLayout() {
                   isActive={true} 
                   onBackPress={handleCloseUserProfile}
                   userId={selectedUserId || undefined}
+                />
+              </View>
+            )}
+            {/* Video Details Screen - Full screen overlay */}
+            {pendingVideoUri && showVideoDetails && (
+              <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 12 }}>
+                <VideoDetailsScreen
+                  videoUri={pendingVideoUri}
+                  onClose={() => {
+                    setShowVideoDetails(false);
+                    setPendingVideoUri(null);
+                  }}
+                  onPublish={({ videoUri, caption, category }) => {
+                    const description = caption
+                      ? `${caption} [${category}]`
+                      : `[${category}]`;
+
+                    const newVideo: FeedVideo = {
+                      id: `new-${Date.now()}`,
+                      uri: videoUri,
+                      user: {
+                        id: 'current-user',
+                        username: 'you',
+                        avatar: 'https://i.pravatar.cc/150?img=1',
+                      },
+                      description,
+                      soundName: 'Original Sound',
+                      likes: 0,
+                      comments: 0,
+                      shares: 0,
+                      isLiked: false,
+                      isSaved: false,
+                    };
+
+                    // Yeni videoyu feed'in en başına ekle
+                    setPublishedVideos((prev) => [newVideo, ...prev]);
+
+                    setShowVideoDetails(false);
+                    setPendingVideoUri(null);
+                    handleTabPress(0);
+                  }}
                 />
               </View>
             )}

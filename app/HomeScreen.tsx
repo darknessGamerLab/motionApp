@@ -99,6 +99,7 @@ interface HomeScreenProps {
   layoutReady: boolean;
   pageWidth: number;
   onUserPress?: (userId: string, username: string) => void;
+  videos?: VideoData[]; // dışarıdan feed verebilmek için
 }
 
 // Like Animation
@@ -306,7 +307,13 @@ export default function HomeScreen({
   layoutReady,
   pageWidth,
   onUserPress,
+  videos,
 }: HomeScreenProps) {
+  // Dışarıdan video listesi geldiyse onu kullan, yoksa default SAMPLE_VIDEOS
+  const displayVideos = useMemo(
+    () => (videos && videos.length > 0 ? videos : SAMPLE_VIDEOS),
+    [videos]
+  );
   const [currentIndex, setCurrentIndex] = useState(0);
   const videoPagerRef = useRef<VerticalVideoPagerRef>(null);
   const videoOverlayLikeRef = useRef<((x?: number, y?: number) => void) | null>(null);
@@ -348,7 +355,7 @@ export default function HomeScreen({
           event.velocityY,
           translateY,
           currentVideoIndex,
-          SAMPLE_VIDEOS.length,
+          displayVideos.length,
           videoHeight
         );
       })
@@ -358,12 +365,12 @@ export default function HomeScreen({
           event.velocityY,
           translateY,
           currentVideoIndex,
-          SAMPLE_VIDEOS.length,
+          displayVideos.length,
           videoHeight,
           onVideoChange
         );
       });
-  }, [videoHeight, translateY, currentVideoIndex, onVideoChange]);
+  }, [videoHeight, translateY, currentVideoIndex, onVideoChange, displayVideos.length]);
 
   const doubleTap = useMemo(() => {
     return Gesture.Tap()
@@ -390,7 +397,7 @@ export default function HomeScreen({
     [panGesture, doubleTap, singleTap]
   );
 
-  const currentVideo = SAMPLE_VIDEOS[currentIndex] || SAMPLE_VIDEOS[0];
+  const currentVideo = displayVideos[currentIndex] || displayVideos[0];
 
   if (!layoutReady || videoHeight <= 0 || pageWidth <= 0) {
     return <View style={styles.container} />;
@@ -402,7 +409,7 @@ export default function HomeScreen({
         <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
           <VerticalVideoPager
             ref={videoPagerRef}
-            videos={SAMPLE_VIDEOS.map(v => ({ id: v.id, uri: v.uri }))}
+            videos={displayVideos.map(v => ({ id: v.id, uri: v.uri }))}
             initialIndex={0}
             onVideoChange={handleVideoChange}
             translateY={translateY}

@@ -21,6 +21,7 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 interface CreateScreenProps {
   isActive?: boolean;
   onClose?: () => void;
+  onVideoRecorded?: (uri: string) => void;
 }
 
 // Progress Circle for Recording
@@ -55,7 +56,7 @@ function ProgressCircle({ progress }: { progress: number }) {
   );
 }
 
-export default function CreateScreen({ isActive = false, onClose }: CreateScreenProps) {
+export default function CreateScreen({ isActive = false, onClose, onVideoRecorded }: CreateScreenProps) {
   const insets = useSafeAreaInsets();
   const [permission, requestPermission] = useCameraPermissions();
   const [facing, setFacing] = useState<CameraType>('back');
@@ -65,6 +66,9 @@ export default function CreateScreen({ isActive = false, onClose }: CreateScreen
   const [recentPhoto, setRecentPhoto] = useState<string | null>(null);
   const cameraRef = useRef<CameraView>(null);
   const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const recordingPromiseRef = useRef<Promise<{ uri: string }> | null>(null);
+  const recordingStartedRef = useRef<boolean>(false);
+  const stoppedManuallyRef = useRef<boolean>(false);
   const scaleAnim = useRef(new Animated.Value(1)).current;
 
   const MAX_RECORDING_TIME = 60;
@@ -112,20 +116,13 @@ export default function CreateScreen({ isActive = false, onClose }: CreateScreen
     );
   }
 
-  const takePicture = async () => {
-    if (!cameraRef.current || isRecording) return;
+  const toggleRecording = async () => {
+    if (!cameraRef.current) return;
 
-    Animated.sequence([
-      Animated.timing(scaleAnim, { toValue: 0.9, duration: 100, useNativeDriver: true }),
-      Animated.timing(scaleAnim, { toValue: 1, duration: 100, useNativeDriver: true }),
-    ]).start();
-
-    try {
-      const photo = await cameraRef.current.takePictureAsync({ quality: 0.9 });
-      console.log('Photo:', photo.uri);
-      Alert.alert('Success', 'Photo captured!');
-    } catch (error) {
-      console.error(error);
+    if (isRecording) {
+      await stopRecording();
+    } else {
+      await startRecording();
     }
   };
 
@@ -134,6 +131,8 @@ export default function CreateScreen({ isActive = false, onClose }: CreateScreen
 
     setIsRecording(true);
     setRecordingTime(0);
+    recordingStartedRef.current = false;
+    stoppedManuallyRef.current = false;
 
     recordingTimerRef.current = setInterval(() => {
       setRecordingTime(prev => {
@@ -146,26 +145,106 @@ export default function CreateScreen({ isActive = false, onClose }: CreateScreen
     }, 100);
 
     try {
-      await cameraRef.current.recordAsync({ maxDuration: MAX_RECORDING_TIME });
-    } catch (error) {
-      console.error(error);
+      // Start recording and store the promise (don't await it yet)
+      // NOT: maxDuration göndermiyoruz, sadece manuel durdurma ile bitecek
+      recordingPromiseRef.current = cameraRef.current.recordAsync();
+      
+      // Mark that recording has started after a short delay
+      setTimeout(() => {
+        recordingStartedRef.current = true;
+      }, 200);
+
+      // Handle the recording promise in the background (auto-stop case)
+      recordingPromiseRef.current
+        .then((result) => {
+          if (result && result.uri && recordingStartedRef.current) {
+            console.log('Video recorded (auto):', result.uri);
+            // Sadece otomatik bittiğinde (manuel stop değilse) details ekranına git
+            if (!stoppedManuallyRef.current && onVideoRecorded) {
+              onVideoRecorded(result.uri);
+            }
+          }
+        })
+        .catch((error: any) => {
+          // Only log/show error if recording actually started and wasn't manually stopped
+          if (recordingStartedRef.current && isRecording) {
+            // Ignore "stopped before data" errors - these are expected when stopping early
+            if (!error?.message?.includes('stopped before')) {
+              console.error('Recording error:', error);
+            }
+          }
+        })
+        .finally(() => {
+          // Clean up only if this wasn't a manual stop
+          if (!isRecording) {
+            setIsRecording(false);
+            if (recordingTimerRef.current) {
+              clearInterval(recordingTimerRef.current);
+              recordingTimerRef.current = null;
+            }
+            setRecordingTime(0);
+            recordingPromiseRef.current = null;
+            recordingStartedRef.current = false;
+          }
+        });
+    } catch (error: any) {
+      console.error('Failed to start recording:', error);
       setIsRecording(false);
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current);
+        recordingTimerRef.current = null;
+      }
+      setRecordingTime(0);
+      recordingPromiseRef.current = null;
+      recordingStartedRef.current = false;
     }
   };
 
-  const stopRecording = () => {
+  const stopRecording = async () => {
     if (!cameraRef.current || !isRecording) return;
 
-    cameraRef.current.stopRecording();
-    setIsRecording(false);
+    // Bu çağrı manuel durdurma
+    stoppedManuallyRef.current = true;
 
-    if (recordingTimerRef.current) {
-      clearInterval(recordingTimerRef.current);
-      recordingTimerRef.current = null;
+    // Wait a bit if recording hasn't started yet
+    if (!recordingStartedRef.current) {
+      await new Promise(resolve => setTimeout(resolve, 300));
     }
 
-    setRecordingTime(0);
-    Alert.alert('Success', 'Video recorded!');
+    try {
+      // Stop the recording
+      cameraRef.current.stopRecording();
+      
+      // Wait for the recording promise to resolve (it will reject with "stopped before" if too early)
+      if (recordingPromiseRef.current) {
+        try {
+          const result = await recordingPromiseRef.current;
+          if (result && result.uri) {
+            console.log('Video recorded (manual):', result.uri);
+            if (onVideoRecorded) {
+              onVideoRecorded(result.uri);
+            }
+          }
+        } catch (error: any) {
+          // Silently ignore "stopped before data" errors - these are expected for very short recordings
+          if (!error?.message?.includes('stopped before')) {
+            console.error('Recording error:', error);
+          }
+        }
+      }
+    } catch (error: any) {
+      // Ignore stop errors - they're usually harmless
+      console.log('Stop recording:', error?.message || 'Recording stopped');
+    } finally {
+      setIsRecording(false);
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current);
+        recordingTimerRef.current = null;
+      }
+      setRecordingTime(0);
+      recordingPromiseRef.current = null;
+      recordingStartedRef.current = false;
+    }
   };
 
   const openGallery = async () => {
@@ -182,7 +261,15 @@ export default function CreateScreen({ isActive = false, onClose }: CreateScreen
   return (
     <View style={styles.container}>
       {isActive ? (
-        <CameraView ref={cameraRef} style={styles.camera} facing={facing} flash={flash} mode="picture">
+        <View style={styles.cameraWrapper}>
+          <CameraView
+            ref={cameraRef}
+            style={styles.camera}
+            facing={facing}
+            flash={flash}
+            mode="video"
+          />
+
           {/* Top Bar */}
           <View style={[styles.topBar, { paddingTop: insets.top + 8 }]}>
             <TouchableOpacity style={styles.topButton} onPress={onClose}>
@@ -233,15 +320,14 @@ export default function CreateScreen({ isActive = false, onClose }: CreateScreen
               <Animated.View style={[styles.captureOuter, { transform: [{ scale: scaleAnim }] }]}>
                 <TouchableOpacity
                   style={[styles.captureButton, isRecording && styles.captureButtonRecording]}
-                  onPress={takePicture}
-                  onLongPress={startRecording}
-                  onPressOut={stopRecording}
+                  onPress={toggleRecording}
                   activeOpacity={0.9}
                 >
                   <View style={styles.captureInner} />
                 </TouchableOpacity>
               </Animated.View>
-              {!isRecording && <Text style={styles.captureHint}>Tap or Hold</Text>}
+              {!isRecording && <Text style={styles.captureHint}>Tap to Record</Text>}
+              {isRecording && <Text style={styles.captureHint}>Tap to Stop</Text>}
             </View>
 
             {/* Flip Camera */}
@@ -252,7 +338,7 @@ export default function CreateScreen({ isActive = false, onClose }: CreateScreen
               <Ionicons name="camera-reverse-outline" size={36} color="#fff" />
             </TouchableOpacity>
           </View>
-        </CameraView>
+        </View>
       ) : (
         <View style={styles.inactiveView}>
           <Ionicons name="camera-outline" size={80} color="#666" />
@@ -265,7 +351,8 @@ export default function CreateScreen({ isActive = false, onClose }: CreateScreen
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
-  camera: { flex: 1 },
+  cameraWrapper: { flex: 1 },
+  camera: { ...StyleSheet.absoluteFillObject },
   permissionContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 40 },
   permissionTitle: { fontSize: 26, fontWeight: '700', color: '#fff', marginTop: 24, marginBottom: 12 },
   permissionText: { fontSize: 16, color: '#ccc', textAlign: 'center', marginBottom: 32, lineHeight: 24 },
