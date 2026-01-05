@@ -59,6 +59,21 @@ export default function MainLayout() {
   const [tab, setTab] = useState(0);
   const [userProfileOpen, setUserProfileOpen] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
+  const [homeRefreshKey, setHomeRefreshKey] = useState(0);
+
+  // Home butonuna tıklanınca (zaten Home'dayken) feed'i yenile
+  const handleHomePress = useCallback(() => {
+    if (tab === 0 && !userProfileOpen) {
+      // Zaten Home'da - videoları karıştır ve en üste scroll
+      setVideos(prev => {
+        const shuffled = [...prev].sort(() => Math.random() - 0.5);
+        return shuffled;
+      });
+      setHomeRefreshKey(k => k + 1);
+    } else {
+      setTab(0);
+    }
+  }, [tab, userProfileOpen]);
 
   // User profile - state ile yönet
   const initialProfile = useMemo(() => {
@@ -256,6 +271,7 @@ export default function MainLayout() {
             onVideoSaved={onVideoSaved}
             onVideoLiked={onVideoLiked}
             onVideoCommented={onVideoCommented}
+            refreshKey={homeRefreshKey}
           />
         </TabScreen>
 
@@ -318,7 +334,7 @@ export default function MainLayout() {
       {/* Navbar */}
       {!isFullscreen && (
         <View style={styles.navbar}>
-          <TabBtn icon={tab === 0 ? 'home' : 'home-outline'} active={tab === 0} onPress={() => setTab(0)} />
+          <TabBtn icon={tab === 0 ? 'home' : 'home-outline'} active={tab === 0} onPress={handleHomePress} />
           <TabBtn icon={tab === 1 ? 'search' : 'search-outline'} active={tab === 1} onPress={() => setTab(1)} />
           <TabBtn icon="add" active={false} isCreate onPress={() => setTab(2)} />
           <TabBtn icon={tab === 3 ? 'heart' : 'heart-outline'} active={tab === 3} onPress={() => setTab(3)} />

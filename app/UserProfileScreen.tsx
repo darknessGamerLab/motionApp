@@ -309,6 +309,8 @@ export default function UserProfileScreen({
 }
 
 // Video Player Modal for User Profile
+const COMMENT_INPUT_HEIGHT = 70;
+
 function UserVideoPlayerModal({
   visible,
   videos,
@@ -328,7 +330,7 @@ function UserVideoPlayerModal({
 }) {
   const [idx, setIdx] = useState(startIndex);
   const [showComments, setShowComments] = useState(false);
-  const h = SCREEN_HEIGHT;
+  const videoHeight = SCREEN_HEIGHT - COMMENT_INPUT_HEIGHT;
 
   useEffect(() => {
     setIdx(startIndex);
@@ -339,58 +341,64 @@ function UserVideoPlayerModal({
   }).current;
 
   const viewConfig = useRef({ itemVisiblePercentThreshold: 60 }).current;
-  const getLayout = useCallback((_: any, i: number) => ({ length: h - 70, offset: (h - 70) * i, index: i }), [h]);
+  const getLayout = useCallback((_: any, i: number) => ({ length: videoHeight, offset: videoHeight * i, index: i }), [videoHeight]);
   const keyExt = useCallback((item: VideoItem) => item.id, []);
 
   const currentVideo = videos[idx];
 
   const renderItem = useCallback(({ item, index }: { item: VideoItem; index: number }) => (
-    <View style={{ height: h - 70 }}>
+    <View style={{ height: videoHeight }}>
       <VideoCard 
         data={item} 
         active={index === idx} 
-        height={h - 70}
+        height={videoHeight}
         onVideoSaved={onVideoSaved}
         onVideoLiked={onVideoLiked}
         onVideoCommented={onVideoCommented}
-        overlayBottomPadding={20}
+        overlayBottomPadding={16}
       />
     </View>
-  ), [idx, h, onVideoSaved, onVideoLiked, onVideoCommented]);
+  ), [idx, videoHeight, onVideoSaved, onVideoLiked, onVideoCommented]);
 
   if (!visible || !videos.length) return null;
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
       <View style={playerStyles.container}>
+        {/* Header - Absolute */}
         <View style={playerStyles.header}>
           <TouchableOpacity style={playerStyles.backBtn} onPress={onClose}>
             <Ionicons name="arrow-back" size={24} color="#fff" />
           </TouchableOpacity>
         </View>
-        <FlatList
-          data={videos}
-          renderItem={renderItem}
-          keyExtractor={keyExt}
-          pagingEnabled
-          showsVerticalScrollIndicator={false}
-          snapToInterval={h - 70}
-          snapToAlignment="start"
-          decelerationRate="fast"
-          disableIntervalMomentum
-          onViewableItemsChanged={onViewChange}
-          viewabilityConfig={viewConfig}
-          getItemLayout={getLayout}
-          removeClippedSubviews
-          initialNumToRender={1}
-          maxToRenderPerBatch={2}
-          windowSize={3}
-          initialScrollIndex={startIndex}
-          onScrollToIndexFailed={() => {}}
-          bounces={false}
-          overScrollMode="never"
-        />
-        {/* Comment Input - Tıklanınca modal aç */}
+
+        {/* Video List */}
+        <View style={{ height: videoHeight }}>
+          <FlatList
+            data={videos}
+            renderItem={renderItem}
+            keyExtractor={keyExt}
+            pagingEnabled
+            showsVerticalScrollIndicator={false}
+            snapToInterval={videoHeight}
+            snapToAlignment="start"
+            decelerationRate="fast"
+            disableIntervalMomentum
+            onViewableItemsChanged={onViewChange}
+            viewabilityConfig={viewConfig}
+            getItemLayout={getLayout}
+            removeClippedSubviews
+            initialNumToRender={1}
+            maxToRenderPerBatch={2}
+            windowSize={3}
+            initialScrollIndex={startIndex}
+            onScrollToIndexFailed={() => {}}
+            bounces={false}
+            overScrollMode="never"
+          />
+        </View>
+
+        {/* Comment Input */}
         <TouchableOpacity 
           style={playerStyles.commentInputContainer}
           activeOpacity={0.9}
@@ -446,14 +454,12 @@ const playerStyles = StyleSheet.create({
     justifyContent: 'center',
   },
   commentInputContainer: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.95)',
-    paddingBottom: 20,
+    height: COMMENT_INPUT_HEIGHT,
+    backgroundColor: '#000',
     paddingHorizontal: 12,
-    paddingTop: 12,
+    justifyContent: 'center',
+    borderTopWidth: 1,
+    borderTopColor: '#1a1a1a',
   },
   commentInputWrap: {
     flexDirection: 'row',

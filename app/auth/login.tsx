@@ -5,6 +5,7 @@ import { router } from 'expo-router';
 import React, { useState } from 'react';
 import {
     ActivityIndicator,
+    Alert,
     KeyboardAvoidingView,
     Platform,
     StyleSheet,
@@ -17,27 +18,52 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function LoginScreen() {
   const insets = useSafeAreaInsets();
-  const { login } = useAuth();
+  const { login, signInWithGoogle, signInWithApple } = useAuth();
   
-  const [emailOrUsername, setEmailOrUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [socialLoading, setSocialLoading] = useState<'google' | 'apple' | null>(null);
   const [error, setError] = useState('');
 
-  const handleLogin = () => {
-    if (!emailOrUsername.trim() || !password.trim()) {
-      setError('Lütfen email/kullanıcı adı ve şifre girin');
+  const handleLogin = async () => {
+    if (!email.trim()) {
+      setError('Lütfen e-posta adresinizi girin');
+      return;
+    }
+    if (!password.trim()) {
+      setError('Lütfen şifrenizi girin');
       return;
     }
 
     setError('');
     setLoading(true);
 
-    // Mock login
-    setTimeout(() => {
-      login(emailOrUsername.trim(), 'individual');
-      setLoading(false);
-    }, 300);
+    const result = await login(email.trim(), password);
+    
+    if (result.error) {
+      setError(result.error);
+    }
+    
+    setLoading(false);
+  };
+
+  const handleGoogleSignIn = async () => {
+    setSocialLoading('google');
+    const result = await signInWithGoogle();
+    if (result.error) {
+      Alert.alert('Hata', result.error);
+    }
+    setSocialLoading(null);
+  };
+
+  const handleAppleSignIn = async () => {
+    setSocialLoading('apple');
+    const result = await signInWithApple();
+    if (result.error) {
+      Alert.alert('Hata', result.error);
+    }
+    setSocialLoading(null);
   };
 
   return (
@@ -58,15 +84,16 @@ export default function LoginScreen() {
 
         <View style={styles.form}>
           <View style={styles.inputContainer}>
-            <Ionicons name="person-outline" size={20} color={Colors.textMuted} style={styles.inputIcon} />
+            <Ionicons name="mail-outline" size={20} color={Colors.textMuted} style={styles.inputIcon} />
             <TextInput
               style={styles.input}
-              placeholder="Email veya kullanıcı adı"
+              placeholder="E-posta adresi"
               placeholderTextColor={Colors.textMuted}
-              value={emailOrUsername}
-              onChangeText={setEmailOrUsername}
+              value={email}
+              onChangeText={setEmail}
               autoCapitalize="none"
               autoComplete="email"
+              keyboardType="email-address"
             />
           </View>
 
@@ -109,13 +136,33 @@ export default function LoginScreen() {
           </View>
 
           <View style={styles.socialButtons}>
-            <TouchableOpacity style={styles.socialButton}>
-              <Ionicons name="logo-google" size={20} color={Colors.text} />
-              <Text style={styles.socialButtonText}>Google</Text>
+            <TouchableOpacity 
+              style={[styles.socialButton, socialLoading === 'google' && styles.socialButtonDisabled]}
+              onPress={handleGoogleSignIn}
+              disabled={socialLoading !== null}
+            >
+              {socialLoading === 'google' ? (
+                <ActivityIndicator size="small" color={Colors.text} />
+              ) : (
+                <>
+                  <Ionicons name="logo-google" size={20} color={Colors.text} />
+                  <Text style={styles.socialButtonText}>Google</Text>
+                </>
+              )}
             </TouchableOpacity>
-            <TouchableOpacity style={styles.socialButton}>
-              <Ionicons name="logo-apple" size={20} color={Colors.text} />
-              <Text style={styles.socialButtonText}>Apple</Text>
+            <TouchableOpacity 
+              style={[styles.socialButton, socialLoading === 'apple' && styles.socialButtonDisabled]}
+              onPress={handleAppleSignIn}
+              disabled={socialLoading !== null}
+            >
+              {socialLoading === 'apple' ? (
+                <ActivityIndicator size="small" color={Colors.text} />
+              ) : (
+                <>
+                  <Ionicons name="logo-apple" size={20} color={Colors.text} />
+                  <Text style={styles.socialButtonText}>Apple</Text>
+                </>
+              )}
             </TouchableOpacity>
           </View>
 
@@ -247,6 +294,9 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.card,
     borderWidth: 1,
     borderColor: Colors.border,
+  },
+  socialButtonDisabled: {
+    opacity: 0.6,
   },
   socialButtonText: {
     color: Colors.text,

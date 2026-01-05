@@ -5,6 +5,7 @@ import { Video, ResizeMode } from 'expo-av';
 import React, { useState, useRef, useMemo } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -46,9 +47,15 @@ export default function AddVideoDetailsScreen({
   };
 
   const handlePublish = () => {
+    // Topic zorunlu kontrolü
+    if (!selectedTopic) {
+      Alert.alert('Konu Seçimi Zorunlu', 'Lütfen videonuz için bir konu seçin.');
+      return;
+    }
+    
     setIsPublishing(true);
     // Topic'i talent ID olarak gönder, CreateScreen'de name'e çevrilecek
-    const topicTag = selectedTopic ? [selectedTopic] : [];
+    const topicTag = [selectedTopic];
     setTimeout(() => {
       onPublish(description, topicTag);
       setIsPublishing(false);

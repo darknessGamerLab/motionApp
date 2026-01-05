@@ -7,9 +7,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { FlashList } from '@shopify/flash-list';
 import { ResizeMode, Video } from 'expo-av';
 import * as Haptics from 'expo-haptics';
+import { LinearGradient } from 'expo-linear-gradient';
 import React, { useState, useMemo, useCallback, useRef } from 'react';
 import {
-    Animated,
     Dimensions,
     FlatList,
     Modal,
@@ -57,7 +57,7 @@ function VideoThumbnailCard({
   return (
     <TouchableOpacity 
       style={styles.videoCard} 
-      activeOpacity={0.9}
+      activeOpacity={0.95}
       onPress={onPress}
     >
       <Video
@@ -68,21 +68,23 @@ function VideoThumbnailCard({
         isMuted
         pointerEvents="none"
       />
-      <View style={styles.videoOverlay}>
-        <View style={styles.videoViews}>
-          <Ionicons name="play" size={10} color="#fff" />
-          <Text style={styles.videoViewsText}>{formatNumber(video.likes)}</Text>
-        </View>
-      </View>
-      <View style={styles.userBadge}>
-        <Text style={styles.userBadgeText}>@{video.user.username.slice(0, 8)}</Text>
+      {/* Bottom gradient */}
+      <LinearGradient
+        colors={['transparent', 'rgba(0,0,0,0.6)']}
+        style={styles.videoGradient}
+        pointerEvents="none"
+      />
+      {/* Stats */}
+      <View style={styles.videoStats}>
+        <Ionicons name="play" size={11} color="#fff" />
+        <Text style={styles.videoStatsText}>{formatNumber(video.likes)}</Text>
       </View>
     </TouchableOpacity>
   );
 }
 
-// Section component with horizontal video scroll
-function ContentSection({ 
+// Section component with horizontal video scroll - Modern TikTok style
+const ContentSection = React.memo(({ 
   title, 
   videos, 
   onVideoPress,
@@ -92,37 +94,43 @@ function ContentSection({
   videos: VideoItem[];
   onVideoPress: (videos: VideoItem[], index: number) => void;
   onSeeAll: (title: string, videos: VideoItem[]) => void;
-}) {
+}) => {
+  const displayVideos = useMemo(() => videos.slice(0, 10), [videos]);
+  
+  const handleSeeAll = useCallback(() => onSeeAll(title, videos), [onSeeAll, title, videos]);
+  
+  const renderItem = useCallback(({ item, index }: { item: VideoItem; index: number }) => (
+    <VideoThumbnailCard 
+      video={item} 
+      onPress={() => onVideoPress(videos, index)} 
+    />
+  ), [onVideoPress, videos]);
+
   return (
     <View style={styles.section}>
       <View style={styles.sectionHeader}>
-        <View style={styles.sectionTitleRow}>
-          <Text style={styles.sectionTitleText}>{title}</Text>
-          <Text style={styles.videoCount}>{videos.length} video</Text>
-        </View>
-        <TouchableOpacity onPress={() => onSeeAll(title, videos)}>
-          <Text style={styles.seeAllText}>Tümünü Gör</Text>
+        <Text style={styles.sectionTitle}>{title}</Text>
+        <TouchableOpacity onPress={handleSeeAll} style={styles.seeAllBtn}>
+          <Text style={styles.seeAllText}>Tümü</Text>
+          <Ionicons name="chevron-forward" size={14} color="#888" />
         </TouchableOpacity>
       </View>
       <FlashList
         horizontal
-        data={videos.slice(0, 10)}
-        renderItem={({ item, index }) => (
-          <VideoThumbnailCard 
-            video={item} 
-            onPress={() => onVideoPress(videos, index)} 
-          />
-        )}
+        data={displayVideos}
+        renderItem={renderItem}
         keyExtractor={(item) => item.id}
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.videoCarousel}
-        estimatedItemSize={110}
+        estimatedItemSize={130}
       />
     </View>
   );
-}
+}, (prev, next) => prev.title === next.title && prev.videos.length === next.videos.length);
 
 // Full-screen video player modal with comment input
+const COMMENT_INPUT_HEIGHT = 70;
+
 function VideoPlayerModal({
   visible,
   videos,
@@ -143,7 +151,7 @@ function VideoPlayerModal({
   const flatListRef = useRef<FlatList>(null);
   const [currentIndex, setCurrentIndex] = useState(startIndex);
   const [showComments, setShowComments] = useState(false);
-  const height = H;
+  const videoHeight = H - COMMENT_INPUT_HEIGHT;
 
   const onViewChange = useCallback(({ viewableItems }: any) => {
     if (viewableItems[0]?.index != null) {
@@ -152,55 +160,62 @@ function VideoPlayerModal({
   }, []);
 
   const viewConfig = useRef({ itemVisiblePercentThreshold: 60 }).current;
-  const getLayout = useCallback((_: any, i: number) => ({ length: height - 70, offset: (height - 70) * i, index: i }), [height]);
+  const getLayout = useCallback((_: any, i: number) => ({ length: videoHeight, offset: videoHeight * i, index: i }), [videoHeight]);
 
   const currentVideo = videos[currentIndex];
 
   const renderItem = useCallback(({ item, index }: { item: VideoItem; index: number }) => (
-    <VideoCard 
-      data={item} 
-      active={index === currentIndex} 
-      height={height - 70}
-      onVideoSaved={onVideoSaved}
-      onVideoLiked={onVideoLiked}
-      onVideoCommented={onVideoCommented}
-      overlayBottomPadding={20}
-    />
-  ), [currentIndex, height, onVideoSaved, onVideoLiked, onVideoCommented]);
+    <View style={{ height: videoHeight }}>
+      <VideoCard 
+        data={item} 
+        active={index === currentIndex} 
+        height={videoHeight}
+        onVideoSaved={onVideoSaved}
+        onVideoLiked={onVideoLiked}
+        onVideoCommented={onVideoCommented}
+        overlayBottomPadding={16}
+      />
+    </View>
+  ), [currentIndex, videoHeight, onVideoSaved, onVideoLiked, onVideoCommented]);
 
   if (!visible) return null;
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
       <View style={styles.playerContainer}>
+        {/* Close Button - Absolute */}
         <TouchableOpacity style={styles.closeBtn} onPress={onClose}>
           <Ionicons name="close" size={28} color="#fff" />
         </TouchableOpacity>
 
-        <FlatList
-          ref={flatListRef}
-          data={videos}
-          renderItem={renderItem}
-          keyExtractor={(item) => item.id}
-          pagingEnabled
-          showsVerticalScrollIndicator={false}
-          snapToInterval={height - 70}
-          snapToAlignment="start"
-          decelerationRate="fast"
-          disableIntervalMomentum
-          onViewableItemsChanged={onViewChange}
-          viewabilityConfig={viewConfig}
-          getItemLayout={getLayout}
-          initialScrollIndex={startIndex}
-          removeClippedSubviews
-          initialNumToRender={1}
-          maxToRenderPerBatch={2}
-          windowSize={3}
-          bounces={false}
-          overScrollMode="never"
-          onScrollToIndexFailed={() => {}}
-        />
+        {/* Video List */}
+        <View style={{ height: videoHeight }}>
+          <FlatList
+            ref={flatListRef}
+            data={videos}
+            renderItem={renderItem}
+            keyExtractor={(item) => item.id}
+            pagingEnabled
+            showsVerticalScrollIndicator={false}
+            snapToInterval={videoHeight}
+            snapToAlignment="start"
+            decelerationRate="fast"
+            disableIntervalMomentum
+            onViewableItemsChanged={onViewChange}
+            viewabilityConfig={viewConfig}
+            getItemLayout={getLayout}
+            initialScrollIndex={startIndex}
+            removeClippedSubviews
+            initialNumToRender={1}
+            maxToRenderPerBatch={2}
+            windowSize={3}
+            bounces={false}
+            overScrollMode="never"
+            onScrollToIndexFailed={() => {}}
+          />
+        </View>
 
+        {/* Comment Input */}
         <TouchableOpacity 
           style={styles.commentInputContainer}
           activeOpacity={0.9}
@@ -247,16 +262,6 @@ export default function InspirationScreen({
   const [playerVisible, setPlayerVisible] = useState(false);
   const [playerVideos, setPlayerVideos] = useState<VideoItem[]>([]);
   const [playerStartIndex, setPlayerStartIndex] = useState(0);
-  const tabIndicator = useRef(new Animated.Value(0)).current;
-
-  // Tab animation
-  React.useEffect(() => {
-    Animated.spring(tabIndicator, {
-      toValue: activeTab === 'topics' ? 0 : 1,
-      useNativeDriver: true,
-      friction: 8,
-    }).start();
-  }, [activeTab]);
 
   // Group videos by topic (sistem tarafından belirlenen konular)
   const topicGroups = useMemo(() => {
@@ -300,30 +305,28 @@ export default function InspirationScreen({
       .map(([tag, vids]) => ({ title: tag, videos: vids }));
   }, [videos]);
 
-  // Current groups based on active tab
-  const currentGroups = activeTab === 'topics' ? topicGroups : hashtagGroups;
-
-  // Filter by search
-  const filteredGroups = useMemo(() => {
-    if (!searchQuery.trim()) return currentGroups;
-    
+  // Pre-filtered groups for both tabs - NO dependency on activeTab
+  const filteredTopicGroups = useMemo(() => {
+    if (!searchQuery.trim()) return topicGroups;
     const query = searchQuery.toLowerCase();
-    return currentGroups.filter(g => 
+    return topicGroups.filter(g => 
       g.title.toLowerCase().includes(query) ||
-      g.videos.some(v => 
-        v.user.username.toLowerCase().includes(query) ||
-        v.description.toLowerCase().includes(query)
-      )
+      g.videos.some(v => v.user.username.toLowerCase().includes(query) || v.description.toLowerCase().includes(query))
     );
-  }, [currentGroups, searchQuery]);
+  }, [topicGroups, searchQuery]);
 
-  // All items for quick access
-  const quickAccessItems = useMemo(() => {
-    return currentGroups.slice(0, 8).map(g => ({
-      title: g.title,
-      count: g.videos.length,
-    }));
-  }, [currentGroups]);
+  const filteredHashtagGroups = useMemo(() => {
+    if (!searchQuery.trim()) return hashtagGroups;
+    const query = searchQuery.toLowerCase();
+    return hashtagGroups.filter(g => 
+      g.title.toLowerCase().includes(query) ||
+      g.videos.some(v => v.user.username.toLowerCase().includes(query) || v.description.toLowerCase().includes(query))
+    );
+  }, [hashtagGroups, searchQuery]);
+
+  // Quick access for both tabs - pre-calculated
+  const topicQuickItems = useMemo(() => topicGroups.slice(0, 8).map(g => ({ title: g.title, count: g.videos.length })), [topicGroups]);
+  const hashtagQuickItems = useMemo(() => hashtagGroups.slice(0, 8).map(g => ({ title: g.title, count: g.videos.length })), [hashtagGroups]);
 
   const openVideoPlayer = useCallback((vids: VideoItem[], index: number) => {
     setPlayerVideos(vids);
@@ -335,21 +338,27 @@ export default function InspirationScreen({
     openVideoPlayer(vids, 0);
   }, [openVideoPlayer]);
 
-  const handleQuickPress = useCallback((title: string) => {
-    const group = currentGroups.find(g => g.title === title);
-    if (group) {
-      openVideoPlayer(group.videos, 0);
-    }
-  }, [currentGroups, openVideoPlayer]);
+  const handleTopicQuickPress = useCallback((title: string) => {
+    const group = topicGroups.find(g => g.title === title);
+    if (group) openVideoPlayer(group.videos, 0);
+  }, [topicGroups, openVideoPlayer]);
+
+  const handleHashtagQuickPress = useCallback((title: string) => {
+    const group = hashtagGroups.find(g => g.title === title);
+    if (group) openVideoPlayer(group.videos, 0);
+  }, [hashtagGroups, openVideoPlayer]);
 
   if (videos.length === 0) {
     return (
       <View style={styles.container}>
-        <View style={styles.header}>
-          <Text style={styles.headerTitle}>Keşfet</Text>
+        <View style={styles.searchContainer}>
+          <View style={styles.searchBar}>
+            <Ionicons name="search" size={16} color="#666" />
+            <Text style={{ color: '#555', fontSize: 14 }}>Ara...</Text>
+          </View>
         </View>
         <View style={styles.emptyContainer}>
-          <Ionicons name="compass-outline" size={64} color="#333" />
+          <Ionicons name="compass-outline" size={48} color="#333" />
           <Text style={styles.emptyTitle}>Henüz içerik yok</Text>
           <Text style={styles.emptySubtitle}>İlk videoyu yükleyen sen ol!</Text>
         </View>
@@ -359,97 +368,81 @@ export default function InspirationScreen({
 
   return (
     <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Keşfet</Text>
-      </View>
-
-      {/* Search Bar */}
+      {/* Modern Search Bar - No Header */}
       <View style={styles.searchContainer}>
-        <View style={styles.searchBar}>
-          <Ionicons name="search-outline" size={18} color="#888" />
+        <TouchableOpacity style={styles.searchBar} activeOpacity={0.8}>
+          <Ionicons name="search" size={16} color="#666" />
           <TextInput
             style={styles.searchInput}
-            placeholder={activeTab === 'topics' ? 'Konu ara...' : 'Etiket ara...'}
-            placeholderTextColor="#666"
+            placeholder="Ara..."
+            placeholderTextColor="#555"
             value={searchQuery}
             onChangeText={setSearchQuery}
           />
           {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => setSearchQuery('')}>
-              <Ionicons name="close-circle" size={18} color="#666" />
+            <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+              <Ionicons name="close-circle" size={16} color="#555" />
             </TouchableOpacity>
           )}
-        </View>
+        </TouchableOpacity>
       </View>
 
-      {/* Tabs */}
+      {/* Minimal Tabs */}
       <View style={styles.tabContainer}>
         <TouchableOpacity 
-          style={styles.tab} 
+          style={[styles.tab, activeTab === 'topics' && styles.tabActive]} 
           onPress={() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
             setActiveTab('topics');
           }}
+          activeOpacity={0.7}
         >
           <Text style={[styles.tabText, activeTab === 'topics' && styles.tabTextActive]}>Konular</Text>
         </TouchableOpacity>
         <TouchableOpacity 
-          style={styles.tab} 
+          style={[styles.tab, activeTab === 'tags' && styles.tabActive]} 
           onPress={() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
             setActiveTab('tags');
           }}
+          activeOpacity={0.7}
         >
           <Text style={[styles.tabText, activeTab === 'tags' && styles.tabTextActive]}>Etiketler</Text>
         </TouchableOpacity>
-        <Animated.View
-          style={[
-            styles.tabIndicator,
-            {
-              transform: [{
-                translateX: tabIndicator.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [W * 0.25 - 30, W * 0.75 - 30],
-                }),
-              }],
-            },
-          ]}
-        />
       </View>
 
+      {/* Tab Content Container */}
+      <View style={styles.tabContentContainer}>
+        {/* Topics Tab Content - Always rendered, visibility toggled */}
       <ScrollView 
-        style={styles.scrollView}
+          style={[styles.scrollView, activeTab !== 'topics' && styles.hiddenTab]}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
+        pointerEvents={activeTab === 'topics' ? 'auto' : 'none'}
       >
-        {/* Quick Access */}
-        {quickAccessItems.length > 0 && (
-          <View style={styles.quickSection}>
-            <Text style={styles.quickTitle}>
-              {activeTab === 'topics' ? 'Popüler Konular' : 'Trend Etiketler'}
-            </Text>
-            <View style={styles.quickContainer}>
-              {quickAccessItems.map((item) => (
-                <TouchableOpacity 
-                  key={item.title} 
-                  style={styles.quickButton}
-                  activeOpacity={0.7}
-                  onPress={() => {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    handleQuickPress(item.title);
-                  }}
-                >
-                  <Text style={styles.quickText}>{item.title}</Text>
-                  <Text style={styles.quickCount}>{item.count}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
+        {topicQuickItems.length > 0 && (
+          <ScrollView 
+            horizontal 
+            showsHorizontalScrollIndicator={false} 
+            style={styles.quickScroll}
+            contentContainerStyle={styles.quickContainer}
+          >
+            {topicQuickItems.map((item, index) => (
+              <TouchableOpacity 
+                key={item.title} 
+                style={[styles.quickPill, index === 0 && styles.quickPillFirst]}
+                activeOpacity={0.8}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  handleTopicQuickPress(item.title);
+                }}
+              >
+                <Text style={styles.quickText}>{item.title}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
         )}
-
-        {/* Content Sections */}
-        {filteredGroups.map((group) => (
+        {filteredTopicGroups.map((group) => (
           <ContentSection 
             key={group.title} 
             title={group.title}
@@ -458,25 +451,74 @@ export default function InspirationScreen({
             onSeeAll={handleSeeAll}
           />
         ))}
-
-        {filteredGroups.length === 0 && searchQuery && (
+        {filteredTopicGroups.length === 0 && searchQuery && (
           <View style={styles.noResults}>
             <Ionicons name="search" size={48} color="#333" />
-            <Text style={styles.noResultsText}>"{searchQuery}" için sonuç bulunamadı</Text>
+            <Text style={styles.noResultsText}>"{searchQuery}" için konu bulunamadı</Text>
           </View>
         )}
-
-        {filteredGroups.length === 0 && !searchQuery && (
+        {filteredTopicGroups.length === 0 && !searchQuery && (
           <View style={styles.noResults}>
-            <Ionicons name={activeTab === 'topics' ? 'albums-outline' : 'pricetag-outline'} size={48} color="#333" />
-            <Text style={styles.noResultsText}>
-              {activeTab === 'topics' ? 'Henüz konu yok' : 'Henüz etiket yok'}
-            </Text>
+            <Ionicons name="albums-outline" size={48} color="#333" />
+            <Text style={styles.noResultsText}>Henüz konu yok</Text>
           </View>
         )}
-
         <View style={{ height: 20 }} />
       </ScrollView>
+
+      {/* Tags Tab Content - Always rendered, visibility toggled */}
+      <ScrollView 
+        style={[styles.scrollView, activeTab !== 'tags' && styles.hiddenTab]}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
+        pointerEvents={activeTab === 'tags' ? 'auto' : 'none'}
+      >
+        {hashtagQuickItems.length > 0 && (
+          <ScrollView 
+            horizontal 
+            showsHorizontalScrollIndicator={false} 
+            style={styles.quickScroll}
+            contentContainerStyle={styles.quickContainer}
+          >
+            {hashtagQuickItems.map((item, index) => (
+              <TouchableOpacity 
+                key={item.title} 
+                style={[styles.quickPill, index === 0 && styles.quickPillFirst]}
+                activeOpacity={0.8}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  handleHashtagQuickPress(item.title);
+                }}
+              >
+                <Text style={styles.quickText}>{item.title}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        )}
+        {filteredHashtagGroups.map((group) => (
+          <ContentSection 
+            key={group.title} 
+            title={group.title}
+            videos={group.videos}
+            onVideoPress={openVideoPlayer}
+            onSeeAll={handleSeeAll}
+          />
+        ))}
+        {filteredHashtagGroups.length === 0 && searchQuery && (
+          <View style={styles.noResults}>
+            <Ionicons name="search" size={48} color="#333" />
+            <Text style={styles.noResultsText}>"{searchQuery}" için etiket bulunamadı</Text>
+          </View>
+        )}
+        {filteredHashtagGroups.length === 0 && !searchQuery && (
+          <View style={styles.noResults}>
+            <Ionicons name="pricetag-outline" size={48} color="#333" />
+            <Text style={styles.noResultsText}>Henüz etiket yok</Text>
+          </View>
+        )}
+        <View style={{ height: 20 }} />
+      </ScrollView>
+      </View>
 
       {/* Video Player Modal */}
       <VideoPlayerModal
@@ -497,50 +539,43 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#000',
   },
-  header: {
-    height: 50,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 16,
-    backgroundColor: CHROME_COLOR,
-    borderBottomWidth: 1,
-    borderBottomColor: '#1a1a1a',
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#fff',
-  },
+  // Modern Search Bar
   searchContainer: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    backgroundColor: CHROME_COLOR,
+    paddingHorizontal: 12,
+    paddingTop: 8,
+    paddingBottom: 6,
+    backgroundColor: '#000',
   },
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#111',
-    borderRadius: 10,
+    backgroundColor: '#1a1a1a',
+    borderRadius: 8,
     paddingHorizontal: 12,
-    paddingVertical: 10,
-    gap: 10,
+    height: 36,
+    gap: 8,
   },
   searchInput: {
     flex: 1,
     color: '#fff',
     fontSize: 14,
+    paddingVertical: 0,
   },
+  // Modern Tabs
   tabContainer: {
     flexDirection: 'row',
-    borderBottomWidth: 1,
-    borderBottomColor: '#1a1a1a',
-    position: 'relative',
+    paddingHorizontal: 12,
+    gap: 8,
+    paddingVertical: 8,
   },
   tab: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: 'transparent',
+  },
+  tabActive: {
+    backgroundColor: '#222',
   },
   tabText: {
     fontSize: 14,
@@ -550,20 +585,27 @@ const styles = StyleSheet.create({
   tabTextActive: {
     color: '#fff',
   },
-  tabIndicator: {
-    position: 'absolute',
-    bottom: -1,
-    width: 60,
-    height: 2,
-    backgroundColor: Colors.primary,
-    borderRadius: 1,
-  },
+  // Content
   scrollView: {
     flex: 1,
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  hiddenTab: {
+    opacity: 0,
+    zIndex: -1,
+  },
+  tabContentContainer: {
+    flex: 1,
+    position: 'relative',
   },
   scrollContent: {
     paddingBottom: 24,
   },
+  // Empty State
   emptyContainer: {
     flex: 1,
     alignItems: 'center',
@@ -582,116 +624,91 @@ const styles = StyleSheet.create({
     marginTop: 8,
     textAlign: 'center',
   },
-  quickSection: {
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 8,
-  },
-  quickTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#fff',
-    marginBottom: 12,
+  // Quick Access Pills - Horizontal Scroll
+  quickScroll: {
+    marginTop: 4,
+    marginBottom: 8,
   },
   quickContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+    paddingHorizontal: 12,
     gap: 8,
   },
-  quickButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
+  quickPill: {
     backgroundColor: '#1a1a1a',
-    paddingHorizontal: 12,
+    paddingHorizontal: 14,
     paddingVertical: 8,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#333',
+    borderRadius: 20,
+  },
+  quickPillFirst: {
+    marginLeft: 0,
   },
   quickText: {
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: '500',
     color: '#fff',
   },
-  quickCount: {
-    color: '#666',
-    fontSize: 11,
-  },
+  // Content Section
   section: {
-    marginBottom: 20,
-    marginTop: 8,
+    marginBottom: 16,
+    marginTop: 4,
   },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    marginBottom: 12,
+    paddingHorizontal: 12,
+    marginBottom: 10,
   },
-  sectionTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  sectionTitleText: {
+  sectionTitle: {
     color: '#fff',
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '700',
   },
-  videoCount: {
-    color: '#666',
-    fontSize: 12,
+  seeAllBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
   },
   seeAllText: {
-    color: Colors.primary,
+    color: '#888',
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: '500',
   },
   videoCarousel: {
-    paddingLeft: 16,
-    gap: 10,
+    paddingLeft: 12,
+    gap: 8,
   },
+  // Video Card - Larger, TikTok style
   videoCard: {
-    width: 110,
-    height: 150,
-    borderRadius: 8,
+    width: 130,
+    height: 180,
+    borderRadius: 6,
     overflow: 'hidden',
-    backgroundColor: '#1a1a1a',
+    backgroundColor: '#111',
   },
   videoThumbnail: {
     width: '100%',
     height: '100%',
   },
-  videoOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: 'flex-end',
-    padding: 6,
-    backgroundColor: 'rgba(0,0,0,0.2)',
+  videoGradient: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: 50,
   },
-  videoViews: {
+  videoStats: {
+    position: 'absolute',
+    bottom: 8,
+    left: 8,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 3,
+    gap: 4,
   },
-  videoViewsText: {
+  videoStatsText: {
     color: '#fff',
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '600',
-  },
-  userBadge: {
-    position: 'absolute',
-    top: 6,
-    left: 6,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  userBadgeText: {
-    color: '#fff',
-    fontSize: 9,
-    fontWeight: '500',
   },
   noResults: {
     alignItems: 'center',
@@ -719,14 +736,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   commentInputContainer: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.95)',
-    paddingBottom: 20,
+    height: COMMENT_INPUT_HEIGHT,
+    backgroundColor: '#000',
     paddingHorizontal: 12,
-    paddingTop: 12,
+    justifyContent: 'center',
+    borderTopWidth: 1,
+    borderTopColor: '#1a1a1a',
   },
   commentInputWrap: {
     flexDirection: 'row',

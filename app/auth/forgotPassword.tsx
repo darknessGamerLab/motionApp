@@ -1,4 +1,5 @@
 import Colors from '@/constants/Colors';
+import { useAuth } from '@/contexts/AuthContext';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import React, { useState } from 'react';
@@ -16,6 +17,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function ForgotPasswordScreen() {
   const insets = useSafeAreaInsets();
+  const { resetPassword } = useAuth();
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -26,7 +28,7 @@ export default function ForgotPasswordScreen() {
     return re.test(email);
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!email.trim()) {
       setError('Lütfen email adresinizi girin');
       return;
@@ -40,11 +42,15 @@ export default function ForgotPasswordScreen() {
     setError('');
     setLoading(true);
 
-    // Mock API call
-    setTimeout(() => {
-      setLoading(false);
+    const result = await resetPassword(email.trim());
+    
+    setLoading(false);
+    
+    if (result.error) {
+      setError(result.error);
+    } else {
       setSuccess(true);
-    }, 1500);
+    }
   };
 
   if (success) {

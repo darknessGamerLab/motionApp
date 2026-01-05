@@ -44,6 +44,7 @@ interface Props {
   onVideoSaved?: (videoId: string, isSaved: boolean) => void;
   onVideoLiked?: (videoId: string, isLiked: boolean, newLikeCount: number) => void;
   onVideoCommented?: (videoId: string, newCommentCount: number) => void;
+  refreshKey?: number;
 }
 
 // Format numbers - use utility
@@ -308,9 +309,18 @@ export const VideoCard = memo(({
   prev.data.comments === next.data.comments
 );
 
-export default function HomeScreen({ isActive = true, videos = [], onUserPress, onVideoSaved, onVideoLiked, onVideoCommented }: Props) {
+export default function HomeScreen({ isActive = true, videos = [], onUserPress, onVideoSaved, onVideoLiked, onVideoCommented, refreshKey }: Props) {
   const [idx, setIdx] = useState(0);
   const [h, setH] = useState(Dimensions.get('window').height - NAVBAR_H);
+  const flatListRef = useRef<FlatList>(null);
+
+  // Home butonuna tıklanınca en üste scroll
+  useEffect(() => {
+    if (refreshKey && refreshKey > 0) {
+      flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
+      setIdx(0);
+    }
+  }, [refreshKey]);
 
   const onViewChange = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
     if (viewableItems[0]?.index != null) setIdx(viewableItems[0].index);
@@ -351,6 +361,7 @@ export default function HomeScreen({ isActive = true, videos = [], onUserPress, 
   return (
     <View style={styles.container}>
       <FlatList
+        ref={flatListRef}
         data={videos}
         renderItem={renderItem}
         keyExtractor={keyExt}
