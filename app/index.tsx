@@ -1,271 +1,371 @@
-import { MainPager } from '@/components/MainPager';
-import { StatusBar } from 'expo-status-bar';
-import { useEffect, useMemo, useState } from 'react';
-import {
-  LayoutChangeEvent,
-  Platform,
-  StyleSheet,
-  View,
-  TouchableOpacity,
-  Text
-} from 'react-native';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { useAuth } from '@/contexts/AuthContext';
+import { TALENTS, getTalentById } from '@/constants/Talents';
 import { Ionicons } from '@expo/vector-icons';
-import 'react-native-reanimated';
+import * as NavigationBar from 'expo-navigation-bar';
+import { StatusBar } from 'expo-status-bar';
+import React, { memo, useCallback, useMemo, useState } from 'react';
 import {
-  runOnJS,
-  useAnimatedReaction,
-  useSharedValue,
-  withSpring
-} from 'react-native-reanimated';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+    Platform,
+    StyleSheet,
+    TouchableOpacity,
+    View,
+} from 'react-native';
+
 import CreateScreen from './CreateScreen';
 import HomeScreen from './HomeScreen';
-import MeScreen from './MeScreen';
 import InspirationScreen from './InspirationScreen';
+import MeScreen from './MeScreen';
 import NotificationsScreen from './NotificationsScreen';
 import UserProfileScreen from './UserProfileScreen';
 
-/**
- * MainLayout - TikTok benzeri layout
- * 
- * - Alt tarafta 5 sekmeli navbar: Home, Inspiration, Create, Notifications, Me
- * - Home ekranında dikey video geçişi
- * - Yatay geçişler kapalı, tab bar ile sayfa değişiyor
- */
+const BG = '#000';
+const NAVBAR_BG = '#0A0505';
+const NAVBAR_H = 50;
+const ACCENT = '#FF2D55';
+
+// Android nav bar - bir kere çalıştır
+if (Platform.OS === 'android') {
+  NavigationBar.setBackgroundColorAsync(NAVBAR_BG).catch(() => {});
+  NavigationBar.setButtonStyleAsync('light').catch(() => {});
+}
+
+// Tab Button - memoized
+const TabBtn = memo(({ icon, active, onPress, isCreate }: {
+  icon: string;
+  active: boolean;
+  onPress: () => void;
+  isCreate?: boolean;
+}) => (
+  <TouchableOpacity style={styles.tabBtn} onPress={onPress} activeOpacity={0.7}>
+    {isCreate ? (
+      <View style={styles.createBtn}>
+        <Ionicons name="add" size={22} color="#fff" />
+      </View>
+    ) : (
+      <Ionicons name={icon as any} size={24} color={active ? '#fff' : '#777'} />
+    )}
+  </TouchableOpacity>
+));
+
+// Tab Screen Wrapper - keeps mounted, toggles visibility
+const TabScreen = memo(({ visible, children }: { visible: boolean; children: React.ReactNode }) => (
+  <View style={[styles.screen, !visible && styles.hidden]}>
+    {children}
+  </View>
+));
+
 export default function MainLayout() {
-  const insets = useSafeAreaInsets();
-  
-  // Layout dimensions - onLayout ile alınacak
-  const [layoutWidth, setLayoutWidth] = useState(0);
-  const [layoutHeight, setLayoutHeight] = useState(0);
-  const [layoutReady, setLayoutReady] = useState(false);
-  const [insetsReady, setInsetsReady] = useState(false);
-  const [navbarHeight, setNavbarHeight] = useState(0);
-  
-  // User profile overlay
-  const [showUserProfile, setShowUserProfile] = useState(false);
+  const { authState } = useAuth();
+  const [tab, setTab] = useState(0);
+  const [userProfileOpen, setUserProfileOpen] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
-  
-  // MainPager shared values
-  const mainTranslateX = useSharedValue(0);
-  const mainCurrentPage = useSharedValue(0); // 0: Home, 1: Inspiration, 2: Create, 3: Notifications, 4: Me
-  
-  // VerticalVideoPager shared values (sadece HomeScreen için)
-  const videoTranslateY = useSharedValue(0);
-  const videoCurrentIndex = useSharedValue(0);
-  
-  // Video height: layout height - navbar height
-  const videoHeight = layoutHeight > 0 && navbarHeight > 0 ? layoutHeight - navbarHeight : 0;
-  
-  // Page height: layout height - navbar height (for screens in MainPager)
-  const pageHeight = layoutHeight > 0 && navbarHeight > 0 ? layoutHeight - navbarHeight : 0;
 
-  // Her ekranın aktif durumu için state (mainCurrentPage'den türetiliyor)
-  const [activePageIndex, setActivePageIndex] = useState(0);
-  
-  // Layout ölçümü
-  const handleLayout = (event: LayoutChangeEvent) => {
-    const { width, height } = event.nativeEvent.layout;
-    if (width > 0 && height > 0) {
-      setLayoutWidth(width);
-      setLayoutHeight(height);
-      setLayoutReady(true);
-    }
-  };
-  
-  // Navbar yüksekliğini ölç
-  const handleNavbarLayout = (event: LayoutChangeEvent) => {
-    const { height } = event.nativeEvent.layout;
-    if (height > 0) {
-      setNavbarHeight(height);
-    }
-  };
+  // User profile - state ile yönet
+  const initialProfile = useMemo(() => {
+    const talentIds = authState.userData?.talents || [];
+    const skills = talentIds.map((id: string) => {
+      const talent = getTalentById(id);
+      return talent?.name || '';
+    }).filter(Boolean);
+    
+    return {
+      id: 'current',
+      username: authState.userData?.username || 'kullanici',
+      fullName: authState.userData?.fullName || 'Kullanıcı',
+      bio: 'Merhaba! 👋',
+      avatarUri: 'https://i.pravatar.cc/300?img=1',
+      avatars: [
+        'https://i.pravatar.cc/300?img=1',
+        'https://i.pravatar.cc/300?img=11',
+        'https://i.pravatar.cc/300?img=12',
+      ],
+      skills: skills.length > 0 ? skills : [],
+      talents: talentIds,
+      following: 0,
+      followers: 0,
+      videos: 0,
+    };
+  }, [authState.userData]);
 
-  
-  // Insets hazır mı kontrol et
-  useEffect(() => {
-    if (insets.bottom >= 0) {
-      const timer = setTimeout(() => {
-        setInsetsReady(true);
-      }, 50);
-      return () => clearTimeout(timer);
-    }
-  }, [insets.bottom]);
-  
-  // Shared value'ların initial değerlerini ayarla (sadece layoutReady + insetsReady olduktan sonra)
-  useEffect(() => {
-    if (layoutReady && insetsReady && layoutWidth > 0 && layoutHeight > 0) {
-      mainTranslateX.value = -layoutWidth * 0;
-      mainCurrentPage.value = 0;
-      
-      if (videoHeight > 0) {
-        videoTranslateY.value = -videoHeight * 0;
-        videoCurrentIndex.value = 0;
-      }
-    }
-  }, [layoutReady, insetsReady, layoutWidth, layoutHeight, videoHeight]);
+  const [profile, setProfile] = useState(initialProfile);
 
-  const handlePageChange = (page: number) => {
-    console.log('Page changed to:', page);
-  };
+  // Videos - static data (stok videolar + gerçek kullanıcılar)
+  const [videos, setVideos] = useState([
+    {
+      id: '1',
+      uri: 'https://videos.pexels.com/video-files/3195394/3195394-uhd_2560_1440_25fps.mp4',
+      user: { id: 'u1', username: 'ahmetyilmaz', avatar: 'https://i.pravatar.cc/100?img=1' },
+      description: 'Son maçtan kareler! ⚽🔥',
+      topic: '#futbol',
+      likes: 12500, comments: 234, shares: 89,
+      isLiked: false, isSaved: false,
+    },
+    {
+      id: '2',
+      uri: 'https://videos.pexels.com/video-files/3045163/3045163-uhd_2560_1440_25fps.mp4',
+      user: { id: 'u2', username: 'ayseozturk', avatar: 'https://i.pravatar.cc/100?img=5' },
+      description: 'Yeni şarkım çıktı! 🎵🎤',
+      topic: '#müzik',
+      likes: 34200, comments: 567, shares: 234,
+      isLiked: true, isSaved: false,
+    },
+    {
+      id: '3',
+      uri: 'https://videos.pexels.com/video-files/2491284/2491284-uhd_2560_1440_25fps.mp4',
+      user: { id: 'u3', username: 'mehmetkaya', avatar: 'https://i.pravatar.cc/100?img=12' },
+      description: 'Bugünün antrenmanı 💪',
+      topic: '#fitness',
+      likes: 8900, comments: 145, shares: 67,
+      isLiked: false, isSaved: true,
+    },
+    {
+      id: '4',
+      uri: 'https://videos.pexels.com/video-files/2495382/2495382-uhd_2560_1440_25fps.mp4',
+      user: { id: 'u4', username: 'zeynepdemir', avatar: 'https://i.pravatar.cc/100?img=9' },
+      description: 'İstanbul\'dan manzaralar 🏙️',
+      topic: '#seyahat',
+      likes: 15600, comments: 312, shares: 123,
+      isLiked: false, isSaved: false,
+    },
+    {
+      id: '5',
+      uri: 'https://videos.pexels.com/video-files/3045163/3045163-uhd_2560_1440_25fps.mp4',
+      user: { id: 'u5', username: 'emrecetin', avatar: 'https://i.pravatar.cc/100?img=15' },
+      description: 'Komik anlar 😂',
+      topic: '#komedi',
+      likes: 27800, comments: 890, shares: 456,
+      isLiked: true, isSaved: false,
+    },
+    {
+      id: '6',
+      uri: 'https://videos.pexels.com/video-files/2495382/2495382-uhd_2560_1440_25fps.mp4',
+      user: { id: 'u6', username: 'elifaksoy', avatar: 'https://i.pravatar.cc/100?img=20' },
+      description: 'Yeni koleksiyonumuz ✨',
+      topic: '#moda',
+      likes: 18900, comments: 423, shares: 189,
+      isLiked: false, isSaved: true,
+    },
+    {
+      id: '7',
+      uri: 'https://videos.pexels.com/video-files/3195394/3195394-uhd_2560_1440_25fps.mp4',
+      user: { id: 'u7', username: 'canarslan', avatar: 'https://i.pravatar.cc/100?img=25' },
+      description: 'Son teknoloji ürünleri 🚀',
+      topic: '#teknoloji',
+      likes: 11200, comments: 278, shares: 98,
+      isLiked: false, isSaved: false,
+    },
+    {
+      id: '8',
+      uri: 'https://videos.pexels.com/video-files/2491284/2491284-uhd_2560_1440_25fps.mp4',
+      user: { id: 'u8', username: 'sedaaslan', avatar: 'https://i.pravatar.cc/100?img=30' },
+      description: 'Yeni tarifim 🍰',
+      topic: '#yemek',
+      likes: 23400, comments: 567, shares: 234,
+      isLiked: true, isSaved: false,
+    },
+    {
+      id: '9',
+      uri: 'https://videos.pexels.com/video-files/3045163/3045163-uhd_2560_1440_25fps.mp4',
+      user: { id: 'u9', username: 'burakyildiz', avatar: 'https://i.pravatar.cc/100?img=35' },
+      description: 'Dans performansı 💃',
+      topic: '#dans',
+      likes: 16700, comments: 389, shares: 156,
+      isLiked: false, isSaved: true,
+    },
+    {
+      id: '10',
+      uri: 'https://videos.pexels.com/video-files/2495382/2495382-uhd_2560_1440_25fps.mp4',
+      user: { id: 'u10', username: 'denizyilmaz', avatar: 'https://i.pravatar.cc/100?img=40' },
+      description: 'Çizim sürecim 🎨',
+      topic: '#sanat',
+      likes: 9800, comments: 198, shares: 78,
+      isLiked: false, isSaved: false,
+    },
+  ]);
 
-  const handleVideoChange = (index: number) => {
-    console.log('Video changed to index:', index);
-  };
-
-  // Aktif sayfa index'ini takip et
-  useAnimatedReaction(
-    () => mainCurrentPage.value,
-    (currentPage) => {
-      runOnJS(setActivePageIndex)(currentPage);
-    }
-  );
-
-  const isReady = layoutReady && insetsReady && layoutWidth > 0 && layoutHeight > 0 && navbarHeight > 0;
-
-  const tabs = useMemo(() => ([
-    { key: 'home', label: 'Home', icon: 'square', index: 0 },
-    { key: 'inspiration', label: 'Inspiration', icon: 'compass', index: 1 },
-    { key: 'create', label: 'Create', icon: 'add', index: 2 },
-    { key: 'notifications', label: 'Notifications', icon: 'heart', index: 3 },
-    { key: 'me', label: 'Me', icon: 'person', index: 4 },
-  ]), []);
-
-  const handleTabPress = (index: number) => {
-    mainCurrentPage.value = index;
-    mainTranslateX.value = withSpring(-layoutWidth * index, {
-      damping: 20,
-      stiffness: 90,
-      mass: 0.8,
-    });
-  };
-
-  const handleUserPress = (userId: string, username: string) => {
+  // Handlers
+  const openProfile = useCallback((userId: string) => {
     setSelectedUserId(userId);
-    setShowUserProfile(true);
-  };
+    setUserProfileOpen(true);
+  }, []);
 
-  const handleCloseUserProfile = () => {
-    setShowUserProfile(false);
+  const closeProfile = useCallback(() => {
+    setUserProfileOpen(false);
     setSelectedUserId(null);
-  };
+  }, []);
+
+  const onVideoPublished = useCallback((videoUri: string, description?: string, topic?: string) => {
+    const newVideo = {
+      id: `vid-${Date.now()}`,
+      uri: videoUri,
+      user: { id: 'current', username: profile.username, avatar: profile.avatarUri },
+      description: description || 'Check this out! 🎬',
+      topic: topic,
+      likes: 0, comments: 0, shares: 0,
+      isLiked: false, isSaved: false,
+    };
+    setVideos(prev => [newVideo, ...prev]);
+    // Video sayısını artır
+    setProfile(prev => ({ ...prev, videos: prev.videos + 1 }));
+    setTab(0);
+  }, [profile.username, profile.avatarUri]);
+
+  const onVideoDelete = useCallback((videoId: string) => {
+    setVideos(prev => {
+      const deleted = prev.find(v => v.id === videoId);
+      if (deleted && (deleted.user.id === 'current' || deleted.user.username === profile.username)) {
+        setProfile(prev => ({ ...prev, videos: Math.max(0, prev.videos - 1) }));
+      }
+      return prev.filter(v => v.id !== videoId);
+    });
+  }, [profile.username]);
+
+  const onVideoSaved = useCallback((videoId: string, isSaved: boolean) => {
+    setVideos(prev => prev.map(v => v.id === videoId ? { ...v, isSaved } : v));
+  }, []);
+
+  const onVideoLiked = useCallback((videoId: string, isLiked: boolean, newLikeCount: number) => {
+    setVideos(prev => prev.map(v => v.id === videoId ? { ...v, isLiked, likes: newLikeCount } : v));
+  }, []);
+
+  const onVideoCommented = useCallback((videoId: string, newCommentCount: number) => {
+    setVideos(prev => prev.map(v => v.id === videoId ? { ...v, comments: newCommentCount } : v));
+  }, []);
+
+  const onProfileUpdate = useCallback((updatedProfile: any) => {
+    setProfile(prev => ({
+      ...prev,
+      ...updatedProfile,
+    }));
+  }, []);
+
+  const isFullscreen = tab === 2 || userProfileOpen;
 
   return (
-    <GestureHandlerRootView style={styles.container}>
-      <View style={styles.container} onLayout={handleLayout}>
-        {isReady && (
-          <>
-            <MainPager
-              initialPage={0}
-              onPageChange={handlePageChange}
-              translateX={mainTranslateX}
-              currentPage={mainCurrentPage}
-              pageWidth={layoutWidth}
-              pageHeight={pageHeight}
-            >
-            <HomeScreen 
-              translateY={videoTranslateY}
-              currentVideoIndex={videoCurrentIndex}
-              onVideoChange={handleVideoChange}
-              isActive={activePageIndex === 0}
-              videoHeight={videoHeight}
-              layoutReady={isReady}
-              pageWidth={layoutWidth}
-              onUserPress={handleUserPress}
+    <View style={styles.root}>
+      <StatusBar style="light" backgroundColor={NAVBAR_BG} translucent={false} />
+      
+      {/* All tabs stay mounted - just hidden */}
+      <View style={styles.content}>
+        {/* Home */}
+        <TabScreen visible={tab === 0 && !isFullscreen}>
+          <HomeScreen 
+            isActive={tab === 0 && !isFullscreen} 
+            videos={videos} 
+            onUserPress={openProfile}
+            onVideoSaved={onVideoSaved}
+            onVideoLiked={onVideoLiked}
+            onVideoCommented={onVideoCommented}
+          />
+        </TabScreen>
+
+        {/* Explore */}
+        <TabScreen visible={tab === 1 && !isFullscreen}>
+          <InspirationScreen 
+            isActive={tab === 1} 
+            videos={videos}
+            onVideoSaved={onVideoSaved}
+            onVideoLiked={onVideoLiked}
+            onVideoCommented={onVideoCommented}
+          />
+        </TabScreen>
+
+        {/* Notifications */}
+        <TabScreen visible={tab === 3 && !isFullscreen}>
+          <NotificationsScreen isActive={tab === 3} onUserPress={openProfile} />
+        </TabScreen>
+
+        {/* Profile */}
+        <TabScreen visible={tab === 4 && !isFullscreen}>
+          <MeScreen 
+            isActive={tab === 4} 
+            userProfile={{
+              ...profile,
+              videos: videos.filter(v => v.user.id === 'current' || v.user.username === profile.username).length,
+            }}
+            allVideos={videos}
+            onProfileUpdate={onProfileUpdate} 
+            onVideoDelete={onVideoDelete}
+            onVideoSaved={onVideoSaved}
+            onVideoLiked={onVideoLiked}
+            onVideoCommented={onVideoCommented}
+          />
+        </TabScreen>
+
+        {/* Create - fullscreen overlay */}
+        {tab === 2 && (
+          <View style={styles.fullscreen}>
+            <CreateScreen isActive onClose={() => setTab(0)} onVideoPublished={onVideoPublished} />
+          </View>
+        )}
+
+        {/* User Profile - fullscreen overlay */}
+        {userProfileOpen && (
+          <View style={styles.fullscreen}>
+            <UserProfileScreen 
+              isActive 
+              onBackPress={closeProfile} 
+              userId={selectedUserId || undefined}
+              allVideos={videos}
+              onVideoSaved={onVideoSaved}
+              onVideoLiked={onVideoLiked}
+              onVideoCommented={onVideoCommented}
             />
-              <InspirationScreen isActive={activePageIndex === 1} />
-              <View style={{ width: layoutWidth, height: pageHeight, backgroundColor: '#000' }} />
-              <NotificationsScreen isActive={activePageIndex === 3} />
-              <View style={{ width: layoutWidth, height: pageHeight, backgroundColor: '#000' }} />
-            </MainPager>
-            {/* Create Screen - Full screen overlay */}
-            {activePageIndex === 2 && (
-              <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 10 }}>
-                <CreateScreen isActive={true} onClose={() => handleTabPress(0)} />
-              </View>
-            )}
-            {/* Me Screen - Full screen overlay */}
-            {activePageIndex === 4 && (
-              <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 10 }}>
-                <MeScreen 
-                  isActive={true} 
-                  onBackPress={() => handleTabPress(0)}
-                />
-              </View>
-            )}
-            {/* User Profile Screen - Full screen overlay */}
-            {showUserProfile && (
-              <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 15 }}>
-                <UserProfileScreen 
-                  isActive={true} 
-                  onBackPress={handleCloseUserProfile}
-                  userId={selectedUserId || undefined}
-                />
-              </View>
-            )}
-          </>
-        )}
-        <StatusBar style="light" translucent={Platform.OS === 'android'} hidden={false} />
-        {/* Bottom Tab Bar - Hidden on Create and Me screens */}
-        {activePageIndex !== 2 && activePageIndex !== 4 && (
-          <View style={[styles.tabBar, { height: 48 + (insets.bottom || 12) }]} onLayout={handleNavbarLayout}>
-          {tabs.map((tab) => {
-            const isActive = activePageIndex === tab.index;
-            return (
-              <TouchableOpacity
-                key={tab.key}
-                style={styles.tabItem}
-                onPress={() => handleTabPress(tab.index)}
-                activeOpacity={0.7}
-              >
-                <Ionicons
-                  name={tab.icon as any}
-                  size={24}
-                  color={isActive ? '#fff' : '#888'}
-                />
-                <Text style={[styles.tabLabel, { color: isActive ? '#fff' : '#888' }]}>
-                  {tab.label}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
           </View>
         )}
-          </View>
-    </GestureHandlerRootView>
+      </View>
+
+      {/* Navbar */}
+      {!isFullscreen && (
+        <View style={styles.navbar}>
+          <TabBtn icon={tab === 0 ? 'home' : 'home-outline'} active={tab === 0} onPress={() => setTab(0)} />
+          <TabBtn icon={tab === 1 ? 'search' : 'search-outline'} active={tab === 1} onPress={() => setTab(1)} />
+          <TabBtn icon="add" active={false} isCreate onPress={() => setTab(2)} />
+          <TabBtn icon={tab === 3 ? 'heart' : 'heart-outline'} active={tab === 3} onPress={() => setTab(3)} />
+          <TabBtn icon={tab === 4 ? 'person' : 'person-outline'} active={tab === 4} onPress={() => setTab(4)} />
+        </View>
+      )}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  root: {
     flex: 1,
-    backgroundColor: '#000',
-    overflow: 'hidden',
+    backgroundColor: BG,
   },
-  tabBar: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
+  content: {
+    flex: 1,
+  },
+  screen: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  hidden: {
+    opacity: 0,
+    pointerEvents: 'none',
+  },
+  fullscreen: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 100,
+  },
+  navbar: {
+    height: NAVBAR_H,
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-    backgroundColor: 'rgba(0,0,0,0.75)',
+    backgroundColor: NAVBAR_BG,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.1)',
+    borderTopColor: '#1a1a1a',
   },
-  tabItem: {
+  tabBtn: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 3,
-    paddingVertical: 8,
-    paddingHorizontal: 8,
   },
-  tabLabel: {
-    fontSize: 9,
-    fontWeight: '400',
+  createBtn: {
+    width: 32,
+    height: 26,
+    borderRadius: 6,
+    backgroundColor: ACCENT,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });
-

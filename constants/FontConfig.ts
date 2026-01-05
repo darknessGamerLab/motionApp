@@ -4,8 +4,8 @@
  * Sade, minimal, temiz görünüm için Inter fontu kullanılıyor
  */
 
-// Font yükleme sistemi aktif
-export const ENABLE_CUSTOM_FONTS = true;
+// Font yükleme sistemi - KAPALI (performans için)
+export const ENABLE_CUSTOM_FONTS = false;
 
 // Font isimleri - Inter (Sade, minimal, gölgesiz)
 export const Fonts = {

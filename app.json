@@ -22,13 +22,24 @@
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "edgeToEdgeEnabled": true,
+      "edgeToEdgeEnabled": false,
       "predictiveBackGestureEnabled": false,
+      "navigationBarColor": "#0A0505",
+      "backgroundColor": "#0A0505",
+      "windowSoftInputMode": "adjustResize",
       "permissions": [
         "CAMERA",
         "RECORD_AUDIO",
-        "WAKE_LOCK"
-      ]
+        "WAKE_LOCK",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "CAMERA",
+        "RECORD_AUDIO",
+        "WAKE_LOCK",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ],
+      "package": "com.anonymous.motionapp"
     },
     "web": {
       "output": "static",
