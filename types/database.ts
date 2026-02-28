@@ -15,7 +15,6 @@ export interface Database {
           avatar_url: string | null;
           user_type: UserType;
           talents: string[];
-          last_talents_change: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -27,7 +26,6 @@ export interface Database {
           avatar_url?: string | null;
           user_type: UserType;
           talents?: string[];
-          last_talents_change?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -39,7 +37,6 @@ export interface Database {
           avatar_url?: string | null;
           user_type?: UserType;
           talents?: string[];
-          last_talents_change?: string | null;
           updated_at?: string;
         };
       };
@@ -185,6 +182,66 @@ export interface Database {
         };
         Update: never;
       };
+      corporate_applications: {
+        Row: {
+          id: string;
+          user_id: string;
+          user_email: string;
+          company_name: string;
+          tax_office: string;
+          tax_number: string;
+          phone: string;
+          status: 'pending' | 'approved' | 'rejected';
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          user_email: string;
+          company_name: string;
+          tax_office: string;
+          tax_number: string;
+          phone: string;
+          status?: 'pending' | 'approved' | 'rejected';
+          created_at?: string;
+        };
+        Update: {
+          status?: 'pending' | 'approved' | 'rejected';
+        };
+      };
+      sponsor_banners: {
+        Row: {
+          id: string;
+          title: string;
+          subtitle: string | null;
+          image_url: string;
+          cta_text: string | null;
+          cta_url: string | null;
+          is_active: boolean;
+          order_index: number;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          title: string;
+          subtitle?: string | null;
+          image_url: string;
+          cta_text?: string | null;
+          cta_url?: string | null;
+          is_active?: boolean;
+          order_index?: number;
+          created_at?: string;
+        };
+        Update: {
+          title?: string;
+          subtitle?: string | null;
+          image_url?: string;
+          cta_text?: string | null;
+          cta_url?: string | null;
+          is_active?: boolean;
+          order_index?: number;
+        };
+      };
     };
     Views: {};
     Functions: {};
@@ -204,6 +261,8 @@ export type Comment = Database['public']['Tables']['comments']['Row'];
 export type Follow = Database['public']['Tables']['follows']['Row'];
 export type Notification = Database['public']['Tables']['notifications']['Row'];
 export type Radar = Database['public']['Tables']['radar']['Row'];
+export type CorporateApplication = Database['public']['Tables']['corporate_applications']['Row'];
+export type SponsorBanner = Database['public']['Tables']['sponsor_banners']['Row'];
 
 // Extended types with relations
 export interface VideoWithUser extends Video {

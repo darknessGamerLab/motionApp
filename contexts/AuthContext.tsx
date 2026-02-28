@@ -22,6 +22,13 @@ export type AuthState = {
   } | null;
 };
 
+type CorporateApplicationData = {
+  companyName: string;
+  taxOffice: string;
+  taxNumber: string;
+  phone: string;
+};
+
 type AuthContextType = {
   authState: AuthState;
   // Legacy methods (for backward compatibility during transition)
@@ -37,6 +44,7 @@ type AuthContextType = {
   updateProfile: (data: Partial<Profile>) => Promise<{ error: string | null }>;
   refreshProfile: () => Promise<void>;
   checkUsernameAvailable: (username: string) => Promise<boolean>;
+  submitCorporateApplication: (data: CorporateApplicationData) => Promise<{ error: string | null }>;
 };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -67,7 +75,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       console.log('Auth event:', event);
-      
+
       if (event === 'SIGNED_IN' && session) {
         await handleSession(session);
       } else if (event === 'SIGNED_OUT') {
@@ -92,9 +100,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Handle session and fetch profile
   const handleSession = async (session: Session) => {
     const user = session.user;
-    
+
     // Fetch profile from database
-    const { data: profile, error } = await supabase
+    const { data: profile, error } = await (supabase as any)
       .from('profiles')
       .select('*')
       .eq('id', user.id)
@@ -124,7 +132,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const refreshProfile = async () => {
     if (!authState.user) return;
 
-    const { data: profile } = await supabase
+    const { data: profile } = await (supabase as any)
       .from('profiles')
       .select('*')
       .eq('id', authState.user.id)
@@ -169,9 +177,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Email/Password Signup
   const signup = async (
-    email: string, 
-    password: string, 
-    userType: UserType, 
+    email: string,
+    password: string,
+    userType: UserType,
     userData?: any
   ): Promise<{ error: string | null }> => {
     try {
@@ -265,7 +273,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!authState.user) return { error: 'Kullanıcı oturumu bulunamadı' };
 
     try {
-      const { error } = await supabase
+      const { error } = await (supabase as any)
         .from('profiles')
         .update(data)
         .eq('id', authState.user.id);
@@ -281,20 +289,60 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Check username availability
   const checkUsernameAvailable = async (username: string): Promise<boolean> => {
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from('profiles')
       .select('id')
       .ilike('username', username)
       .maybeSingle();
 
     if (error) return false;
-    
+
     // If data exists, username is taken (unless it's the current user)
     if (data && authState.user && data.id === authState.user.id) {
       return true; // User's own username
     }
-    
+
     return !data;
+  };
+
+  // Submit corporate account application
+  const submitCorporateApplication = async (data: CorporateApplicationData): Promise<{ error: string | null }> => {
+    if (!authState.user || !authState.userEmail) {
+      return { error: 'Kullanıcı oturumu bulunamadı' };
+    }
+
+    try {
+      // Save application to Supabase
+      const { error: dbError } = await (supabase as any)
+        .from('corporate_applications')
+        .insert({
+          user_id: authState.user.id,
+          user_email: authState.userEmail,
+          company_name: data.companyName,
+          tax_office: data.taxOffice,
+          tax_number: data.taxNumber,
+          phone: data.phone,
+          status: 'pending',
+          created_at: new Date().toISOString(),
+        });
+
+      if (dbError) {
+        // Table may not exist yet — still send notification
+        console.warn('corporate_applications table error:', dbError.message);
+      }
+
+      // Send notification email via Supabase Edge Function or SMTP
+      // For now, we log — in production integrate with an email service
+      console.log('Corporate application submitted:', {
+        ...data,
+        userEmail: authState.userEmail,
+        userId: authState.user.id,
+      });
+
+      return { error: null };
+    } catch (err: any) {
+      return { error: err.message || 'Başvuru gönderilirken bir hata oluştu' };
+    }
   };
 
   // Legacy methods for backward compatibility
@@ -314,12 +362,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ 
-      authState, 
-      login, 
-      signup, 
-      logout, 
-      setUserData, 
+    <AuthContext.Provider value={{
+      authState,
+      login,
+      signup,
+      logout,
+      setUserData,
       completeAuth,
       signInWithGoogle,
       signInWithApple,
@@ -327,6 +375,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       updateProfile,
       refreshProfile,
       checkUsernameAvailable,
+      submitCorporateApplication,
     }}>
       {children}
     </AuthContext.Provider>

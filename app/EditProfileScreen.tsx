@@ -1,11 +1,12 @@
-import { useAuth } from '@/contexts/AuthContext';
-import { TALENTS, getTalentById } from '@/constants/Talents';
+import CustomCropper from '@/components/CustomCropper';
 import Colors from '@/constants/Colors';
+import { TALENTS, getTalentById } from '@/constants/Talents';
+import { useAuth } from '@/contexts/AuthContext';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -19,7 +20,6 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
 interface EditProfileScreenProps {
   onClose: () => void;
@@ -37,73 +37,47 @@ interface EditProfileScreenProps {
 
 export default function EditProfileScreen({ onClose, userProfile, onSave }: EditProfileScreenProps) {
   const insets = useSafeAreaInsets();
-  const { authState, setUserData } = useAuth();
-  
+  const { authState, setUserData, updateProfile } = useAuth();
+
   const [fullName, setFullName] = useState(userProfile.fullName);
-  const [bio, setBio] = useState(userProfile.bio);
+  const [bio, setBio] = useState(userProfile.bio || '');
   const [avatarUri, setAvatarUri] = useState(userProfile.avatarUri);
   const [avatars, setAvatars] = useState(userProfile.avatars);
-  // Başlangıç talents değerini doğru al
-  const initialTalents = userProfile.talents || userProfile.skills?.map((s: string) => {
-    const talent = TALENTS.find(t => t.name.toLowerCase() === s.toLowerCase());
-    return talent?.id;
-  }).filter(Boolean) || [];
-  
+
+  const dbTalents = (authState.userData?.talents || []).filter(Boolean);
+  const initialTalents: string[] = dbTalents.length > 0 ? dbTalents : (userProfile.talents || []);
   const [selectedTalents, setSelectedTalents] = useState<string[]>(initialTalents);
   const [saving, setSaving] = useState(false);
-  const [canChangeTalents, setCanChangeTalents] = useState(true);
-  const [daysUntilChange, setDaysUntilChange] = useState(0);
 
-  useEffect(() => {
-    checkTalentChangeEligibility();
-  }, []);
-
-  const checkTalentChangeEligibility = async () => {
-    try {
-      const lastChange = await AsyncStorage.getItem('lastTalentsChangeDate');
-      if (lastChange) {
-        const lastChangeDate = new Date(lastChange);
-        const now = new Date();
-        const diffDays = Math.floor((now.getTime() - lastChangeDate.getTime()) / (1000 * 60 * 60 * 24));
-        if (diffDays < 90) {
-          setCanChangeTalents(false);
-          setDaysUntilChange(90 - diffDays);
-        }
-      }
-    } catch (e) {
-      console.log('Error checking talent change eligibility:', e);
-    }
-  };
+  // Custom Cropper State
+  const [cropperVisible, setCropperVisible] = useState(false);
+  const [cropperImage, setCropperImage] = useState<string | null>(null);
+  const [cropperIndex, setCropperIndex] = useState(0);
 
   const pickImage = async (index: number) => {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.8,
+      allowsEditing: false, // Kendi CustomCropper'ımızı kullanacağız
+      quality: 1,
     });
-
     if (!result.canceled && result.assets[0]) {
-      const newAvatars = [...avatars];
-      newAvatars[index] = result.assets[0].uri;
-      setAvatars(newAvatars);
-      if (index === 0) {
-        setAvatarUri(result.assets[0].uri);
-      }
+      setCropperIndex(index);
+      setCropperImage(result.assets[0].uri);
+      setCropperVisible(true);
     }
+  };
+
+  const handleCropComplete = (croppedUri: string) => {
+    const newAvatars = [...avatars];
+    newAvatars[cropperIndex] = croppedUri;
+    setAvatars(newAvatars);
+    if (cropperIndex === 0) setAvatarUri(croppedUri);
+    setCropperVisible(false);
+    setCropperImage(null);
   };
 
   const toggleTalent = (talentId: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    
-    if (!canChangeTalents) {
-      Alert.alert(
-        'Yetenek Değişimi Kilitli',
-        `Yeteneklerinizi ${daysUntilChange} gün sonra değiştirebilirsiniz.`
-      );
-      return;
-    }
-
     if (selectedTalents.includes(talentId)) {
       setSelectedTalents(selectedTalents.filter(id => id !== talentId));
     } else {
@@ -120,43 +94,34 @@ export default function EditProfileScreen({ onClose, userProfile, onSave }: Edit
       Alert.alert('Hata', 'Ad Soyad boş olamaz');
       return;
     }
-
     if (selectedTalents.length === 0) {
       Alert.alert('Hata', 'En az 1 yetenek seçmelisiniz');
       return;
     }
 
     setSaving(true);
-
     try {
-      // Yetenekler değiştiyse tarihi kaydet
-      const talentsChanged = JSON.stringify(selectedTalents.sort()) !== JSON.stringify((userProfile.talents || []).sort());
-      if (talentsChanged && canChangeTalents) {
-        await AsyncStorage.setItem('lastTalentsChangeDate', new Date().toISOString());
+      const skills = selectedTalents.map(id => getTalentById(id)?.name || '').filter(Boolean);
+
+      // ✅ SUPABASE'E KAYDET (bu eksikti!)
+      if (authState.user) {
+        const { error } = await updateProfile({
+          full_name: fullName.trim(),
+          bio: bio.trim() || null,
+          talents: selectedTalents,
+        } as any);
+        if (error) {
+          Alert.alert('Hata', error);
+          setSaving(false);
+          return;
+        }
       }
 
-      // Skills'i güncelle
-      const skills = selectedTalents.map(id => {
-        const talent = getTalentById(id);
-        return talent?.name || '';
-      }).filter(Boolean);
-
-      // Auth context güncelle
-      setUserData({
-        fullName: fullName.trim(),
-        talents: selectedTalents,
-      });
+      // Local state güncelle
+      setUserData({ fullName: fullName.trim(), talents: selectedTalents });
 
       // Parent'a bildir
-      onSave({
-        fullName: fullName.trim(),
-        bio: bio.trim(),
-        avatarUri,
-        avatars,
-        skills,
-        talents: selectedTalents,
-      });
-
+      onSave({ fullName: fullName.trim(), bio: bio.trim(), avatarUri, avatars, skills, talents: selectedTalents });
       onClose();
     } catch (e) {
       Alert.alert('Hata', 'Profil kaydedilemedi');
@@ -166,129 +131,112 @@ export default function EditProfileScreen({ onClose, userProfile, onSave }: Edit
   };
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
+    <View style={[s.container, { paddingTop: insets.top }]}>
       {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.headerBtn} onPress={onClose}>
-          <Ionicons name="close" size={24} color="#fff" />
+      <View style={s.header}>
+        <TouchableOpacity style={s.headerBtn} onPress={onClose}>
+          <Ionicons name="close" size={22} color={Colors.text} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Profili Düzenle</Text>
-        <TouchableOpacity 
-          style={[styles.saveBtn, saving && styles.saveBtnDisabled]} 
+        <Text style={s.headerTitle}>Profili Düzenle</Text>
+        <TouchableOpacity
+          style={[s.saveBtn, saving && s.saveBtnDisabled]}
           onPress={handleSave}
           disabled={saving}
         >
-          {saving ? (
-            <ActivityIndicator size="small" color="#fff" />
-          ) : (
-            <Text style={styles.saveBtnText}>Kaydet</Text>
-          )}
+          {saving
+            ? <ActivityIndicator size="small" color="#fff" />
+            : <Text style={s.saveBtnText}>Kaydet</Text>
+          }
         </TouchableOpacity>
       </View>
 
-      <KeyboardAvoidingView 
-        style={{ flex: 1 }} 
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      >
-        <ScrollView 
-          style={styles.scrollView} 
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <ScrollView
+          style={s.scroll}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
           {/* Avatar Section */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Profil Fotoğrafları</Text>
-            <Text style={styles.sectionSubtitle}>3 fotoğraf ekleyebilirsiniz</Text>
-            <View style={styles.avatarsRow}>
+          <View style={s.section}>
+            <Text style={s.sectionTitle}>Profil Fotoğrafları</Text>
+            <Text style={s.sectionSub}>3 fotoğraf ekleyebilirsiniz</Text>
+            <View style={s.avatarsRow}>
               {[0, 1, 2].map((index) => (
-                <TouchableOpacity 
-                  key={index} 
-                  style={styles.avatarContainer}
-                  onPress={() => pickImage(index)}
-                >
+                <TouchableOpacity key={index} style={s.avatarContainer} onPress={() => pickImage(index)}>
                   {avatars[index] ? (
-                    <Image source={{ uri: avatars[index] }} style={styles.avatar} contentFit="cover" transition={200} />
+                    <Image source={{ uri: avatars[index] }} style={s.avatar} contentFit="cover" transition={200} />
                   ) : (
-                    <View style={styles.avatarPlaceholder}>
-                      <Ionicons name="camera" size={24} color="#666" />
+                    <View style={s.avatarPlaceholder}>
+                      <Ionicons name="camera-outline" size={22} color={Colors.textMuted} />
                     </View>
                   )}
-                  <View style={styles.avatarEditBadge}>
-                    <Ionicons name="pencil" size={12} color="#fff" />
+                  <View style={s.editBadge}>
+                    <Ionicons name="pencil" size={10} color="#fff" />
                   </View>
                 </TouchableOpacity>
               ))}
             </View>
           </View>
 
-          {/* Name Section */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Ad Soyad</Text>
-            <TextInput
-              style={styles.input}
-              value={fullName}
-              onChangeText={setFullName}
-              placeholder="Adınız Soyadınız"
-              placeholderTextColor="#666"
-              maxLength={50}
-            />
-          </View>
-
-          {/* Bio Section */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Hakkımda</Text>
-            <TextInput
-              style={[styles.input, styles.bioInput]}
-              value={bio}
-              onChangeText={setBio}
-              placeholder="Kendinizden bahsedin..."
-              placeholderTextColor="#666"
-              multiline
-              maxLength={150}
-              textAlignVertical="top"
-            />
-            <Text style={styles.charCount}>{bio.length}/150</Text>
-          </View>
-
-          {/* Talents Section */}
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Yetenekler</Text>
-              {!canChangeTalents && (
-                <View style={styles.lockedBadge}>
-                  <Ionicons name="lock-closed" size={12} color="#FF9500" />
-                  <Text style={styles.lockedText}>{daysUntilChange} gün</Text>
-                </View>
-              )}
+          {/* Full Name */}
+          <View style={s.section}>
+            <Text style={s.sectionTitle}>Ad Soyad</Text>
+            <View style={s.inputRow}>
+              <Ionicons name="person-outline" size={16} color={Colors.textMuted} style={s.inputIcon} />
+              <TextInput
+                style={s.input}
+                value={fullName}
+                onChangeText={setFullName}
+                placeholder="Adınız Soyadınız"
+                placeholderTextColor={Colors.textMuted}
+                maxLength={50}
+                autoCapitalize="words"
+              />
             </View>
-            <Text style={styles.sectionSubtitle}>
-              {canChangeTalents 
-                ? '1-3 yetenek seçin (90 günde bir değiştirilebilir)' 
-                : `Yeteneklerinizi ${daysUntilChange} gün sonra değiştirebilirsiniz`}
-            </Text>
-            
-            <View style={styles.talentsGrid}>
+          </View>
+
+          {/* Bio */}
+          <View style={s.section}>
+            <Text style={s.sectionTitle}>Hakkımda</Text>
+            <View style={[s.inputRow, { alignItems: 'flex-start', paddingTop: 12 }]}>
+              <Ionicons name="chatbubble-outline" size={16} color={Colors.textMuted} style={[s.inputIcon, { marginTop: 2 }]} />
+              <TextInput
+                style={[s.input, { minHeight: 70, flex: 1 }]}
+                value={bio}
+                onChangeText={setBio}
+                placeholder="Kendinizden bahsedin..."
+                placeholderTextColor={Colors.textMuted}
+                multiline
+                maxLength={150}
+                textAlignVertical="top"
+              />
+            </View>
+            <Text style={s.charCount}>{bio.length}/150</Text>
+          </View>
+
+          {/* Talents */}
+          <View style={s.section}>
+            <View style={s.rowBetween}>
+              <Text style={s.sectionTitle}>Yetenekler</Text>
+              <Text style={s.sectionSub}>{selectedTalents.length}/3</Text>
+            </View>
+            <Text style={s.sectionSub}>En fazla 3 yetenek seçin</Text>
+            <View style={s.talentsGrid}>
               {TALENTS.map((talent) => {
                 const isSelected = selectedTalents.includes(talent.id);
                 return (
                   <TouchableOpacity
                     key={talent.id}
-                    style={[
-                      styles.talentChip,
-                      isSelected && styles.talentChipSelected,
-                      !canChangeTalents && styles.talentChipLocked,
-                    ]}
+                    style={[s.chip, isSelected && s.chipSelected]}
                     onPress={() => toggleTalent(talent.id)}
+                    activeOpacity={0.75}
                   >
-                    <Ionicons 
-                      name={talent.icon as any} 
-                      size={16} 
-                      color={isSelected ? '#fff' : '#888'} 
+                    <Ionicons
+                      name={talent.icon as any}
+                      size={14}
+                      color={isSelected ? '#fff' : Colors.textSecondary}
                     />
-                    <Text style={[
-                      styles.talentChipText,
-                      isSelected && styles.talentChipTextSelected,
-                    ]}>
+                    <Text style={[s.chipText, isSelected && s.chipTextSelected]}>
                       {talent.name}
                     </Text>
                   </TouchableOpacity>
@@ -297,178 +245,82 @@ export default function EditProfileScreen({ onClose, userProfile, onSave }: Edit
             </View>
           </View>
 
-          <View style={{ height: 40 }} />
+          <View style={{ height: 48 }} />
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Özel Dairesel Kırpma Aracı */}
+      <CustomCropper
+        visible={cropperVisible}
+        imageUri={cropperImage}
+        onClose={() => setCropperVisible(false)}
+        onCrop={handleCropComplete}
+      />
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#000',
-  },
+const s = StyleSheet.create({
+  container: { flex: 1, backgroundColor: Colors.background },
+
   header: {
-    height: 56,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    height: 54, flexDirection: 'row',
+    alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#1a1a1a',
+    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: Colors.border,
+    backgroundColor: Colors.surface,
   },
-  headerBtn: {
-    width: 40,
-    height: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: '#fff',
-  },
+  headerBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  headerTitle: { fontSize: 16, fontWeight: '700', color: Colors.text },
   saveBtn: {
     backgroundColor: Colors.primary,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 6,
+    paddingHorizontal: 16, paddingVertical: 7,
+    borderRadius: 8,
   },
-  saveBtnDisabled: {
-    opacity: 0.6,
-  },
-  saveBtnText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  scrollView: {
-    flex: 1,
-  },
-  section: {
-    paddingHorizontal: 16,
-    paddingTop: 24,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  sectionTitle: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#fff',
-    marginBottom: 4,
-  },
-  sectionSubtitle: {
-    fontSize: 12,
-    color: '#666',
-    marginBottom: 12,
-  },
-  avatarsRow: {
-    flexDirection: 'row',
-    gap: 16,
-    justifyContent: 'center',
-  },
-  avatarContainer: {
-    position: 'relative',
-  },
-  avatar: {
-    width: 90,
-    height: 90,
-    borderRadius: 45,
-    borderWidth: 2,
-    borderColor: '#333',
-  },
-  avatarPlaceholder: {
-    width: 90,
-    height: 90,
-    borderRadius: 45,
-    backgroundColor: '#1a1a1a',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: '#333',
-    borderStyle: 'dashed',
-  },
-  avatarEditBadge: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: Colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: '#000',
-  },
-  input: {
-    backgroundColor: '#1a1a1a',
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    color: '#fff',
-    fontSize: 15,
-    borderWidth: 1,
-    borderColor: '#333',
-  },
-  bioInput: {
-    minHeight: 80,
-    textAlignVertical: 'top',
-  },
-  charCount: {
-    color: '#666',
-    fontSize: 11,
-    textAlign: 'right',
-    marginTop: 4,
-  },
-  lockedBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: 'rgba(255, 149, 0, 0.15)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 10,
-  },
-  lockedText: {
-    color: '#FF9500',
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  talentsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  talentChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#1a1a1a',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#333',
-  },
-  talentChipSelected: {
-    backgroundColor: Colors.primary,
-    borderColor: Colors.primary,
-  },
-  talentChipLocked: {
-    opacity: 0.6,
-  },
-  talentChipText: {
-    color: '#888',
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  talentChipTextSelected: {
-    color: '#fff',
-  },
-});
+  saveBtnDisabled: { opacity: 0.6 },
+  saveBtnText: { color: '#fff', fontSize: 14, fontWeight: '600' },
 
+  scroll: { flex: 1 },
+  section: { paddingHorizontal: 20, paddingTop: 24 },
+  sectionTitle: { fontSize: 14, fontWeight: '600', color: Colors.text, marginBottom: 4 },
+  sectionSub: { fontSize: 12, color: Colors.textMuted, marginBottom: 12 },
+  rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+
+  avatarsRow: { flexDirection: 'row', gap: 16, justifyContent: 'center' },
+  avatarContainer: { position: 'relative' },
+  avatar: { width: 88, height: 88, borderRadius: 44, borderWidth: 2, borderColor: Colors.border },
+  avatarPlaceholder: {
+    width: 88, height: 88, borderRadius: 44,
+    backgroundColor: Colors.surfaceAlt,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1.5, borderColor: Colors.border, borderStyle: 'dashed',
+  },
+  editBadge: {
+    position: 'absolute', bottom: 2, right: 2,
+    width: 22, height: 22, borderRadius: 11,
+    backgroundColor: Colors.primary,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1.5, borderColor: Colors.background,
+  },
+
+  inputRow: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: Colors.surface,
+    borderRadius: 12, borderWidth: 1, borderColor: Colors.border,
+    paddingHorizontal: 14, minHeight: 50,
+  },
+  inputIcon: { marginRight: 10 },
+  input: { flex: 1, fontSize: 15, color: Colors.text, paddingVertical: 12 },
+  charCount: { color: Colors.textDim, fontSize: 11, textAlign: 'right', marginTop: 6 },
+
+  talentsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  chip: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: Colors.surface,
+    paddingHorizontal: 14, paddingVertical: 8,
+    borderRadius: 20, borderWidth: 1, borderColor: Colors.border,
+  },
+  chipSelected: { backgroundColor: Colors.primary, borderColor: Colors.primary },
+  chipText: { color: Colors.textSecondary, fontSize: 13, fontWeight: '500' },
+  chipTextSelected: { color: '#fff' },
+});

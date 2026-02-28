@@ -1,247 +1,192 @@
-import { formatNumber } from '@/utils/format';
-import { VideoCard } from './HomeScreen';
 import CommentsModal from '@/components/CommentsModal';
 import Colors from '@/constants/Colors';
-import { TALENTS } from '@/constants/Talents';
+import { formatNumber } from '@/utils/format';
 import { Ionicons } from '@expo/vector-icons';
-import { FlashList } from '@shopify/flash-list';
 import { ResizeMode, Video } from 'expo-av';
 import * as Haptics from 'expo-haptics';
+import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
-import React, { useState, useMemo, useCallback, useRef } from 'react';
+import React, {
+  useCallback,
+  useMemo,
+  useRef,
+  useState
+} from 'react';
 import {
-    Dimensions,
-    FlatList,
-    Modal,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  Dimensions,
+  FlatList,
+  Modal,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
 } from 'react-native';
+import { VideoCard, VideoItem } from './HomeScreen';
 
-const CHROME_COLOR = '#0A0505';
 const { width: W, height: H } = Dimensions.get('window');
 
-interface VideoItem {
-  id: string;
-  uri: string;
-  user: { id: string; username: string; avatar?: string };
-  description: string;
-  topic?: string;
-  likes: number;
-  comments: number;
-  shares: number;
-  isLiked: boolean;
-  isSaved: boolean;
-}
+// ─── Horizontal Video Card Dimensions ────────────────────────
+const CARD_W = 100;
+const CARD_H = 178;
+const GAP = 4;
+
+type TabKey = 'kesfet' | 'dans' | 'muzik' | 'spor' | 'komedi' | 'yemek' | 'sanat';
+const TABS: { key: TabKey; label: string }[] = [
+  { key: 'kesfet', label: 'Keşfet' },
+  { key: 'dans', label: 'Dans' },
+  { key: 'muzik', label: 'Müzik' },
+  { key: 'spor', label: 'Spor' },
+  { key: 'komedi', label: 'Komedi' },
+  { key: 'yemek', label: 'Yemek' },
+  { key: 'sanat', label: 'Sanat' },
+];
 
 type Props = {
   isActive?: boolean;
-  contentHeight?: number;
   videos?: VideoItem[];
-  onVideoSaved?: (videoId: string, isSaved: boolean) => void;
-  onVideoLiked?: (videoId: string, isLiked: boolean, newLikeCount: number) => void;
-  onVideoCommented?: (videoId: string, newCommentCount: number) => void;
+  onVideoSaved?: (id: string, isSaved: boolean) => void;
+  onVideoLiked?: (id: string, isLiked: boolean, count: number) => void;
+  onVideoCommented?: (id: string, count: number) => void;
 };
 
-// Thumbnail video card component
-function VideoThumbnailCard({ 
-  video, 
-  onPress 
-}: { 
-  video: VideoItem; 
-  onPress: () => void;
-}) {
-  return (
-    <TouchableOpacity 
-      style={styles.videoCard} 
-      activeOpacity={0.95}
-      onPress={onPress}
-    >
-      <Video
-        source={{ uri: video.uri }}
-        style={styles.videoThumbnail}
-        resizeMode={ResizeMode.COVER}
-        shouldPlay={false}
-        isMuted
-        pointerEvents="none"
-      />
-      {/* Bottom gradient */}
-      <LinearGradient
-        colors={['transparent', 'rgba(0,0,0,0.6)']}
-        style={styles.videoGradient}
-        pointerEvents="none"
-      />
-      {/* Stats */}
-      <View style={styles.videoStats}>
-        <Ionicons name="play" size={11} color="#fff" />
-        <Text style={styles.videoStatsText}>{formatNumber(video.likes)}</Text>
-      </View>
-    </TouchableOpacity>
-  );
-}
-
-// Section component with horizontal video scroll - Modern TikTok style
-const ContentSection = React.memo(({ 
-  title, 
-  videos, 
-  onVideoPress,
-  onSeeAll,
-}: { 
-  title: string; 
-  videos: VideoItem[];
-  onVideoPress: (videos: VideoItem[], index: number) => void;
-  onSeeAll: (title: string, videos: VideoItem[]) => void;
-}) => {
-  const displayVideos = useMemo(() => videos.slice(0, 10), [videos]);
-  
-  const handleSeeAll = useCallback(() => onSeeAll(title, videos), [onSeeAll, title, videos]);
-  
-  const renderItem = useCallback(({ item, index }: { item: VideoItem; index: number }) => (
-    <VideoThumbnailCard 
-      video={item} 
-      onPress={() => onVideoPress(videos, index)} 
+// ─── Küçük Dikey Video Kartı (Yatay Scroll İçin) ─────────────────────
+const VThumb = React.memo(({ item, onPress, isFirst, isLast }: {
+  item: VideoItem; onPress: () => void; isFirst: boolean; isLast: boolean;
+}) => (
+  <TouchableOpacity
+    style={{
+      width: CARD_W,
+      height: CARD_H,
+      backgroundColor: Colors.surfaceAlt,
+      borderRadius: 6,
+      overflow: 'hidden',
+      marginLeft: 0,
+      marginRight: isLast ? 16 : GAP,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: Colors.border,
+    }}
+    onPress={onPress}
+    activeOpacity={0.85}
+  >
+    <Video
+      source={{ uri: item.uri }}
+      style={StyleSheet.absoluteFill}
+      resizeMode={ResizeMode.COVER}
+      shouldPlay={false}
+      isMuted
+      pointerEvents="none"
+      posterSource={{ uri: item.user.avatar || 'https://i.pravatar.cc/100' }}
+      usePoster
     />
-  ), [onVideoPress, videos]);
-
-  return (
-    <View style={styles.section}>
-      <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>{title}</Text>
-        <TouchableOpacity onPress={handleSeeAll} style={styles.seeAllBtn}>
-          <Text style={styles.seeAllText}>Tümü</Text>
-          <Ionicons name="chevron-forward" size={14} color="#888" />
-        </TouchableOpacity>
+    <LinearGradient
+      colors={['transparent', 'transparent', 'rgba(0,0,0,0.7)']}
+      style={StyleSheet.absoluteFill}
+      pointerEvents="none"
+    />
+    <View style={tc.overlayInfo}>
+      <View style={tc.statsRow}>
+        <Ionicons name="play-outline" size={10} color="rgba(255,255,255,0.9)" />
+        <Text style={tc.statsText}>{formatNumber(item.likes * 12)}</Text>
       </View>
-      <FlashList
-        horizontal
-        data={displayVideos}
-        renderItem={renderItem}
-        keyExtractor={(item) => item.id}
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.videoCarousel}
-        estimatedItemSize={130}
-      />
+      <View style={tc.userRow}>
+        <Image source={{ uri: item.user.avatar || 'https://i.pravatar.cc/100' }} style={tc.avatar} />
+        <Text style={tc.usernameText} numberOfLines={1}>{item.user.username}</Text>
+      </View>
     </View>
-  );
-}, (prev, next) => prev.title === next.title && prev.videos.length === next.videos.length);
+  </TouchableOpacity>
+));
 
-// Full-screen video player modal with comment input
-const COMMENT_INPUT_HEIGHT = 70;
+const tc = StyleSheet.create({
+  overlayInfo: {
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    padding: 6, gap: 4,
+  },
+  statsRow: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  statsText: { color: 'rgba(255,255,255,0.9)', fontSize: 10, fontWeight: '500' },
+  userRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  avatar: { width: 14, height: 14, borderRadius: 7, borderWidth: 0.5, borderColor: 'rgba(255,255,255,0.5)' },
+  usernameText: { color: 'rgba(255,255,255,0.8)', fontSize: 10, fontWeight: '400', flex: 1 },
+});
 
-function VideoPlayerModal({
-  visible,
-  videos,
-  startIndex,
-  onClose,
-  onVideoSaved,
-  onVideoLiked,
-  onVideoCommented,
-}: {
-  visible: boolean;
-  videos: VideoItem[];
-  startIndex: number;
-  onClose: () => void;
-  onVideoSaved?: (videoId: string, isSaved: boolean) => void;
-  onVideoLiked?: (videoId: string, isLiked: boolean, newLikeCount: number) => void;
-  onVideoCommented?: (videoId: string, newCommentCount: number) => void;
+// ─── Tam Ekran Kaydırmalı Oynatıcı ────────────────────────────────────
+const COMMENT_H = 66;
+function FullscreenPlayer({ visible, videos, startIndex, onClose, onVideoSaved, onVideoLiked, onVideoCommented }: {
+  visible: boolean; videos: VideoItem[]; startIndex: number; onClose: () => void;
+  onVideoSaved?: Props['onVideoSaved'];
+  onVideoLiked?: Props['onVideoLiked'];
+  onVideoCommented?: Props['onVideoCommented'];
 }) {
-  const flatListRef = useRef<FlatList>(null);
-  const [currentIndex, setCurrentIndex] = useState(startIndex);
+  const listRef = useRef<FlatList>(null);
+  const [idx, setIdx] = useState(startIndex);
   const [showComments, setShowComments] = useState(false);
-  const videoHeight = H - COMMENT_INPUT_HEIGHT;
+  const videoH = H - COMMENT_H;
 
   const onViewChange = useCallback(({ viewableItems }: any) => {
-    if (viewableItems[0]?.index != null) {
-      setCurrentIndex(viewableItems[0].index);
-    }
+    if (viewableItems[0]?.index != null) setIdx(viewableItems[0].index);
   }, []);
-
-  const viewConfig = useRef({ itemVisiblePercentThreshold: 60 }).current;
-  const getLayout = useCallback((_: any, i: number) => ({ length: videoHeight, offset: videoHeight * i, index: i }), [videoHeight]);
-
-  const currentVideo = videos[currentIndex];
+  const viewCfg = useRef({ itemVisiblePercentThreshold: 60 }).current;
+  const getLayout = useCallback((_: any, i: number) => ({ length: videoH, offset: videoH * i, index: i }), [videoH]);
 
   const renderItem = useCallback(({ item, index }: { item: VideoItem; index: number }) => (
-    <View style={{ height: videoHeight }}>
-      <VideoCard 
-        data={item} 
-        active={index === currentIndex} 
-        height={videoHeight}
-        onVideoSaved={onVideoSaved}
-        onVideoLiked={onVideoLiked}
-        onVideoCommented={onVideoCommented}
-        overlayBottomPadding={16}
+    <View style={{ height: videoH }}>
+      <VideoCard
+        data={item} active={index === idx} height={videoH} preload={Math.abs(index - idx) <= 1}
+        onVideoSaved={onVideoSaved} onVideoLiked={onVideoLiked} onVideoCommented={onVideoCommented} isAuthenticated={true}
       />
     </View>
-  ), [currentIndex, videoHeight, onVideoSaved, onVideoLiked, onVideoCommented]);
+  ), [idx, videoH, onVideoSaved, onVideoLiked, onVideoCommented]);
 
+  const current = videos[idx];
   if (!visible) return null;
 
   return (
-    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <View style={styles.playerContainer}>
-        {/* Close Button - Absolute */}
-        <TouchableOpacity style={styles.closeBtn} onPress={onClose}>
-          <Ionicons name="close" size={28} color="#fff" />
+    <Modal visible animationType="slide" onRequestClose={onClose}>
+      <View style={{ flex: 1, backgroundColor: '#000' }}>
+        <TouchableOpacity style={fp.closeBtn} onPress={onClose}>
+          <View style={fp.closeBg}><Ionicons name="arrow-back" size={22} color="#fff" /></View>
         </TouchableOpacity>
-
-        {/* Video List */}
-        <View style={{ height: videoHeight }}>
+        <View style={{ height: videoH }}>
           <FlatList
-            ref={flatListRef}
+            ref={listRef}
             data={videos}
             renderItem={renderItem}
-            keyExtractor={(item) => item.id}
+            keyExtractor={i => i.id}
             pagingEnabled
             showsVerticalScrollIndicator={false}
-            snapToInterval={videoHeight}
-            snapToAlignment="start"
+            snapToInterval={videoH}
             decelerationRate="fast"
             disableIntervalMomentum
             onViewableItemsChanged={onViewChange}
-            viewabilityConfig={viewConfig}
+            viewabilityConfig={viewCfg}
             getItemLayout={getLayout}
             initialScrollIndex={startIndex}
-            removeClippedSubviews
-            initialNumToRender={1}
-            maxToRenderPerBatch={2}
-            windowSize={3}
+            removeClippedSubviews={false}
             bounces={false}
             overScrollMode="never"
-            onScrollToIndexFailed={() => {}}
+            onScrollToIndexFailed={() => { }}
           />
         </View>
-
-        {/* Comment Input */}
-        <TouchableOpacity 
-          style={styles.commentInputContainer}
-          activeOpacity={0.9}
-          onPress={() => setShowComments(true)}
-        >
-          <View style={styles.commentInputWrap}>
+        <TouchableOpacity style={fp.commentBar} onPress={() => setShowComments(true)}>
+          <View style={fp.commentInner}>
             <TextInput
-              style={styles.commentInput}
-              placeholder="Yorum yaz..."
-              placeholderTextColor="#666"
+              style={fp.commentInput}
+              placeholder="Yorum yap..."
+              placeholderTextColor={Colors.textMuted}
               editable={false}
               pointerEvents="none"
             />
-            <View style={styles.commentSendBtn}>
-              <Ionicons name="chatbubble-outline" size={18} color="#888" />
-            </View>
+            <Ionicons name="chatbubble-outline" size={18} color={Colors.textMuted} />
           </View>
         </TouchableOpacity>
-
-        {currentVideo && (
+        {current && (
           <CommentsModal
             visible={showComments}
             onClose={() => setShowComments(false)}
-            videoId={currentVideo.id}
-            commentCount={currentVideo.comments}
-            onCommentAdded={(newCount) => onVideoCommented?.(currentVideo.id, newCount)}
+            videoId={current.id}
+            commentCount={current.comments}
+            onCommentAdded={c => onVideoCommented?.(current.id, c)}
           />
         )}
       </View>
@@ -249,420 +194,273 @@ function VideoPlayerModal({
   );
 }
 
-export default function InspirationScreen({ 
-  isActive = false, 
-  contentHeight, 
-  videos = [],
-  onVideoSaved,
-  onVideoLiked,
-  onVideoCommented,
+const fp = StyleSheet.create({
+  closeBtn: { position: 'absolute', top: 52, left: 14, zIndex: 100 },
+  closeBg: {
+    width: 38, height: 38, borderRadius: 19,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  commentBar: {
+    height: COMMENT_H, backgroundColor: Colors.surface,
+    paddingHorizontal: 14, justifyContent: 'center',
+    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: Colors.border,
+  },
+  commentInner: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: Colors.surfaceAlt,
+    borderRadius: 24, paddingHorizontal: 14, paddingVertical: 10,
+    borderWidth: 1, borderColor: Colors.border,
+  },
+  commentInput: { flex: 1, fontSize: 14, color: Colors.text },
+});
+
+
+// ─── Zengin Mock Veri (UI Testi İçin) ──────────────────────────────────
+const MOCK_EXPLORE_VIDEOS: VideoItem[] = [
+  // #komedi
+  { id: 'm1', uri: 'https://videos.pexels.com/video-files/3045163/3045163-uhd_2560_1440_25fps.mp4', user: { id: 'u1', username: 'hasan_gul', avatar: 'https://i.pravatar.cc/100?img=1' }, description: 'Arkadaşlarla hafta sonu 😂', topic: '#komedi', likes: 14500, comments: 230, shares: 12, isLiked: false, isSaved: false },
+  { id: 'm2', uri: 'https://videos.pexels.com/video-files/2491284/2491284-uhd_2560_1440_25fps.mp4', user: { id: 'u2', username: 'komedi_dunyasi', avatar: 'https://i.pravatar.cc/100?img=2' }, description: 'Kopeğimin tepkisi efsane', topic: '#komedi', likes: 8900, comments: 140, shares: 45, isLiked: false, isSaved: false },
+  { id: 'm3', uri: 'https://videos.pexels.com/video-files/3195394/3195394-uhd_2560_1440_25fps.mp4', user: { id: 'u3', username: 'mizah_adam', avatar: 'https://i.pravatar.cc/100?img=3' }, description: 'Sınavdan sonra ben', topic: '#komedi', likes: 3200, comments: 50, shares: 8, isLiked: false, isSaved: false },
+  { id: 'm4', uri: 'https://videos.pexels.com/video-files/2495382/2495382-uhd_2560_1440_25fps.mp4', user: { id: 'u4', username: 'ayse_komik', avatar: 'https://i.pravatar.cc/100?img=4' }, description: 'Ev hali', topic: '#komedi', likes: 4500, comments: 80, shares: 15, isLiked: false, isSaved: false },
+
+  // #spor
+  { id: 's1', uri: 'https://videos.pexels.com/video-files/3195394/3195394-uhd_2560_1440_25fps.mp4', user: { id: 'u5', username: 'fit_boy', avatar: 'https://i.pravatar.cc/100?img=5' }, description: 'Bacak günü! Yok böyle acı 🦵🔥', topic: '#spor', likes: 21000, comments: 400, shares: 200, isLiked: false, isSaved: false },
+  { id: 's2', uri: 'https://videos.pexels.com/video-files/2491284/2491284-uhd_2560_1440_25fps.mp4', user: { id: 'u6', username: 'basket_tr', avatar: 'https://i.pravatar.cc/100?img=6' }, description: 'Son saniye basketi', topic: '#spor', likes: 18000, comments: 300, shares: 150, isLiked: false, isSaved: false },
+  { id: 's3', uri: 'https://videos.pexels.com/video-files/2495382/2495382-uhd_2560_1440_25fps.mp4', user: { id: 'u7', username: 'gym_girl', avatar: 'https://i.pravatar.cc/100?img=7' }, description: 'Sabah koşusu', topic: '#spor', likes: 5600, comments: 120, shares: 30, isLiked: false, isSaved: false },
+
+  // #dans
+  { id: 'd1', uri: 'https://videos.pexels.com/video-files/3045163/3045163-uhd_2560_1440_25fps.mp4', user: { id: 'u8', username: 'dance_machine', avatar: 'https://i.pravatar.cc/100?img=8' }, description: 'Yeni trend dansı denedik 🕺💃', topic: '#dans', likes: 45000, comments: 1000, shares: 500, isLiked: false, isSaved: false },
+  { id: 'd2', uri: 'https://videos.pexels.com/video-files/2495382/2495382-uhd_2560_1440_25fps.mp4', user: { id: 'u9', username: 'hiphop_crew', avatar: 'https://i.pravatar.cc/100?img=9' }, description: 'Sokak stili', topic: '#dans', likes: 12000, comments: 200, shares: 80, isLiked: false, isSaved: false },
+
+  // #teknoloji
+  { id: 't1', uri: 'https://videos.pexels.com/video-files/2491284/2491284-uhd_2560_1440_25fps.mp4', user: { id: 'u10', username: 'tech_guru', avatar: 'https://i.pravatar.cc/100?img=10' }, description: 'Yeni telefonu inceledik! 📱', topic: '#teknoloji', likes: 8900, comments: 450, shares: 100, isLiked: false, isSaved: false },
+  { id: 't2', uri: 'https://videos.pexels.com/video-files/3195394/3195394-uhd_2560_1440_25fps.mp4', user: { id: 'u11', username: 'kodlama_101', avatar: 'https://i.pravatar.cc/100?img=11' }, description: '5 dakikada app yapımı', topic: '#teknoloji', likes: 11000, comments: 300, shares: 250, isLiked: false, isSaved: false },
+  { id: 't3', uri: 'https://videos.pexels.com/video-files/3045163/3045163-uhd_2560_1440_25fps.mp4', user: { id: 'u12', username: 'ai_gelecek', avatar: 'https://i.pravatar.cc/100?img=12' }, description: 'Yapay zeka devrimi', topic: '#teknoloji', likes: 15600, comments: 800, shares: 600, isLiked: false, isSaved: false },
+
+  // #seyahat
+  { id: 'se1', uri: 'https://videos.pexels.com/video-files/2495382/2495382-uhd_2560_1440_25fps.mp4', user: { id: 'u13', username: 'gezgin_kiz', avatar: 'https://i.pravatar.cc/100?img=13' }, description: 'Bali günlüklerim 🌴', topic: '#seyahat', likes: 32000, comments: 800, shares: 400, isLiked: false, isSaved: false },
+  { id: 'se2', uri: 'https://videos.pexels.com/video-files/2491284/2491284-uhd_2560_1440_25fps.mp4', user: { id: 'u14', username: 'doga_sever', avatar: 'https://i.pravatar.cc/100?img=14' }, description: 'Karadeniz kampı', topic: '#seyahat', likes: 24000, comments: 600, shares: 300, isLiked: false, isSaved: false },
+];
+
+export default function InspirationScreen({
+  isActive = false, videos = [], onVideoSaved, onVideoLiked, onVideoCommented,
 }: Props) {
-  const [activeTab, setActiveTab] = useState<'topics' | 'tags'>('topics');
-  const [searchQuery, setSearchQuery] = useState('');
+  const [search, setSearch] = useState('');
+  const [activeTab, setActiveTab] = useState<TabKey>('kesfet');
   const [playerVisible, setPlayerVisible] = useState(false);
   const [playerVideos, setPlayerVideos] = useState<VideoItem[]>([]);
-  const [playerStartIndex, setPlayerStartIndex] = useState(0);
+  const [playerStart, setPlayerStart] = useState(0);
 
-  // Group videos by topic (sistem tarafından belirlenen konular)
-  const topicGroups = useMemo(() => {
-    const groups: { [key: string]: VideoItem[] } = {};
-    
-    videos.forEach(video => {
-      if (video.topic) {
-        if (!groups[video.topic]) {
-          groups[video.topic] = [];
-        }
-        groups[video.topic].push(video);
-      }
+  // Group videos by topic/tag
+  const groupedVideos = useMemo(() => {
+    // Props olarak gelen video listesi boşsa veya çok azsa MOCK_EXPLORE_VIDEOS kullan.
+    let list = videos.length > 3 ? [...videos, ...MOCK_EXPLORE_VIDEOS] : [...MOCK_EXPLORE_VIDEOS];
+
+    // Shuffle the mock items slightly so it looks dynamic
+    list = list.sort((a, b) => a.id.localeCompare(b.id));
+
+    if (activeTab !== 'kesfet') {
+      list = list.filter(v =>
+      (v.topic?.toLowerCase().includes(activeTab) ||
+        v.description?.toLowerCase().includes(activeTab))
+      );
+    }
+
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      list = list.filter(v =>
+        v.description?.toLowerCase().includes(q) ||
+        v.user.username?.toLowerCase().includes(q) ||
+        v.topic?.toLowerCase().includes(q)
+      );
+    }
+
+    const map = new Map<string, VideoItem[]>();
+    list.forEach(v => {
+      // '#' işaretini düzelt
+      let topic = v.topic || '#Genel';
+      if (!topic.startsWith('#')) topic = '#' + topic;
+
+      if (!map.has(topic)) map.set(topic, []);
+      map.get(topic)!.push(v);
     });
 
-    return Object.entries(groups)
-      .sort(([, a], [, b]) => b.length - a.length)
-      .map(([topic, vids]) => ({ title: topic, videos: vids }));
-  }, [videos]);
+    return Array.from(map.entries()).map(([topic, data]) => ({
+      topic,
+      count: data.length,
+      data
+    })).sort((a, b) => b.count - a.count); // Büyük gruplar üstte
+  }, [videos, search]);
 
-  // Extract hashtags from video descriptions (kullanıcıların koyduğu etiketler)
-  const hashtagGroups = useMemo(() => {
-    const tags: { [key: string]: VideoItem[] } = {};
-    
-    videos.forEach(video => {
-      const matches = video.description.match(/#[a-zA-ZğüşıöçĞÜŞİÖÇ0-9_]+/g);
-      if (matches) {
-        matches.forEach(tag => {
-          const normalizedTag = tag.toLowerCase();
-          if (!tags[normalizedTag]) {
-            tags[normalizedTag] = [];
-          }
-          if (!tags[normalizedTag].find(v => v.id === video.id)) {
-            tags[normalizedTag].push(video);
-          }
-        });
-      }
-    });
-
-    return Object.entries(tags)
-      .sort(([, a], [, b]) => b.length - a.length)
-      .map(([tag, vids]) => ({ title: tag, videos: vids }));
-  }, [videos]);
-
-  // Pre-filtered groups for both tabs - NO dependency on activeTab
-  const filteredTopicGroups = useMemo(() => {
-    if (!searchQuery.trim()) return topicGroups;
-    const query = searchQuery.toLowerCase();
-    return topicGroups.filter(g => 
-      g.title.toLowerCase().includes(query) ||
-      g.videos.some(v => v.user.username.toLowerCase().includes(query) || v.description.toLowerCase().includes(query))
-    );
-  }, [topicGroups, searchQuery]);
-
-  const filteredHashtagGroups = useMemo(() => {
-    if (!searchQuery.trim()) return hashtagGroups;
-    const query = searchQuery.toLowerCase();
-    return hashtagGroups.filter(g => 
-      g.title.toLowerCase().includes(query) ||
-      g.videos.some(v => v.user.username.toLowerCase().includes(query) || v.description.toLowerCase().includes(query))
-    );
-  }, [hashtagGroups, searchQuery]);
-
-  // Quick access for both tabs - pre-calculated
-  const topicQuickItems = useMemo(() => topicGroups.slice(0, 8).map(g => ({ title: g.title, count: g.videos.length })), [topicGroups]);
-  const hashtagQuickItems = useMemo(() => hashtagGroups.slice(0, 8).map(g => ({ title: g.title, count: g.videos.length })), [hashtagGroups]);
-
-  const openVideoPlayer = useCallback((vids: VideoItem[], index: number) => {
-    setPlayerVideos(vids);
-    setPlayerStartIndex(index);
+  const openPlayer = useCallback((groupVideos: VideoItem[], idx: number) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setPlayerVideos(groupVideos);
+    setPlayerStart(idx);
     setPlayerVisible(true);
   }, []);
 
-  const handleSeeAll = useCallback((title: string, vids: VideoItem[]) => {
-    openVideoPlayer(vids, 0);
-  }, [openVideoPlayer]);
-
-  const handleTopicQuickPress = useCallback((title: string) => {
-    const group = topicGroups.find(g => g.title === title);
-    if (group) openVideoPlayer(group.videos, 0);
-  }, [topicGroups, openVideoPlayer]);
-
-  const handleHashtagQuickPress = useCallback((title: string) => {
-    const group = hashtagGroups.find(g => g.title === title);
-    if (group) openVideoPlayer(group.videos, 0);
-  }, [hashtagGroups, openVideoPlayer]);
-
-  if (videos.length === 0) {
-    return (
-      <View style={styles.container}>
-        <View style={styles.searchContainer}>
-          <View style={styles.searchBar}>
-            <Ionicons name="search" size={16} color="#666" />
-            <Text style={{ color: '#555', fontSize: 14 }}>Ara...</Text>
-          </View>
-        </View>
-        <View style={styles.emptyContainer}>
-          <Ionicons name="compass-outline" size={48} color="#333" />
-          <Text style={styles.emptyTitle}>Henüz içerik yok</Text>
-          <Text style={styles.emptySubtitle}>İlk videoyu yükleyen sen ol!</Text>
-        </View>
-      </View>
-    );
-  }
-
   return (
-    <View style={styles.container}>
-      {/* Modern Search Bar - No Header */}
-      <View style={styles.searchContainer}>
-        <TouchableOpacity style={styles.searchBar} activeOpacity={0.8}>
-          <Ionicons name="search" size={16} color="#666" />
+    <View style={s.container}>
+      {/* Search Header */}
+      <View style={s.searchContainer}>
+        <View style={s.searchBar}>
+          <Ionicons name="search" size={16} color={Colors.textMuted} />
           <TextInput
-            style={styles.searchInput}
-            placeholder="Ara..."
-            placeholderTextColor="#555"
-            value={searchQuery}
-            onChangeText={setSearchQuery}
+            style={s.searchInput}
+            placeholder="Etiket veya içerik ara..."
+            placeholderTextColor={Colors.textMuted}
+            value={search}
+            onChangeText={setSearch}
+            returnKeyType="search"
           />
-          {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-              <Ionicons name="close-circle" size={16} color="#555" />
+          {search.length > 0 && (
+            <TouchableOpacity onPress={() => setSearch('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Ionicons name="close-circle" size={16} color={Colors.textMuted} />
             </TouchableOpacity>
           )}
-        </TouchableOpacity>
+        </View>
       </View>
 
-      {/* Minimal Tabs */}
-      <View style={styles.tabContainer}>
-        <TouchableOpacity 
-          style={[styles.tab, activeTab === 'topics' && styles.tabActive]} 
-          onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            setActiveTab('topics');
-          }}
-          activeOpacity={0.7}
-        >
-          <Text style={[styles.tabText, activeTab === 'topics' && styles.tabTextActive]}>Konular</Text>
-        </TouchableOpacity>
-        <TouchableOpacity 
-          style={[styles.tab, activeTab === 'tags' && styles.tabActive]} 
-          onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            setActiveTab('tags');
-          }}
-          activeOpacity={0.7}
-        >
-          <Text style={[styles.tabText, activeTab === 'tags' && styles.tabTextActive]}>Etiketler</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Tab Content Container */}
-      <View style={styles.tabContentContainer}>
-        {/* Topics Tab Content - Always rendered, visibility toggled */}
-      <ScrollView 
-          style={[styles.scrollView, activeTab !== 'topics' && styles.hiddenTab]}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
-        pointerEvents={activeTab === 'topics' ? 'auto' : 'none'}
-      >
-        {topicQuickItems.length > 0 && (
-          <ScrollView 
-            horizontal 
-            showsHorizontalScrollIndicator={false} 
-            style={styles.quickScroll}
-            contentContainerStyle={styles.quickContainer}
-          >
-            {topicQuickItems.map((item, index) => (
-              <TouchableOpacity 
-                key={item.title} 
-                style={[styles.quickPill, index === 0 && styles.quickPillFirst]}
-                activeOpacity={0.8}
+      {/* Categories (Tabs) */}
+      <View style={s.tabsWrap}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.tabsContent}>
+          {TABS.map(tab => {
+            const active = activeTab === tab.key;
+            return (
+              <TouchableOpacity
+                key={tab.key}
+                style={[s.tabChip, active && s.tabChipActive]}
                 onPress={() => {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  handleTopicQuickPress(item.title);
+                  setActiveTab(tab.key);
                 }}
               >
-                <Text style={styles.quickText}>{item.title}</Text>
+                <Text style={[s.tabLabel, active && s.tabLabelActive]}>{tab.label}</Text>
               </TouchableOpacity>
-            ))}
-          </ScrollView>
-        )}
-        {filteredTopicGroups.map((group) => (
-          <ContentSection 
-            key={group.title} 
-            title={group.title}
-            videos={group.videos}
-            onVideoPress={openVideoPlayer}
-            onSeeAll={handleSeeAll}
-          />
-        ))}
-        {filteredTopicGroups.length === 0 && searchQuery && (
-          <View style={styles.noResults}>
-            <Ionicons name="search" size={48} color="#333" />
-            <Text style={styles.noResultsText}>"{searchQuery}" için konu bulunamadı</Text>
-          </View>
-        )}
-        {filteredTopicGroups.length === 0 && !searchQuery && (
-          <View style={styles.noResults}>
-            <Ionicons name="albums-outline" size={48} color="#333" />
-            <Text style={styles.noResultsText}>Henüz konu yok</Text>
-          </View>
-        )}
-        <View style={{ height: 20 }} />
-      </ScrollView>
-
-      {/* Tags Tab Content - Always rendered, visibility toggled */}
-      <ScrollView 
-        style={[styles.scrollView, activeTab !== 'tags' && styles.hiddenTab]}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
-        pointerEvents={activeTab === 'tags' ? 'auto' : 'none'}
-      >
-        {hashtagQuickItems.length > 0 && (
-          <ScrollView 
-            horizontal 
-            showsHorizontalScrollIndicator={false} 
-            style={styles.quickScroll}
-            contentContainerStyle={styles.quickContainer}
-          >
-            {hashtagQuickItems.map((item, index) => (
-              <TouchableOpacity 
-                key={item.title} 
-                style={[styles.quickPill, index === 0 && styles.quickPillFirst]}
-                activeOpacity={0.8}
-                onPress={() => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  handleHashtagQuickPress(item.title);
-                }}
-              >
-                <Text style={styles.quickText}>{item.title}</Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        )}
-        {filteredHashtagGroups.map((group) => (
-          <ContentSection 
-            key={group.title} 
-            title={group.title}
-            videos={group.videos}
-            onVideoPress={openVideoPlayer}
-            onSeeAll={handleSeeAll}
-          />
-        ))}
-        {filteredHashtagGroups.length === 0 && searchQuery && (
-          <View style={styles.noResults}>
-            <Ionicons name="search" size={48} color="#333" />
-            <Text style={styles.noResultsText}>"{searchQuery}" için etiket bulunamadı</Text>
-          </View>
-        )}
-        {filteredHashtagGroups.length === 0 && !searchQuery && (
-          <View style={styles.noResults}>
-            <Ionicons name="pricetag-outline" size={48} color="#333" />
-            <Text style={styles.noResultsText}>Henüz etiket yok</Text>
-          </View>
-        )}
-        <View style={{ height: 20 }} />
-      </ScrollView>
+            );
+          })}
+        </ScrollView>
       </View>
 
-      {/* Video Player Modal */}
-      <VideoPlayerModal
-        visible={playerVisible}
-        videos={playerVideos}
-        startIndex={playerStartIndex}
-        onClose={() => setPlayerVisible(false)}
-        onVideoSaved={onVideoSaved}
-        onVideoLiked={onVideoLiked}
-        onVideoCommented={onVideoCommented}
-      />
+      {/* Horizontal Carousel List */}
+      {groupedVideos.length === 0 ? (
+        <View style={s.empty}>
+          <Ionicons name="film-outline" size={48} color={Colors.textDim} />
+          <Text style={s.emptyTitle}>
+            {search ? `"${search}" bulunamadı` : 'Henüz içerik yok'}
+          </Text>
+        </View>
+      ) : (
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 60 }}>
+          {groupedVideos.map((group, groupIndex) => (
+            <View key={groupIndex} style={s.section}>
+
+              {/* Section Header: Tag, Count, See All */}
+              <View style={s.sectionHeader}>
+                <View style={s.sectionTitleRow}>
+                  <Text style={s.sectionTitle}>#{group.topic.toLowerCase()}</Text>
+                  <Text style={s.sectionCount}>{group.count} video</Text>
+                </View>
+                <TouchableOpacity style={s.seeAllBtn}>
+                  <Text style={s.seeAllText}>Tümünü Gör</Text>
+                  <Ionicons name="chevron-forward" size={14} color={Colors.primary} />
+                </TouchableOpacity>
+              </View>
+
+              {/* Horizontal Scroll (Carousel) */}
+              <FlatList
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                data={group.data}
+                keyExtractor={item => item.id}
+                renderItem={({ item, index }) => (
+                  <VThumb
+                    item={item}
+                    isFirst={index === 0}
+                    isLast={index === group.data.length - 1}
+                    onPress={() => openPlayer(group.data, index)}
+                  />
+                )}
+                // Snapping for smooth modern scroll
+                snapToInterval={CARD_W + GAP}
+                decelerationRate="fast"
+              />
+            </View>
+          ))}
+        </ScrollView>
+      )}
+
+      {/* Play Video Fullscreen */}
+      {playerVisible && (
+        <FullscreenPlayer
+          visible={playerVisible}
+          videos={playerVideos}
+          startIndex={playerStart}
+          onClose={() => setPlayerVisible(false)}
+          onVideoSaved={onVideoSaved}
+          onVideoLiked={onVideoLiked}
+          onVideoCommented={onVideoCommented}
+        />
+      )}
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#000',
-  },
-  // Modern Search Bar
+const s = StyleSheet.create({
+  container: { flex: 1, backgroundColor: Colors.background },
+
+  // Search
   searchContainer: {
-    paddingHorizontal: 12,
-    paddingTop: 8,
-    paddingBottom: 6,
-    backgroundColor: '#000',
+    paddingHorizontal: 16, paddingTop: 6, paddingBottom: 0,
+    backgroundColor: Colors.surface,
   },
   searchBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#1a1a1a',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    height: 36,
-    gap: 8,
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: Colors.surfaceAlt,
+    borderRadius: 8, paddingHorizontal: 12, height: 36,
   },
-  searchInput: {
-    flex: 1,
-    color: '#fff',
-    fontSize: 14,
-    paddingVertical: 0,
-  },
-  // Modern Tabs
-  tabContainer: {
-    flexDirection: 'row',
-    paddingHorizontal: 12,
-    gap: 8,
-    paddingVertical: 8,
-  },
-  tab: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: 'transparent',
-  },
-  tabActive: {
-    backgroundColor: '#222',
-  },
-  tabText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#666',
-  },
-  tabTextActive: {
-    color: '#fff',
-  },
-  // Content
-  scrollView: {
-    flex: 1,
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-  },
-  hiddenTab: {
-    opacity: 0,
-    zIndex: -1,
-  },
-  tabContentContainer: {
-    flex: 1,
-    position: 'relative',
-  },
-  scrollContent: {
-    paddingBottom: 24,
-  },
-  // Empty State
-  emptyContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 40,
-  },
-  emptyTitle: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: '600',
-    marginTop: 16,
-  },
-  emptySubtitle: {
-    color: '#666',
-    fontSize: 14,
+  searchInput: { flex: 1, fontSize: 13, color: Colors.text, paddingVertical: 0 },
+
+  // Tabs
+  tabsWrap: {
+    backgroundColor: Colors.surface,
+    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: Colors.border,
+    paddingBottom: 2,
     marginTop: 8,
-    textAlign: 'center',
   },
-  // Quick Access Pills - Horizontal Scroll
-  quickScroll: {
-    marginTop: 4,
-    marginBottom: 8,
-  },
-  quickContainer: {
-    paddingHorizontal: 12,
-    gap: 8,
-  },
-  quickPill: {
-    backgroundColor: '#1a1a1a',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
-  },
-  quickPillFirst: {
-    marginLeft: 0,
-  },
-  quickText: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: '#fff',
-  },
-  // Content Section
+  tabsContent: { paddingHorizontal: 16, gap: 16, flexDirection: 'row' },
+  tabChip: { paddingVertical: 8, borderBottomWidth: 2, borderBottomColor: 'transparent' },
+  tabChipActive: { borderBottomColor: Colors.text },
+  tabLabel: { fontSize: 12, fontWeight: '400', color: Colors.textSecondary },
+  tabLabelActive: { color: Colors.text, fontWeight: '600' },
+
+  // Sections
   section: {
-    marginBottom: 16,
-    marginTop: 4,
+    marginTop: 18,
   },
   sectionHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    marginBottom: 10,
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    marginBottom: 8,
+  },
+  sectionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   sectionTitle: {
-    color: '#fff',
     fontSize: 15,
-    fontWeight: '700',
+    fontWeight: '600',
+    color: Colors.text,
+    letterSpacing: -0.3,
+  },
+  sectionCount: {
+    fontSize: 11,
+    fontWeight: '400',
+    color: Colors.textMuted,
   },
   seeAllBtn: {
     flexDirection: 'row',
@@ -670,98 +468,12 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   seeAllText: {
-    color: '#888',
-    fontSize: 13,
+    fontSize: 11,
     fontWeight: '500',
+    color: Colors.textMuted,
   },
-  videoCarousel: {
-    paddingLeft: 12,
-    gap: 8,
-  },
-  // Video Card - Larger, TikTok style
-  videoCard: {
-    width: 130,
-    height: 180,
-    borderRadius: 6,
-    overflow: 'hidden',
-    backgroundColor: '#111',
-  },
-  videoThumbnail: {
-    width: '100%',
-    height: '100%',
-  },
-  videoGradient: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    height: 50,
-  },
-  videoStats: {
-    position: 'absolute',
-    bottom: 8,
-    left: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  videoStatsText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  noResults: {
-    alignItems: 'center',
-    paddingVertical: 60,
-  },
-  noResultsText: {
-    color: '#666',
-    fontSize: 14,
-    marginTop: 12,
-  },
-  playerContainer: {
-    flex: 1,
-    backgroundColor: '#000',
-  },
-  closeBtn: {
-    position: 'absolute',
-    top: 50,
-    left: 16,
-    zIndex: 100,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  commentInputContainer: {
-    height: COMMENT_INPUT_HEIGHT,
-    backgroundColor: '#000',
-    paddingHorizontal: 12,
-    justifyContent: 'center',
-    borderTopWidth: 1,
-    borderTopColor: '#1a1a1a',
-  },
-  commentInputWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  commentInput: {
-    flex: 1,
-    backgroundColor: '#1a1a1a',
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    color: '#fff',
-  },
-  commentSendBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#222',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+
+  // Empty state
+  empty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10, paddingBottom: 40 },
+  emptyTitle: { fontSize: 15, fontWeight: '600', color: Colors.textMuted },
 });

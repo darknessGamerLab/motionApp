@@ -1,15 +1,14 @@
-import { VideoCard } from './HomeScreen';
-import SettingsScreen from './SettingsScreen';
-import EditProfileScreen from './EditProfileScreen';
 import CommentsModal from '@/components/CommentsModal';
+import ProfilePhotoCarousel from '@/components/ProfilePhotoCarousel';
+import Colors from '@/constants/Colors';
 import { formatNumber } from '@/utils/format';
 import { Ionicons } from '@expo/vector-icons';
-import { FlashList } from '@shopify/flash-list';
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
-import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
+  Animated,
   Dimensions,
   FlatList,
   Modal,
@@ -19,10 +18,12 @@ import {
   TextInput,
   TouchableOpacity,
   View,
-  Animated,
   ViewToken,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import EditProfileScreen from './EditProfileScreen';
+import { VideoCard } from './HomeScreen';
+import SettingsScreen from './SettingsScreen';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const GRID_COLUMNS = 3;
@@ -82,7 +83,7 @@ export default function MeScreen({ isActive = false, userProfile, allVideos = []
   }), [userProfile]);
 
   // Kullanıcının videoları ve kaydedilenler
-  const userVideos = useMemo(() => allVideos.filter(v => 
+  const userVideos = useMemo(() => allVideos.filter(v =>
     v.user.id === 'current' || v.user.username === user.username
   ), [allVideos, user.username]);
   const savedVideosList = useMemo(() => allVideos.filter(v => v.isSaved), [allVideos]);
@@ -124,8 +125,8 @@ export default function MeScreen({ isActive = false, userProfile, allVideos = []
       'Bu videoyu silmek istediğinizden emin misiniz?',
       [
         { text: 'İptal', style: 'cancel' },
-        { 
-          text: 'Sil', 
+        {
+          text: 'Sil',
           style: 'destructive',
           onPress: () => {
             onVideoDelete?.(videoId);
@@ -166,7 +167,7 @@ export default function MeScreen({ isActive = false, userProfile, allVideos = []
   const formatViews = formatNumber;
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
+    <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.headerUsername}>@{user.username}</Text>
@@ -178,28 +179,13 @@ export default function MeScreen({ isActive = false, userProfile, allVideos = []
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false} scrollEnabled={isActive}>
         {/* Profile Photos - 3 Photos */}
         <View style={styles.profileSection}>
-          <View style={styles.avatarStack}>
-            {user.avatars.map((avatar, index) => {
-              const isActive = index === activeProfileIndex;
-              const position = index === 0 ? 'left' : index === 2 ? 'right' : 'center';
-              
-              return (
-                <TouchableOpacity
-                  key={index}
-                  style={[
-                    styles.avatarContainer,
-                    position === 'left' && styles.leftFrame,
-                    position === 'center' && styles.centerFrame,
-                    position === 'right' && styles.rightFrame,
-                  ]}
-                  onPress={() => changeProfile(index)}
-                  activeOpacity={0.8}
-                >
-                  <Image source={{ uri: avatar }} style={styles.avatar} />
-                </TouchableOpacity>
-              );
-            })}
-          </View>
+          {/* 3 Photos Carousel */}
+          <ProfilePhotoCarousel
+            avatars={user.avatars}
+            size={90}
+            isEditable={true}
+            onEditPress={() => setShowEditProfile(true)}
+          />
 
 
           {/* Full Name */}
@@ -210,7 +196,7 @@ export default function MeScreen({ isActive = false, userProfile, allVideos = []
 
           {/* Skills - 3 Skills Mandatory */}
           <View style={styles.skillsContainer}>
-            {user.skills.map((skill, index) => (
+            {user.skills.map((skill: string, index: number) => (
               <Text key={index} style={styles.skillText}>
                 #{skill.toLowerCase()}
               </Text>
@@ -324,8 +310,8 @@ export default function MeScreen({ isActive = false, userProfile, allVideos = []
 
       {/* Settings Modal */}
       <Modal visible={showSettings} animationType="slide" onRequestClose={() => setShowSettings(false)}>
-        <SettingsScreen 
-          onBackPress={() => setShowSettings(false)} 
+        <SettingsScreen
+          onBackPress={() => setShowSettings(false)}
           onEditProfile={() => {
             setShowSettings(false);
             setShowEditProfile(true);
@@ -337,7 +323,7 @@ export default function MeScreen({ isActive = false, userProfile, allVideos = []
       <Modal visible={showEditProfile} animationType="slide" onRequestClose={() => setShowEditProfile(false)}>
         <EditProfileScreen
           onClose={() => setShowEditProfile(false)}
-          userProfile={user}
+          userProfile={{ ...user, avatarUri: user.avatars?.[0] || '', talents: (userProfile as any).talents || [] }}
           onSave={(updatedProfile) => {
             onProfileUpdate?.(updatedProfile);
             setShowEditProfile(false);
@@ -351,18 +337,18 @@ export default function MeScreen({ isActive = false, userProfile, allVideos = []
 // Basit Profile Video Player - HomeScreen gibi
 const COMMENT_INPUT_HEIGHT = 70;
 
-function ProfileVideoPlayer({ 
-  visible, 
-  videos, 
-  startIndex, 
+function ProfileVideoPlayer({
+  visible,
+  videos,
+  startIndex,
   onClose,
   onVideoSaved,
   onVideoLiked,
   onVideoCommented,
-}: { 
-  visible: boolean; 
-  videos: VideoItem[]; 
-  startIndex: number; 
+}: {
+  visible: boolean;
+  videos: VideoItem[];
+  startIndex: number;
   onClose: () => void;
   onVideoSaved?: (videoId: string, isSaved: boolean) => void;
   onVideoLiked?: (videoId: string, isLiked: boolean, newLikeCount: number) => void;
@@ -389,14 +375,13 @@ function ProfileVideoPlayer({
 
   const renderItem = useCallback(({ item, index }: { item: VideoItem; index: number }) => (
     <View style={{ height: videoHeight }}>
-      <VideoCard 
-        data={item} 
-        active={index === idx} 
+      <VideoCard
+        data={item}
+        active={index === idx}
         height={videoHeight}
         onVideoSaved={onVideoSaved}
         onVideoLiked={onVideoLiked}
         onVideoCommented={onVideoCommented}
-        overlayBottomPadding={16}
       />
     </View>
   ), [idx, videoHeight, onVideoSaved, onVideoLiked, onVideoCommented]);
@@ -433,14 +418,14 @@ function ProfileVideoPlayer({
             maxToRenderPerBatch={2}
             windowSize={3}
             initialScrollIndex={startIndex}
-            onScrollToIndexFailed={() => {}}
+            onScrollToIndexFailed={() => { }}
             bounces={false}
             overScrollMode="never"
           />
         </View>
 
         {/* Comment Input */}
-        <TouchableOpacity 
+        <TouchableOpacity
           style={playerStyles.commentInputContainer}
           activeOpacity={0.9}
           onPress={() => setShowComments(true)}
@@ -478,102 +463,72 @@ const playerStyles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
   header: {
     position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
+    top: 0, left: 0, right: 0,
     zIndex: 10,
-    paddingTop: 50,
-    paddingBottom: 15,
-    paddingHorizontal: 15,
+    paddingTop: 50, paddingBottom: 15, paddingHorizontal: 15,
   },
   backBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    alignItems: 'center',
-    justifyContent: 'center',
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    alignItems: 'center', justifyContent: 'center',
   },
   commentInputContainer: {
     height: COMMENT_INPUT_HEIGHT,
-    backgroundColor: '#000',
-    paddingHorizontal: 12,
-    justifyContent: 'center',
-    borderTopWidth: 1,
-    borderTopColor: '#1a1a1a',
+    backgroundColor: Colors.surface,
+    paddingHorizontal: 12, justifyContent: 'center',
+    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: Colors.border,
   },
-  commentInputWrap: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: 8,
-  },
+  commentInputWrap: { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
   commentInput: {
-    flex: 1,
-    backgroundColor: '#1a1a1a',
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    color: '#fff',
-    maxHeight: 100,
+    flex: 1, backgroundColor: Colors.surfaceAlt,
+    borderRadius: 20, paddingHorizontal: 16, paddingVertical: 10,
+    color: Colors.text, maxHeight: 100,
+    borderWidth: 1, borderColor: Colors.border,
   },
   commentSendBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#222',
-    alignItems: 'center',
-    justifyContent: 'center',
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: Colors.surfaceAlt,
+    alignItems: 'center', justifyContent: 'center',
   },
 });
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#000' },
+  container: { flex: 1, backgroundColor: Colors.background },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12 },
   headerButton: { padding: 4 },
-  headerUsername: { fontSize: 16, fontWeight: '700', color: '#fff' },
+  headerUsername: { fontSize: 16, fontWeight: '700', color: Colors.text },
   scrollView: { flex: 1 },
-  profileSection: { paddingHorizontal: 20, paddingTop: 0, paddingBottom: 0, alignItems: 'center' },
-  avatarStack: { height: 100, width: SCREEN_WIDTH, alignItems: 'center', justifyContent: 'center', marginBottom: 2, position: 'relative' },
-  avatarContainer: { position: 'absolute', width: 90, height: 90 },
-  leftFrame: { left: '24%', transform: [{ scale: 0.8 }], opacity: 0.6, zIndex: 0 },
-  centerFrame: { left: '50%', marginLeft: -45, zIndex: 2 },
-  rightFrame: { right: '24%', transform: [{ scale: 0.8 }], opacity: 0.6, zIndex: 0 },
-  avatar: { width: 90, height: 90, borderRadius: 45, borderWidth: 2.5, borderColor: '#fff' },
-  fullName: { fontSize: 18, fontWeight: '600', color: '#fff', marginBottom: 4, letterSpacing: 0.3 },
-  bio: { fontSize: 13, color: '#999', textAlign: 'center', lineHeight: 18, marginBottom: 12, maxWidth: '80%', fontWeight: '400' },
+  profileSection: { paddingHorizontal: 20, paddingTop: 10, alignItems: 'center' },
+  fullName: { fontSize: 18, fontWeight: '600', color: Colors.text, marginBottom: 4, letterSpacing: 0.3 },
+  bio: { fontSize: 13, color: Colors.textMuted, textAlign: 'center', lineHeight: 18, marginBottom: 12, maxWidth: '80%' },
   skillsContainer: { flexDirection: 'row', gap: 32, marginBottom: 16, justifyContent: 'center', paddingHorizontal: 20 },
-  skillText: { color: '#DC143C', fontSize: 13, fontWeight: '400' },
+  skillText: { color: Colors.primary, fontSize: 13, fontWeight: '500' },
   stats: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 16, marginBottom: 0, paddingHorizontal: 20, width: '100%' },
   statItem: { alignItems: 'center', flex: 1 },
-  statNumber: { fontSize: 18, fontWeight: '700', color: '#fff', marginBottom: 3 },
-  statLabel: { fontSize: 12, color: '#666', fontWeight: '500' },
-  statDivider: { width: 1, height: 32, backgroundColor: '#1a1a1a' },
+  statNumber: { fontSize: 18, fontWeight: '700', color: Colors.text, marginBottom: 3 },
+  statLabel: { fontSize: 12, color: Colors.textMuted, fontWeight: '500' },
+  statDivider: { width: 1, height: 32, backgroundColor: Colors.border },
   actionButtons: { flexDirection: 'row', gap: 8, width: '100%', marginTop: 10 },
-  actionButton: { flex: 1, paddingVertical: 10, borderRadius: 8, backgroundColor: '#1a1a1a', alignItems: 'center', justifyContent: 'center' },
-  actionButtonText: { fontSize: 14, fontWeight: '600', color: '#fff' },
-  tabs: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#1a1a1a', marginTop: 2, position: 'relative' },
+  actionButton: { flex: 1, paddingVertical: 10, borderRadius: 10, backgroundColor: Colors.surfaceAlt, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: Colors.border },
+  actionButtonText: { fontSize: 14, fontWeight: '600', color: Colors.text },
+  tabs: { flexDirection: 'row', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: Colors.border, marginTop: 2, position: 'relative' },
   tab: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 12, paddingBottom: 5 },
-  tabIndicator: { 
-    position: 'absolute', 
-    bottom: -1, 
-    width: 40, 
-    height: 3, 
-    backgroundColor: '#DC143C', 
-    borderRadius: 1.5,
+  tabIndicator: {
+    position: 'absolute', bottom: -1, width: 40, height: 3,
+    backgroundColor: Colors.primary, borderRadius: 1.5,
   },
   gridContainer: { flexDirection: 'row', width: SCREEN_WIDTH * 2 },
   gridPage: { width: SCREEN_WIDTH },
   gridContent: { paddingBottom: 4 },
-  videoItem: { width: GRID_ITEM_WIDTH, height: GRID_ITEM_WIDTH * 1.3, backgroundColor: '#1a1a1a' },
+  videoItem: { width: GRID_ITEM_WIDTH, height: GRID_ITEM_WIDTH * 1.3, backgroundColor: Colors.surfaceAlt },
   videoThumbnail: { width: '100%', height: '100%' },
   viewsOverlay: { position: 'absolute', bottom: 4, left: 4, flexDirection: 'row', alignItems: 'center', gap: 4 },
-  viewsText: { color: '#fff', fontSize: 11, fontWeight: '700', textShadowColor: 'rgba(0, 0, 0, 0.75)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 3 },
-  // Edit Profile Modal
-  editModalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'center', alignItems: 'center' },
-  editModalContent: { width: '85%', backgroundColor: '#1a1a1a', borderRadius: 16, padding: 24, alignItems: 'center' },
+  viewsText: { color: '#fff', fontSize: 11, fontWeight: '700', textShadowColor: 'rgba(0,0,0,0.75)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 3 },
+  editModalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
+  editModalContent: { width: '85%', backgroundColor: Colors.surface, borderRadius: 16, padding: 24, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.12, shadowRadius: 16, elevation: 8 },
   editModalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', width: '100%', marginBottom: 20 },
-  editModalTitle: { fontSize: 18, fontWeight: '700', color: '#fff' },
-  editModalPlaceholder: { color: '#888', fontSize: 14, marginBottom: 20, textAlign: 'center' },
-  editModalButton: { backgroundColor: '#DC143C', paddingHorizontal: 32, paddingVertical: 12, borderRadius: 8 },
+  editModalTitle: { fontSize: 18, fontWeight: '700', color: Colors.text },
+  editModalPlaceholder: { color: Colors.textMuted, fontSize: 14, marginBottom: 20, textAlign: 'center' },
+  editModalButton: { backgroundColor: Colors.primary, paddingHorizontal: 32, paddingVertical: 12, borderRadius: 10 },
   editModalButtonText: { color: '#fff', fontSize: 14, fontWeight: '600' },
 });

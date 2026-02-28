@@ -1,14 +1,15 @@
+import Colors from '@/constants/Colors';
 import { Ionicons } from '@expo/vector-icons';
 import { CameraType, CameraView, useCameraPermissions, useMicrophonePermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import AddVideoDetailsScreen from './AddVideoDetailsScreen';
 
@@ -18,9 +19,9 @@ interface CreateScreenProps {
   onVideoPublished?: (videoUri: string, description?: string, topic?: string) => void;
 }
 
-export default function CreateScreen({ 
-  isActive = false, 
-  onClose, 
+export default function CreateScreen({
+  isActive = false,
+  onClose,
   onVideoPublished,
 }: CreateScreenProps) {
   // ALL HOOKS AT TOP
@@ -30,7 +31,7 @@ export default function CreateScreen({
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const [recordedVideoUri, setRecordedVideoUri] = useState<string | null>(null);
-  
+
   const cameraRef = useRef<CameraView>(null);
   const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const recordingTimeRef = useRef(0);
@@ -63,12 +64,12 @@ export default function CreateScreen({
     if (!cameraRef.current || !isRecording) return;
 
     const duration = Date.now() - recordingStartTimeRef.current;
-    
+
     if (duration < MIN_RECORDING_TIME) {
       Alert.alert('Kayıt çok kısa', 'En az 1 saniye kayıt yapmalısınız');
       try {
         cameraRef.current.stopRecording();
-      } catch {}
+      } catch { }
       cleanup();
       return;
     }
@@ -102,7 +103,7 @@ export default function CreateScreen({
         const elapsed = (Date.now() - recordingStartTimeRef.current) / 1000;
         recordingTimeRef.current = elapsed;
         setRecordingTime(elapsed);
-        
+
         if (elapsed >= MAX_RECORDING_TIME) {
           stopRecording();
         }
@@ -111,22 +112,24 @@ export default function CreateScreen({
       // recordAsync'i başlat ve promise'i sakla
       recordingPromiseRef.current = cameraRef.current.recordAsync({
         maxDuration: MAX_RECORDING_TIME,
-      });
+      }) as Promise<{ uri: string }>;
 
-      recordingPromiseRef.current.then((result) => {
-        cleanup();
-        if (result?.uri) {
-          setRecordedVideoUri(result.uri);
-        }
-      }).catch((error: any) => {
-        cleanup();
-        // Kullanıcı stop ettiyse hata verme
-        if (error?.message?.includes('stopped') || error?.message?.includes('Recording') || error?.code === 'E_RECORDING_STOPPED') {
-          return;
-        }
-        console.log('Recording error:', error);
-        Alert.alert('Kayıt Hatası', 'Video kaydedilemedi. Tekrar deneyin.');
-      });
+      const currentPromise = recordingPromiseRef.current;
+      if (currentPromise) {
+        currentPromise.then((result) => {
+          cleanup();
+          if (result?.uri) {
+            setRecordedVideoUri(result.uri);
+          }
+        }).catch((error: any) => {
+          cleanup();
+          if (error?.message?.includes('stopped') || error?.message?.includes('Recording') || error?.code === 'E_RECORDING_STOPPED') {
+            return;
+          }
+          console.log('Recording error:', error);
+          Alert.alert('Kayıt Hatası', 'Video kaydedilemedi. Tekrar deneyin.');
+        });
+      }
     } catch (error: any) {
       cleanup();
       console.log('Start recording error:', error);
@@ -144,7 +147,7 @@ export default function CreateScreen({
 
   const handlePickVideo = useCallback(async () => {
     if (isRecording) return;
-    
+
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['videos'],
       allowsEditing: true,
@@ -197,7 +200,7 @@ export default function CreateScreen({
   if (!cameraPermission || !microphonePermission) {
     return (
       <View style={styles.container}>
-        <ActivityIndicator size="large" color="#DC143C" />
+        <ActivityIndicator size="large" color={Colors.primary} />
       </View>
     );
   }
@@ -298,7 +301,7 @@ export default function CreateScreen({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000',
+    backgroundColor: Colors.background,
   },
   camera: {
     flex: 1,
@@ -319,24 +322,24 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   permissionTitle: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: '700',
-    color: '#fff',
+    color: Colors.text,
     marginBottom: 12,
   },
   permissionText: {
     fontSize: 15,
-    color: '#888',
+    color: Colors.textSecondary,
     textAlign: 'center',
     marginBottom: 32,
     lineHeight: 22,
   },
   permissionButton: {
-    backgroundColor: '#DC143C',
+    backgroundColor: Colors.primary,
     paddingHorizontal: 48,
     paddingVertical: 14,
-    borderRadius: 30,
-    marginBottom: 16,
+    borderRadius: 14,
+    marginBottom: 12,
   },
   permissionButtonText: {
     color: '#fff',
@@ -347,7 +350,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   closePermissionButtonText: {
-    color: '#888',
+    color: Colors.textMuted,
     fontSize: 14,
   },
   topBar: {

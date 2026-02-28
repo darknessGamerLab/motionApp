@@ -2,35 +2,45 @@ import Colors from '@/constants/Colors';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { router, Slot, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import { useEffect, useState } from 'react';
-import { ActivityIndicator, View } from 'react-native';
+import { useEffect } from 'react';
+import { ActivityIndicator, Platform, StatusBar, View } from 'react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 
-// Splash screen'i görünür tut
 SplashScreen.preventAutoHideAsync();
+
+// StatusBar'ı en baştan ayarla (Android için kritik)
+if (Platform.OS === 'android') {
+  StatusBar.setBackgroundColor('#FAFAFA');
+  StatusBar.setBarStyle('dark-content');
+  StatusBar.setTranslucent(false);
+}
 
 function RootLayoutNav() {
   const { authState } = useAuth();
   const segments = useSegments();
-  const [isReady, setIsReady] = useState(false);
-  
   const isAuthRoute = segments[0] === 'auth';
 
   useEffect(() => {
-    // Hemen hazır ol
-    setIsReady(true);
-    SplashScreen.hideAsync();
-  }, []);
+    if (!authState.isLoading) {
+      SplashScreen.hideAsync();
+    }
+  }, [authState.isLoading]);
 
   useEffect(() => {
-    if (!isReady) return;
-    if (!authState.isAuthenticated && !isAuthRoute) {
-      router.replace('/auth/login');
+    if (authState.isLoading) return;
+    if (authState.isAuthenticated && isAuthRoute) {
+      router.replace('/');
     }
-  }, [authState.isAuthenticated, isAuthRoute, isReady]);
+  }, [authState.isAuthenticated, authState.isLoading, isAuthRoute]);
 
-  if (!authState.isAuthenticated && !isAuthRoute) {
+  if (authState.isLoading) {
     return (
-      <View style={{ flex: 1, backgroundColor: Colors.background, justifyContent: 'center', alignItems: 'center' }}>
+      <View style={{
+        flex: 1,
+        backgroundColor: Colors.background,
+        justifyContent: 'center',
+        alignItems: 'center',
+      }}>
         <ActivityIndicator size="large" color={Colors.primary} />
       </View>
     );
@@ -41,8 +51,10 @@ function RootLayoutNav() {
 
 export default function RootLayout() {
   return (
-    <AuthProvider>
-      <RootLayoutNav />
-    </AuthProvider>
+    <SafeAreaProvider>
+      <AuthProvider>
+        <RootLayoutNav />
+      </AuthProvider>
+    </SafeAreaProvider>
   );
 }

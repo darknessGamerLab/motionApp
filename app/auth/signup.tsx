@@ -4,389 +4,334 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import React, { useState } from 'react';
 import {
-    ActivityIndicator,
-    KeyboardAvoidingView,
-    Platform,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-type UserType = 'individual' | 'corporate';
-
 export default function SignupScreen() {
   const insets = useSafeAreaInsets();
-  const { signup } = useAuth();
-  
-  const [userType, setUserType] = useState<UserType>('individual');
+  const { signup, signInWithGoogle, checkUsernameAvailable } = useAuth();
+
+  const [step, setStep] = useState<'form' | 'verify'>('form');
+  const [fullName, setFullName] = useState('');
+  const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [username, setUsername] = useState('');
-  const [fullName, setFullName] = useState('');
+  const [confirmPass, setConfirmPass] = useState('');
+  const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [gLoading, setGLoading] = useState(false);
   const [error, setError] = useState('');
-  const [usernameError, setUsernameError] = useState('');
-  const [checkingUsername, setCheckingUsername] = useState(false);
+  const [usernameState, setUsernameState] = useState<'idle' | 'checking' | 'ok' | 'taken' | 'invalid'>('idle');
 
-  // Mock taken usernames
-  const TAKEN_USERNAMES = ['admin', 'johndoe', 'janedoe', 'test', 'user', 'ahmet', 'ayse', 'mehmet'];
-
-  const checkUsername = (value: string) => {
-    setUsername(value);
-    setUsernameError('');
-    
-    if (!value.trim()) return;
-    
-    // Validate format
-    if (!/^[a-z0-9_]+$/.test(value.toLowerCase())) {
-      setUsernameError('Sadece harf, rakam ve alt çizgi kullanılabilir');
-      return;
-    }
-    
-    if (value.length < 3) {
-      setUsernameError('En az 3 karakter olmalı');
-      return;
-    }
-
-    // Check uniqueness (mock)
-    setCheckingUsername(true);
-    setTimeout(() => {
-      if (TAKEN_USERNAMES.includes(value.toLowerCase())) {
-        setUsernameError('Bu kullanıcı adı zaten alınmış');
-      }
-      setCheckingUsername(false);
-    }, 300);
+  const checkUsername = async (val: string) => {
+    const v = val.replace(/\s/g, '').toLowerCase();
+    setUsername(v);
+    setError('');
+    if (!v) { setUsernameState('idle'); return; }
+    if (!/^[a-z0-9_]+$/.test(v)) { setUsernameState('invalid'); return; }
+    if (v.length < 3) { setUsernameState('idle'); return; }
+    setUsernameState('checking');
+    const ok = await checkUsernameAvailable(v);
+    setUsernameState(ok ? 'ok' : 'taken');
   };
 
-  const handleSignup = () => {
-    if (!email.trim() || !password.trim() || !username.trim() || !fullName.trim()) {
-      setError('Lütfen tüm alanları doldurun');
-      return;
+  const usernameColor =
+    usernameState === 'ok' ? Colors.success :
+      usernameState === 'taken' || usernameState === 'invalid' ? Colors.error : Colors.border;
+
+  const handleSignup = async () => {
+    if (!fullName.trim() || !username.trim() || !email.trim() || !password) {
+      setError('Tüm alanları doldurun'); return;
     }
+    if (usernameState === 'taken') { setError('Bu kullanıcı adı alınmış'); return; }
+    if (usernameState === 'invalid') { setError('Geçersiz kullanıcı adı'); return; }
+    if (password.length < 8) { setError('Şifre en az 8 karakter olmalı'); return; }
+    if (password !== confirmPass) { setError('Şifreler eşleşmiyor'); return; }
 
-    if (usernameError) {
-      setError('Lütfen geçerli bir kullanıcı adı seçin');
-      return;
-    }
-
-    if (password.length < 6) {
-      setError('Şifre en az 6 karakter olmalıdır');
-      return;
-    }
-
-    setError('');
-    setLoading(true);
-
-    signup(email.trim(), userType, {
-      username: username.trim().toLowerCase(),
+    setError(''); setLoading(true);
+    const res = await signup(email.trim().toLowerCase(), password, 'individual', {
+      username: username.toLowerCase(),
       fullName: fullName.trim(),
     });
-    
-    setTimeout(() => {
-      setLoading(false);
-      router.replace('/auth/verifyCode');
-    }, 300);
+    setLoading(false);
+
+    if (res.error) { setError(res.error); return; }
+    // Kayıt başarılı → email doğrulama adımına geç
+    setStep('verify');
   };
 
+  const handleGoogle = async () => {
+    setGLoading(true);
+    const res = await signInWithGoogle();
+    if (res.error) setError(res.error);
+    setGLoading(false);
+  };
+
+  // ── Email Verify Step ──────────────────────────────────────────────
+  if (step === 'verify') {
+    return (
+      <View style={[s.root, s.verifyWrap, { paddingTop: insets.top }]}>
+        <View style={s.verifyCard}>
+          <View style={[s.logoCircle, { backgroundColor: Colors.success + '20', marginBottom: 20 }]}>
+            <Ionicons name="mail-outline" size={32} color={Colors.success} />
+          </View>
+          <Text style={s.verifyTitle}>E-postanı Doğrula</Text>
+          <Text style={s.verifyBody}>
+            <Text style={{ fontWeight: '600' }}>{email}</Text> adresine bir doğrulama bağlantısı gönderdik.{'\n\n'}
+            Bağlantıya tıkladıktan sonra giriş yapabilirsin.
+          </Text>
+          <TouchableOpacity style={[s.primaryBtn, { marginTop: 28 }]} onPress={() => router.replace('/auth/login')}>
+            <Text style={s.primaryBtnText}>Giriş Yap</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={s.guestBtn} onPress={() => setStep('form')}>
+            <Text style={s.guestText}>Geri dön</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
+  // ── Signup Form ────────────────────────────────────────────────────
   return (
     <KeyboardAvoidingView
-      style={styles.container}
+      style={[s.root, { paddingTop: insets.top }]}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <ScrollView
-        contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top + 16 }]}
-        showsVerticalScrollIndicator={false}
+        contentContainerStyle={s.inner}
         keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
       >
-        <View style={styles.content}>
-          {/* Back Button */}
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => router.back()}
-          >
-            <Ionicons name="arrow-back" size={24} color={Colors.text} />
+        {/* Header */}
+        <View style={s.header}>
+          <TouchableOpacity style={s.backBtn} onPress={() => router.back()}>
+            <Ionicons name="arrow-back" size={22} color={Colors.text} />
           </TouchableOpacity>
-
-          <View style={styles.header}>
-            <Text style={styles.title}>Hesap Oluştur</Text>
-            <Text style={styles.subtitle}>Yeteneklerini keşfetmeye başla</Text>
+          <View style={s.logoCircle}>
+            <Text style={s.logoText}>M</Text>
           </View>
+          <Text style={s.title}>Hesap Oluştur</Text>
+          <Text style={s.subtitle}>Yeteneğini dünyayla paylaşmaya başla</Text>
+        </View>
 
-          {/* User Type Tabs */}
-          <View style={styles.tabContainer}>
-            <TouchableOpacity
-              style={[styles.tab, userType === 'individual' && styles.tabActive]}
-              onPress={() => setUserType('individual')}
-            >
-              <Text style={[styles.tabText, userType === 'individual' && styles.tabTextActive]}>
-                Bireysel
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.tab, userType === 'corporate' && styles.tabActive]}
-              onPress={() => setUserType('corporate')}
-            >
-              <Text style={[styles.tabText, userType === 'corporate' && styles.tabTextActive]}>
-                Kurumsal
-              </Text>
-            </TouchableOpacity>
-            {/* Active indicator */}
-            <View 
-              style={[
-                styles.tabIndicator, 
-                { left: userType === 'individual' ? 0 : '50%' }
-              ]} 
+        <View style={s.form}>
+          {/* Full name */}
+          <View style={s.inputWrap}>
+            <Ionicons name="person-outline" size={18} color={Colors.textMuted} style={s.inputIcon} />
+            <TextInput
+              style={s.input}
+              placeholder="Ad Soyad"
+              placeholderTextColor={Colors.textMuted}
+              value={fullName}
+              onChangeText={t => { setFullName(t); setError(''); }}
+              autoCapitalize="words"
             />
           </View>
 
-          <View style={styles.form}>
-            {/* Full Name */}
-            <View style={styles.inputContainer}>
-              <Ionicons name="person-outline" size={20} color={Colors.textMuted} style={styles.inputIcon} />
-              <TextInput
-                style={styles.input}
-                placeholder={userType === 'corporate' ? 'Şirket Adı' : 'Ad Soyad'}
-                placeholderTextColor={Colors.textMuted}
-                value={fullName}
-                onChangeText={setFullName}
-                autoCapitalize="words"
-                autoComplete="name"
-              />
-            </View>
-
-            {/* Username */}
-            <View style={[styles.inputContainer, usernameError && styles.inputError]}>
-              <Text style={styles.usernamePrefix}>@</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Kullanıcı adı"
-                placeholderTextColor={Colors.textMuted}
-                value={username}
-                onChangeText={checkUsername}
-                autoCapitalize="none"
-                autoComplete="username"
-              />
-              {checkingUsername && (
-                <ActivityIndicator size="small" color={Colors.textMuted} />
-              )}
-              {!checkingUsername && username.length >= 3 && !usernameError && (
-                <Ionicons name="checkmark-circle" size={20} color={Colors.success} />
-              )}
-            </View>
-            {usernameError ? <Text style={styles.fieldError}>{usernameError}</Text> : null}
-
-            {/* Email */}
-            <View style={styles.inputContainer}>
-              <Ionicons name="mail-outline" size={20} color={Colors.textMuted} style={styles.inputIcon} />
-              <TextInput
-                style={styles.input}
-                placeholder="Email"
-                placeholderTextColor={Colors.textMuted}
-                value={email}
-                onChangeText={setEmail}
-                autoCapitalize="none"
-                keyboardType="email-address"
-                autoComplete="email"
-              />
-            </View>
-
-            {/* Password */}
-            <View style={styles.inputContainer}>
-              <Ionicons name="lock-closed-outline" size={20} color={Colors.textMuted} style={styles.inputIcon} />
-              <TextInput
-                style={styles.input}
-                placeholder="Şifre (min 6 karakter)"
-                placeholderTextColor={Colors.textMuted}
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry
-                autoCapitalize="none"
-                autoComplete="password-new"
-              />
-            </View>
-
-            {error ? <Text style={styles.errorText}>{error}</Text> : null}
-
-            {/* Info Text */}
-            <Text style={styles.infoText}>
-              {userType === 'individual' 
-                ? 'Yeteneklerini sergileyerek fırsatları yakala!'
-                : 'Yetenekli bireyleri keşfet ve işe al!'}
-            </Text>
-
-            {/* Signup Button */}
-            <TouchableOpacity
-              style={[styles.button, loading && styles.buttonDisabled]}
-              onPress={handleSignup}
-              disabled={loading}
-            >
-              {loading ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={styles.buttonText}>Devam Et</Text>
-              )}
-            </TouchableOpacity>
-
-            {/* Login Link */}
-            <View style={styles.footer}>
-              <Text style={styles.footerText}>Zaten hesabınız var mı? </Text>
-              <TouchableOpacity onPress={() => router.push('/auth/login')}>
-                <Text style={styles.footerLink}>Giriş Yap</Text>
-              </TouchableOpacity>
-            </View>
+          {/* Username */}
+          <View style={[s.inputWrap, { borderColor: usernameColor }]}>
+            <Ionicons name="at-outline" size={18} color={Colors.textMuted} style={s.inputIcon} />
+            <TextInput
+              style={s.input}
+              placeholder="kullaniciadi"
+              placeholderTextColor={Colors.textMuted}
+              value={username}
+              onChangeText={checkUsername}
+              autoCapitalize="none"
+            />
+            {usernameState === 'checking' && <ActivityIndicator size="small" color={Colors.textMuted} />}
+            {usernameState === 'ok' && <Ionicons name="checkmark-circle" size={18} color={Colors.success} />}
+            {(usernameState === 'taken' || usernameState === 'invalid') && (
+              <Ionicons name="close-circle" size={18} color={Colors.error} />
+            )}
           </View>
+          {usernameState === 'taken' && <Text style={s.fieldError}>Bu kullanıcı adı alınmış</Text>}
+          {usernameState === 'invalid' && <Text style={s.fieldError}>Sadece harf, rakam ve _ kullanılabilir</Text>}
+
+          {/* Email */}
+          <View style={s.inputWrap}>
+            <Ionicons name="mail-outline" size={18} color={Colors.textMuted} style={s.inputIcon} />
+            <TextInput
+              style={s.input}
+              placeholder="E-posta"
+              placeholderTextColor={Colors.textMuted}
+              value={email}
+              onChangeText={t => { setEmail(t); setError(''); }}
+              keyboardType="email-address"
+              autoCapitalize="none"
+            />
+          </View>
+
+          {/* Password */}
+          <View style={s.inputWrap}>
+            <Ionicons name="lock-closed-outline" size={18} color={Colors.textMuted} style={s.inputIcon} />
+            <TextInput
+              style={[s.input, { flex: 1 }]}
+              placeholder="Şifre (min 8 karakter)"
+              placeholderTextColor={Colors.textMuted}
+              value={password}
+              onChangeText={t => { setPassword(t); setError(''); }}
+              secureTextEntry={!showPass}
+            />
+            <TouchableOpacity onPress={() => setShowPass(v => !v)} style={s.eyeBtn}>
+              <Ionicons name={showPass ? 'eye-off-outline' : 'eye-outline'} size={18} color={Colors.textMuted} />
+            </TouchableOpacity>
+          </View>
+
+          {/* Confirm password */}
+          <View style={[s.inputWrap, confirmPass && password !== confirmPass ? { borderColor: Colors.error } : {}]}>
+            <Ionicons name="lock-closed-outline" size={18} color={Colors.textMuted} style={s.inputIcon} />
+            <TextInput
+              style={[s.input, { flex: 1 }]}
+              placeholder="Şifreyi Onayla"
+              placeholderTextColor={Colors.textMuted}
+              value={confirmPass}
+              onChangeText={t => { setConfirmPass(t); setError(''); }}
+              secureTextEntry={!showPass}
+            />
+            {confirmPass.length > 0 && (
+              <Ionicons
+                name={password === confirmPass ? 'checkmark-circle' : 'close-circle'}
+                size={18}
+                color={password === confirmPass ? Colors.success : Colors.error}
+              />
+            )}
+          </View>
+
+          {!!error && (
+            <View style={s.errorBox}>
+              <Ionicons name="alert-circle-outline" size={14} color={Colors.error} />
+              <Text style={s.errorText}>{error}</Text>
+            </View>
+          )}
+
+          <TouchableOpacity
+            style={[s.primaryBtn, loading && s.btnDisabled]}
+            onPress={handleSignup}
+            disabled={loading}
+            activeOpacity={0.85}
+          >
+            {loading
+              ? <ActivityIndicator color="#fff" size="small" />
+              : <Text style={s.primaryBtnText}>Kayıt Ol</Text>
+            }
+          </TouchableOpacity>
+
+          <View style={s.divider}>
+            <View style={s.dividerLine} />
+            <Text style={s.dividerText}>veya</Text>
+            <View style={s.dividerLine} />
+          </View>
+
+          <TouchableOpacity
+            style={[s.googleBtn, gLoading && s.btnDisabled]}
+            onPress={handleGoogle}
+            disabled={gLoading}
+            activeOpacity={0.85}
+          >
+            {gLoading ? (
+              <ActivityIndicator color={Colors.text} size="small" />
+            ) : (
+              <>
+                <Text style={s.googleIcon}>G</Text>
+                <Text style={s.googleText}>Google ile Devam Et</Text>
+              </>
+            )}
+          </TouchableOpacity>
         </View>
+
+        <View style={s.footer}>
+          <Text style={s.footerText}>Zaten hesabın var mı?</Text>
+          <TouchableOpacity onPress={() => router.replace('/auth/login')}>
+            <Text style={s.footerLink}> Giriş Yap</Text>
+          </TouchableOpacity>
+        </View>
+
+        <TouchableOpacity style={s.guestBtn} onPress={() => router.replace('/')}>
+          <Text style={s.guestText}>Şimdi değil, keşfet</Text>
+          <Ionicons name="chevron-forward" size={14} color={Colors.textMuted} />
+        </TouchableOpacity>
       </ScrollView>
     </KeyboardAvoidingView>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.background,
-  },
-  scrollContent: {
-    flexGrow: 1,
-    paddingBottom: 40,
-  },
-  content: {
-    flex: 1,
-    paddingHorizontal: 24,
-  },
-  backButton: {
-    width: 40,
-    height: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 16,
-  },
-  header: {
-    marginBottom: 24,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: Colors.text,
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: 15,
-    color: Colors.textSecondary,
-  },
-  tabContainer: {
-    flexDirection: 'row',
-    backgroundColor: Colors.card,
-    borderRadius: 12,
-    padding: 4,
-    marginBottom: 24,
-    position: 'relative',
-  },
-  tab: {
-    flex: 1,
-    paddingVertical: 12,
-    alignItems: 'center',
-    zIndex: 1,
-  },
-  tabActive: {},
-  tabText: {
-    color: Colors.textMuted,
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  tabTextActive: {
-    color: '#fff',
-  },
-  tabIndicator: {
-    position: 'absolute',
-    top: 4,
-    bottom: 4,
-    width: '50%',
+const s = StyleSheet.create({
+  root: { flex: 1, backgroundColor: Colors.background },
+  inner: { flexGrow: 1, paddingHorizontal: 28, paddingBottom: 40 },
+
+  // Verify step
+  verifyWrap: { justifyContent: 'center', alignItems: 'center', paddingHorizontal: 32 },
+  verifyCard: { alignItems: 'center', maxWidth: 340 },
+  verifyTitle: { fontSize: 22, fontWeight: '700', color: Colors.text, textAlign: 'center', marginBottom: 12 },
+  verifyBody: { fontSize: 14, color: Colors.textSecondary, textAlign: 'center', lineHeight: 22 },
+
+  // Header
+  header: { alignItems: 'center', paddingTop: 40, paddingBottom: 36 },
+  backBtn: { position: 'absolute', left: 0, top: 40, padding: 4 },
+  logoCircle: {
+    width: 56, height: 56, borderRadius: 16,
     backgroundColor: Colors.primary,
-    borderRadius: 8,
+    alignItems: 'center', justifyContent: 'center', marginBottom: 12,
   },
-  form: {
-    width: '100%',
+  logoText: { color: '#fff', fontSize: 28, fontWeight: '800' },
+  title: { fontSize: 22, fontWeight: '700', color: Colors.text, letterSpacing: -0.5 },
+  subtitle: { fontSize: 14, color: Colors.textMuted, marginTop: 4 },
+
+  // Form
+  form: { gap: 12 },
+  inputWrap: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: Colors.surface,
+    borderRadius: 12, borderWidth: 1, borderColor: Colors.border,
+    paddingHorizontal: 14, height: 52,
   },
-  inputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.card,
-    borderRadius: 12,
-    marginBottom: 12,
-    paddingHorizontal: 16,
-    borderWidth: 1,
-    borderColor: Colors.border,
+  inputIcon: { marginRight: 10 },
+  input: { flex: 1, fontSize: 15, color: Colors.text },
+  eyeBtn: { padding: 4 },
+  fieldError: { color: Colors.error, fontSize: 12, marginTop: -6, marginLeft: 4 },
+
+  errorBox: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: Colors.error + '12',
+    borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8,
   },
-  inputIcon: {
-    marginRight: 12,
-  },
-  usernamePrefix: {
-    color: Colors.textSecondary,
-    fontSize: 16,
-    fontWeight: '600',
-    marginRight: 4,
-  },
-  input: {
-    flex: 1,
-    height: 52,
-    color: Colors.text,
-    fontSize: 16,
-  },
-  inputError: {
-    borderColor: Colors.error,
-  },
-  fieldError: {
-    color: Colors.error,
-    fontSize: 12,
-    marginTop: -8,
-    marginBottom: 8,
-    marginLeft: 4,
-  },
-  errorText: {
-    color: Colors.error,
-    fontSize: 14,
-    marginBottom: 12,
-    textAlign: 'center',
-  },
-  infoText: {
-    color: Colors.textMuted,
-    fontSize: 13,
-    textAlign: 'center',
-    marginBottom: 20,
-    lineHeight: 18,
-  },
-  button: {
+  errorText: { color: Colors.error, fontSize: 13, flex: 1 },
+
+  primaryBtn: {
+    height: 52, borderRadius: 12,
     backgroundColor: Colors.primary,
-    height: 52,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
+    alignItems: 'center', justifyContent: 'center', marginTop: 4,
   },
-  buttonDisabled: {
-    opacity: 0.6,
+  btnDisabled: { opacity: 0.6 },
+  primaryBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+
+  divider: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  dividerLine: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: Colors.border },
+  dividerText: { color: Colors.textMuted, fontSize: 13 },
+
+  googleBtn: {
+    height: 52, borderRadius: 12,
+    backgroundColor: Colors.surface,
+    borderWidth: 1, borderColor: Colors.border,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
   },
-  buttonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  footer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    marginTop: 24,
-  },
-  footerText: {
-    color: Colors.textSecondary,
-    fontSize: 14,
-  },
-  footerLink: {
-    color: Colors.primary,
-    fontSize: 14,
-    fontWeight: '600',
-  },
+  googleIcon: { fontSize: 18, fontWeight: '800', color: '#4285F4' },
+  googleText: { fontSize: 15, fontWeight: '600', color: Colors.text },
+
+  footer: { flexDirection: 'row', justifyContent: 'center', marginTop: 28 },
+  footerText: { color: Colors.textSecondary, fontSize: 14 },
+  footerLink: { color: Colors.primary, fontSize: 14, fontWeight: '600' },
+
+  guestBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, marginTop: 12 },
+  guestText: { color: Colors.textMuted, fontSize: 13 },
 });

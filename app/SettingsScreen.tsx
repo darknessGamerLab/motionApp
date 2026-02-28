@@ -1,15 +1,21 @@
+import Colors from '@/constants/Colors';
 import { useAuth } from '@/contexts/AuthContext';
 import { Ionicons } from '@expo/vector-icons';
-import React from 'react';
+import React, { useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
-
-const CHROME_COLOR = '#0A0505';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface SettingsScreenProps {
   onBackPress?: () => void;
@@ -18,32 +24,203 @@ interface SettingsScreenProps {
 
 interface SettingItemProps {
   icon: string;
+  iconBg?: string;
   title: string;
+  subtitle?: string;
   onPress?: () => void;
   danger?: boolean;
+  badge?: string;
 }
 
-function SettingItem({ icon, title, onPress, danger }: SettingItemProps) {
+function SettingItem({ icon, iconBg, title, subtitle, onPress, danger, badge }: SettingItemProps) {
   return (
-    <TouchableOpacity 
-      style={styles.settingItem} 
-      onPress={onPress}
-      activeOpacity={0.7}
-    >
-      <View style={[styles.settingIcon, danger && styles.settingIconDanger]}>
-        <Ionicons name={icon as any} size={22} color={danger ? '#FF3040' : '#fff'} />
+    <TouchableOpacity style={styles.settingItem} onPress={onPress} activeOpacity={0.6}>
+      <View style={[styles.settingIcon, danger && styles.settingIconDanger, iconBg ? { backgroundColor: iconBg } : null]}>
+        <Ionicons name={icon as any} size={20} color={danger ? Colors.error : '#fff'} />
       </View>
-      <Text style={[styles.settingTitle, danger && styles.settingTitleDanger]}>{title}</Text>
-      <Ionicons name="chevron-forward" size={20} color="#444" />
+      <View style={styles.settingInfo}>
+        <Text style={[styles.settingTitle, danger && styles.settingTitleDanger]}>{title}</Text>
+        {subtitle && <Text style={styles.settingSubtitle}>{subtitle}</Text>}
+      </View>
+      {badge && (
+        <View style={styles.badge}>
+          <Text style={styles.badgeText}>{badge}</Text>
+        </View>
+      )}
+      <Ionicons name="chevron-forward" size={18} color={Colors.textDim} />
     </TouchableOpacity>
   );
 }
 
+function Separator() {
+  return <View style={styles.separator} />;
+}
+
+// Corporate Upgrade Modal
+function CorporateUpgradeModal({
+  visible,
+  onClose,
+}: {
+  visible: boolean;
+  onClose: () => void;
+}) {
+  const { submitCorporateApplication } = useAuth();
+  const [companyName, setCompanyName] = useState('');
+  const [taxOffice, setTaxOffice] = useState('');
+  const [taxNumber, setTaxNumber] = useState('');
+  const [phone, setPhone] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [submitted, setSubmitted] = useState(false);
+
+  const handleSubmit = async () => {
+    if (!companyName.trim() || !taxOffice.trim() || !taxNumber.trim() || !phone.trim()) {
+      setError('Lütfen tüm alanları doldurun');
+      return;
+    }
+    if (!/^\d{10}$/.test(taxNumber.trim())) {
+      setError('Vergi numarası 10 haneli olmalıdır');
+      return;
+    }
+    setError('');
+    setLoading(true);
+    const result = await submitCorporateApplication({
+      companyName: companyName.trim(),
+      taxOffice: taxOffice.trim(),
+      taxNumber: taxNumber.trim(),
+      phone: phone.trim(),
+    });
+    setLoading(false);
+    if (result.error) {
+      setError(result.error);
+    } else {
+      setSubmitted(true);
+    }
+  };
+
+  const handleClose = () => {
+    setCompanyName('');
+    setTaxOffice('');
+    setTaxNumber('');
+    setPhone('');
+    setError('');
+    setSubmitted(false);
+    onClose();
+  };
+
+  return (
+    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={handleClose}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <View style={modalStyles.container}>
+          {/* Header */}
+          <View style={modalStyles.header}>
+            <Text style={modalStyles.title}>Kurumsal Hesap Başvurusu</Text>
+            <TouchableOpacity onPress={handleClose} style={modalStyles.closeBtn}>
+              <Ionicons name="close" size={24} color={Colors.text} />
+            </TouchableOpacity>
+          </View>
+
+          {submitted ? (
+            <View style={modalStyles.successContainer}>
+              <View style={modalStyles.successIcon}>
+                <Ionicons name="checkmark-circle" size={72} color={Colors.success} />
+              </View>
+              <Text style={modalStyles.successTitle}>Başvurunuz Alındı!</Text>
+              <Text style={modalStyles.successText}>
+                Kurumsal hesap başvurunuz incelemeye alındı. Sonuç e-posta adresinize iletilecektir.{'\n\n'}
+                Onay süreci genellikle 1-3 iş günü sürmektedir.
+              </Text>
+              <TouchableOpacity style={modalStyles.closeButton} onPress={handleClose}>
+                <Text style={modalStyles.closeButtonText}>Tamam</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={modalStyles.scrollContent}>
+              <View style={modalStyles.infoBox}>
+                <Ionicons name="information-circle-outline" size={18} color={Colors.info} />
+                <Text style={modalStyles.infoText}>
+                  Başvurunuz incelendikten sonra hesabınız kurumsal hesaba dönüştürülecek ve e-posta ile bilgilendirileceksiniz.
+                </Text>
+              </View>
+
+              <Text style={modalStyles.sectionLabel}>Şirket Bilgileri</Text>
+
+              <View style={modalStyles.inputContainer}>
+                <Ionicons name="business-outline" size={20} color={Colors.textMuted} style={modalStyles.inputIcon} />
+                <TextInput
+                  style={modalStyles.input}
+                  placeholder="Şirket Adı"
+                  placeholderTextColor={Colors.textMuted}
+                  value={companyName}
+                  onChangeText={setCompanyName}
+                  autoCapitalize="words"
+                />
+              </View>
+
+              <View style={modalStyles.inputContainer}>
+                <Ionicons name="home-outline" size={20} color={Colors.textMuted} style={modalStyles.inputIcon} />
+                <TextInput
+                  style={modalStyles.input}
+                  placeholder="Vergi Dairesi"
+                  placeholderTextColor={Colors.textMuted}
+                  value={taxOffice}
+                  onChangeText={setTaxOffice}
+                  autoCapitalize="words"
+                />
+              </View>
+
+              <View style={modalStyles.inputContainer}>
+                <Ionicons name="receipt-outline" size={20} color={Colors.textMuted} style={modalStyles.inputIcon} />
+                <TextInput
+                  style={modalStyles.input}
+                  placeholder="Vergi Numarası (10 hane)"
+                  placeholderTextColor={Colors.textMuted}
+                  value={taxNumber}
+                  onChangeText={setTaxNumber}
+                  keyboardType="number-pad"
+                  maxLength={10}
+                />
+              </View>
+
+              <View style={modalStyles.inputContainer}>
+                <Ionicons name="call-outline" size={20} color={Colors.textMuted} style={modalStyles.inputIcon} />
+                <TextInput
+                  style={modalStyles.input}
+                  placeholder="Telefon Numarası"
+                  placeholderTextColor={Colors.textMuted}
+                  value={phone}
+                  onChangeText={setPhone}
+                  keyboardType="phone-pad"
+                />
+              </View>
+
+              {error ? <Text style={modalStyles.errorText}>{error}</Text> : null}
+
+              <TouchableOpacity
+                style={[modalStyles.submitBtn, loading && modalStyles.btnDisabled]}
+                onPress={handleSubmit}
+                disabled={loading}
+              >
+                {loading ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={modalStyles.submitBtnText}>Başvuru Gönder</Text>
+                )}
+              </TouchableOpacity>
+            </ScrollView>
+          )}
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
 export default function SettingsScreen({ onBackPress, onEditProfile }: SettingsScreenProps) {
+  const insets = useSafeAreaInsets();
   const { logout, authState } = useAuth();
-  
-  const accountType = authState.userType === 'corporate' ? 'Kurumsal Hesap' : 'Bireysel Hesap';
-  const accountIcon = authState.userType === 'corporate' ? 'business' : 'person';
+  const [showCorporateModal, setShowCorporateModal] = useState(false);
+
+  const isCorporate = authState.userType === 'corporate';
 
   const handleLogout = () => {
     Alert.alert(
@@ -57,42 +234,92 @@ export default function SettingsScreen({ onBackPress, onEditProfile }: SettingsS
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity style={styles.backButton} onPress={onBackPress}>
-          <Ionicons name="arrow-back" size={24} color="#fff" />
+          <Ionicons name="arrow-back" size={24} color={Colors.text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Ayarlar</Text>
         <View style={styles.headerRight} />
       </View>
 
       {/* Account Type Badge */}
-      <View style={styles.accountTypeBadge}>
-        <Ionicons name={accountIcon as any} size={14} color="#DC143C" />
-        <Text style={styles.accountTypeText}>{accountType}</Text>
+      <View style={[styles.accountBadge, isCorporate && styles.accountBadgeCorporate]}>
+        <Ionicons
+          name={isCorporate ? 'business' : 'person'}
+          size={14}
+          color={isCorporate ? '#7C3AED' : Colors.primary}
+        />
+        <Text style={[styles.accountBadgeText, isCorporate && styles.accountBadgeTextCorporate]}>
+          {isCorporate ? 'Kurumsal Hesap' : 'Bireysel Hesap'}
+        </Text>
       </View>
 
-      <View style={styles.content}>
-        <SettingItem
-          icon="person-outline"
-          title="Profili Düzenle"
-          onPress={onEditProfile}
-        />
-        
-        <View style={styles.divider} />
-        
-        <SettingItem
-          icon="log-out-outline"
-          title="Çıkış Yap"
-          onPress={handleLogout}
-          danger
-        />
-      </View>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+        {/* Hesap Grubu */}
+        <Text style={styles.sectionLabel}>Hesap</Text>
+        <View style={styles.group}>
+          <SettingItem
+            icon="person-outline"
+            iconBg="#3B82F6"
+            title="Profili Düzenle"
+            subtitle="Ad, biyografi, fotoğraf"
+            onPress={onEditProfile}
+          />
+          {!isCorporate && (
+            <>
+              <Separator />
+              <SettingItem
+                icon="business-outline"
+                iconBg="#7C3AED"
+                title="Kurumsal Hesaba Geç"
+                subtitle="Şirket olarak başvurun"
+                badge="YENİ"
+                onPress={() => setShowCorporateModal(true)}
+              />
+            </>
+          )}
+        </View>
 
-      <View style={styles.footer}>
-        <Text style={styles.versionText}>Versiyon 2.0.0</Text>
-      </View>
+        {/* Uygulama Grubu */}
+        <Text style={styles.sectionLabel}>Uygulama</Text>
+        <View style={styles.group}>
+          <SettingItem
+            icon="notifications-outline"
+            iconBg="#F59E0B"
+            title="Bildirimler"
+            subtitle="Bildirim tercihlerini yönet"
+            onPress={() => Alert.alert('Bildirimler', 'Yakında eklenecek')}
+          />
+          <Separator />
+          <SettingItem
+            icon="shield-checkmark-outline"
+            iconBg="#10B981"
+            title="Gizlilik"
+            subtitle="Hesap gizliliği ayarları"
+            onPress={() => Alert.alert('Gizlilik', 'Yakında eklenecek')}
+          />
+        </View>
+
+        {/* Oturum Grubu */}
+        <Text style={styles.sectionLabel}>Oturum</Text>
+        <View style={styles.group}>
+          <SettingItem
+            icon="log-out-outline"
+            title="Çıkış Yap"
+            onPress={handleLogout}
+            danger
+          />
+        </View>
+
+        <Text style={styles.versionText}>Versiyon 2.0.1</Text>
+      </ScrollView>
+
+      <CorporateUpgradeModal
+        visible={showCorporateModal}
+        onClose={() => setShowCorporateModal(false)}
+      />
     </View>
   );
 }
@@ -100,17 +327,17 @@ export default function SettingsScreen({ onBackPress, onEditProfile }: SettingsS
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000',
+    backgroundColor: Colors.surface,
   },
   header: {
-    height: 50,
+    height: 52,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    backgroundColor: CHROME_COLOR,
+    backgroundColor: Colors.background,
     borderBottomWidth: 1,
-    borderBottomColor: '#1a1a1a',
+    borderBottomColor: Colors.border,
   },
   backButton: {
     width: 40,
@@ -121,42 +348,60 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 17,
     fontWeight: '700',
-    color: '#fff',
+    color: Colors.text,
   },
   headerRight: {
     width: 40,
   },
-  accountTypeBadge: {
+  accountBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    marginTop: 16,
-    marginHorizontal: 16,
+    margin: 16,
     paddingVertical: 10,
-    backgroundColor: 'rgba(220, 20, 60, 0.1)',
-    borderRadius: 8,
+    backgroundColor: Colors.primary + '10',
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: 'rgba(220, 20, 60, 0.2)',
+    borderColor: Colors.primary + '25',
   },
-  accountTypeText: {
-    color: '#DC143C',
+  accountBadgeCorporate: {
+    backgroundColor: '#7C3AED10',
+    borderColor: '#7C3AED25',
+  },
+  accountBadgeText: {
+    color: Colors.primary,
     fontSize: 13,
     fontWeight: '600',
   },
-  content: {
-    marginTop: 16,
+  accountBadgeTextCorporate: {
+    color: '#7C3AED',
+  },
+  scrollContent: {
+    paddingBottom: 40,
+  },
+  sectionLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: Colors.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
     marginHorizontal: 16,
-    backgroundColor: '#0a0a0a',
-    borderRadius: 12,
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  group: {
+    marginHorizontal: 16,
+    backgroundColor: Colors.background,
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: '#1a1a1a',
+    borderColor: Colors.border,
     overflow: 'hidden',
   },
   settingItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 14,
+    paddingVertical: 13,
     paddingHorizontal: 14,
     gap: 14,
   },
@@ -164,36 +409,188 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 10,
-    backgroundColor: '#1a1a1a',
+    backgroundColor: Colors.textMuted,
     alignItems: 'center',
     justifyContent: 'center',
   },
   settingIconDanger: {
-    backgroundColor: 'rgba(255, 48, 64, 0.12)',
+    backgroundColor: Colors.error + '15',
+  },
+  settingInfo: {
+    flex: 1,
   },
   settingTitle: {
-    flex: 1,
     fontSize: 15,
     fontWeight: '500',
-    color: '#fff',
+    color: Colors.text,
   },
   settingTitleDanger: {
-    color: '#FF3040',
+    color: Colors.error,
   },
-  divider: {
+  settingSubtitle: {
+    fontSize: 12,
+    color: Colors.textMuted,
+    marginTop: 2,
+  },
+  badge: {
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 6,
+    marginRight: 4,
+  },
+  badgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  separator: {
     height: 1,
-    backgroundColor: '#1a1a1a',
+    backgroundColor: Colors.border,
     marginLeft: 64,
   },
-  footer: {
-    position: 'absolute',
-    bottom: 40,
-    left: 0,
-    right: 0,
-    alignItems: 'center',
-  },
   versionText: {
-    color: '#444',
+    color: Colors.textDim,
     fontSize: 12,
+    textAlign: 'center',
+    marginTop: 24,
+  },
+});
+
+const modalStyles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: Colors.background,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  title: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: Colors.text,
+  },
+  closeBtn: {
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 18,
+    backgroundColor: Colors.card,
+  },
+  scrollContent: {
+    padding: 20,
+  },
+  infoBox: {
+    flexDirection: 'row',
+    gap: 10,
+    backgroundColor: Colors.info + '12',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 24,
+    alignItems: 'flex-start',
+  },
+  infoText: {
+    flex: 1,
+    fontSize: 13,
+    color: Colors.info,
+    lineHeight: 19,
+  },
+  sectionLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: Colors.textMuted,
+    marginBottom: 12,
+  },
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.card,
+    borderRadius: 14,
+    marginBottom: 12,
+    paddingHorizontal: 16,
+    borderWidth: 1.5,
+    borderColor: Colors.border,
+  },
+  inputIcon: {
+    marginRight: 12,
+  },
+  input: {
+    flex: 1,
+    height: 54,
+    color: Colors.text,
+    fontSize: 16,
+  },
+  errorText: {
+    color: Colors.error,
+    fontSize: 13,
+    marginBottom: 16,
+    textAlign: 'center',
+    backgroundColor: '#FFF0F0',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+  },
+  submitBtn: {
+    backgroundColor: Colors.primary,
+    height: 54,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 8,
+    shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  btnDisabled: {
+    opacity: 0.6,
+  },
+  submitBtnText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  // Success
+  successContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 32,
+  },
+  successIcon: {
+    marginBottom: 24,
+  },
+  successTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: Colors.text,
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  successText: {
+    fontSize: 15,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 32,
+  },
+  closeButton: {
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 40,
+    paddingVertical: 14,
+    borderRadius: 14,
+  },
+  closeButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
   },
 });

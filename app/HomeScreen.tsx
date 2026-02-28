@@ -1,30 +1,41 @@
+/**
+ * HomeScreen — TikTok benzeri dikey video feed
+ * FlashList ile yüksek performanslı, misafir korumalı
+ */
 import CommentsModal from '@/components/CommentsModal';
+import GuestAuthModal from '@/components/GuestAuthModal';
+import Colors from '@/constants/Colors';
+import { formatNumber } from '@/utils/format';
 import { Ionicons } from '@expo/vector-icons';
+import { FlashList } from '@shopify/flash-list';
 import { ResizeMode, Video } from 'expo-av';
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
-import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
+import React, {
+  memo,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import {
-    Alert,
-    Animated,
-    Dimensions,
-    FlatList,
-    Share,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    TouchableWithoutFeedback,
-    View,
-    ViewToken,
+  Animated,
+  Dimensions,
+  Share,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  TouchableWithoutFeedback,
+  View,
+  ViewToken
 } from 'react-native';
 
-import { formatNumber } from '@/utils/format';
+const { width: W, height: FULL_H } = Dimensions.get('window');
+const fmt = formatNumber;
 
-const { width: W } = Dimensions.get('window');
-const NAVBAR_H = 50;
-
-interface VideoItem {
+// ─── Types ───────────────────────────────────────────────────────────
+export interface VideoItem {
   id: string;
   uri: string;
   user: { id: string; username: string; avatar?: string };
@@ -37,379 +48,476 @@ interface VideoItem {
   isSaved: boolean;
 }
 
-interface Props {
+interface HomeScreenProps {
   isActive?: boolean;
-  onUserPress?: (id: string) => void;
+  isAuthenticated?: boolean;
   videos?: VideoItem[];
-  onVideoSaved?: (videoId: string, isSaved: boolean) => void;
-  onVideoLiked?: (videoId: string, isLiked: boolean, newLikeCount: number) => void;
-  onVideoCommented?: (videoId: string, newCommentCount: number) => void;
+  onUserPress?: (id: string) => void;
+  onVideoSaved?: (id: string, isSaved: boolean) => void;
+  onVideoLiked?: (id: string, isLiked: boolean, likes: number) => void;
+  onVideoCommented?: (id: string, comments: number) => void;
   refreshKey?: number;
 }
 
-// Format numbers - use utility
-const fmt = formatNumber;
-
-// Action button
-const ActionBtn = memo(({ name, count, color, onPress }: { name: string; count?: number; color?: string; onPress?: () => void }) => (
-  <TouchableOpacity style={styles.action} onPress={onPress} activeOpacity={0.7}>
-    <Ionicons name={name as any} size={28} color={color || '#fff'} />
-    {count !== undefined && <Text style={styles.actionTxt}>{fmt(count)}</Text>}
+// ─── Action Button ────────────────────────────────────────────────────
+const ActionBtn = memo(({
+  icon, filledIcon, count, color, active, onPress,
+}: {
+  icon: string;
+  filledIcon?: string;
+  count?: number;
+  color?: string;
+  active?: boolean;
+  onPress?: () => void;
+}) => (
+  <TouchableOpacity style={s.actionBtn} onPress={onPress} activeOpacity={0.75}>
+    <Ionicons
+      name={(active && filledIcon ? filledIcon : icon) as any}
+      size={30}
+      color={color || '#fff'}
+    />
+    {count !== undefined && (
+      <Text style={s.actionCount}>{fmt(count)}</Text>
+    )}
   </TouchableOpacity>
 ));
 
-// Single video card with preloading support
-export const VideoCard = memo(({ 
-  data, 
-  active, 
-  preload = false, // Preload next/prev videos for instant playback
+// ─── Video Card ───────────────────────────────────────────────────────
+export const VideoCard = memo(({
+  data,
+  active,
+  preload = false,
   height,
+  isAuthenticated = false,
   onUserPress,
   onVideoSaved,
   onVideoLiked,
   onVideoCommented,
-  overlayBottomPadding = 20,
-  showCommentInput = false,
-  onCommentInputPress,
-}: { 
-  data: VideoItem; 
-  active: boolean; 
+  onAuthRequired,
+}: {
+  data: VideoItem;
+  active: boolean;
   preload?: boolean;
   height: number;
+  isAuthenticated?: boolean;
   onUserPress?: (id: string) => void;
-  onVideoSaved?: (videoId: string, isSaved: boolean) => void;
-  onVideoLiked?: (videoId: string, isLiked: boolean, newLikeCount: number) => void;
-  onVideoCommented?: (videoId: string, newCommentCount: number) => void;
-  overlayBottomPadding?: number;
-  showCommentInput?: boolean;
-  onCommentInputPress?: () => void;
+  onVideoSaved?: (id: string, isSaved: boolean) => void;
+  onVideoLiked?: (id: string, isLiked: boolean, likes: number) => void;
+  onVideoCommented?: (id: string, comments: number) => void;
+  onAuthRequired?: (action: 'like' | 'comment' | 'save' | 'follow' | 'create' | 'general') => void;
 }) => {
-  const videoRef = useRef<Video>(null);
-  const [isPaused, setIsPaused] = useState(false);
+  const vidRef = useRef<Video>(null);
+  const [paused, setPaused] = useState(false);
   const [liked, setLiked] = useState(data.isLiked);
   const [saved, setSaved] = useState(data.isSaved);
   const [likes, setLikes] = useState(data.likes);
-  const [expanded, setExpanded] = useState(false);
   const [following, setFollowing] = useState(false);
-  const [showLikeAnim, setShowLikeAnim] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const [showComments, setShowComments] = useState(false);
   const lastTap = useRef(0);
-  const likeScale = useRef(new Animated.Value(0)).current;
-  const likeOpacity = useRef(new Animated.Value(1)).current;
 
-  // Like animation - hızlı gel, 1sn bekle, hemen git
+  // Like animation
+  const likeAnim = useRef(new Animated.Value(0)).current;
+  const likeOpacity = useRef(new Animated.Value(0)).current;
+
   const triggerLikeAnim = useCallback(() => {
-    // Haptic feedback - premium UX
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    
-    setShowLikeAnim(true);
-    likeScale.setValue(0);
+    likeAnim.setValue(0.3);
     likeOpacity.setValue(1);
-    
-    // Hızlı gel
-    Animated.spring(likeScale, {
-      toValue: 1,
-      tension: 200,
-      friction: 6,
-      useNativeDriver: true,
-    }).start();
-    
-    // 1 saniye bekle, sonra hemen git
+    Animated.parallel([
+      Animated.spring(likeAnim, { toValue: 1, tension: 180, friction: 6, useNativeDriver: true }),
+    ]).start();
     setTimeout(() => {
-      Animated.timing(likeOpacity, {
-        toValue: 0,
-        duration: 150,
-        useNativeDriver: true,
-      }).start(() => {
-        setShowLikeAnim(false);
-        likeScale.setValue(0);
-        likeOpacity.setValue(1);
+      Animated.timing(likeOpacity, { toValue: 0, duration: 200, useNativeDriver: true }).start(() => {
+        likeAnim.setValue(0);
       });
-    }, 1000);
-  }, [likeScale, likeOpacity]);
+    }, 900);
+  }, [likeAnim, likeOpacity]);
 
-  // Video play/pause control - aktif videoda otomatik oynat
+  // Play/pause control
   useEffect(() => {
-    if (!videoRef.current) return;
-    if (active && !isPaused) {
-      videoRef.current.playAsync().catch(() => {});
+    if (!vidRef.current) return;
+    if (active && !paused) {
+      vidRef.current.playAsync().catch(() => { });
+      vidRef.current.setIsMutedAsync(false).catch(() => { });
     } else {
-      videoRef.current.pauseAsync().catch(() => {});
+      vidRef.current.pauseAsync().catch(() => { });
+      vidRef.current.setIsMutedAsync(true).catch(() => { });
     }
-  }, [active, isPaused]);
+  }, [active, paused]);
 
-  // Tap handler
+  // Auth guard
+  const guard = useCallback((
+    action: 'like' | 'comment' | 'save' | 'follow',
+    fn: () => void
+  ) => {
+    if (!isAuthenticated) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      onAuthRequired?.(action);
+      return;
+    }
+    fn();
+  }, [isAuthenticated, onAuthRequired]);
+
+  // Tap: single = pause, double = like
   const onTap = useCallback(() => {
     const now = Date.now();
-    if (now - lastTap.current < 300) {
-      // Double tap = like + animation
+    if (now - lastTap.current < 280) {
+      lastTap.current = 0;
+      if (!isAuthenticated) { onAuthRequired?.('like'); return; }
       if (!liked) {
-        const newLikes = likes + 1;
-        setLiked(true);
-        setLikes(newLikes);
-        onVideoLiked?.(data.id, true, newLikes);
+        const n = likes + 1;
+        setLiked(true); setLikes(n);
+        onVideoLiked?.(data.id, true, n);
       }
       triggerLikeAnim();
-      lastTap.current = 0;
     } else {
       lastTap.current = now;
       setTimeout(() => {
-        if (lastTap.current === now) {
-          setIsPaused(p => !p);
-        }
-      }, 300);
+        if (lastTap.current === now) setPaused(p => !p);
+      }, 290);
     }
-  }, [liked, triggerLikeAnim]);
+  }, [liked, likes, isAuthenticated, onAuthRequired, triggerLikeAnim, data.id, onVideoLiked]);
 
   const toggleLike = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    const newLiked = !liked;
-    const newLikes = newLiked ? likes + 1 : likes - 1;
-    setLiked(newLiked);
-    setLikes(newLikes);
-    // Global state güncelle
-    onVideoLiked?.(data.id, newLiked, newLikes);
-  }, [liked, likes, data.id, onVideoLiked]);
+    guard('like', () => {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      const n = !liked ? likes + 1 : likes - 1;
+      setLiked(l => !l); setLikes(n);
+      onVideoLiked?.(data.id, !liked, n);
+    });
+  }, [liked, likes, data.id, guard, onVideoLiked]);
 
-  const needsMore = data.description.length > 35;
+  const toggleSave = useCallback(() => {
+    guard('save', () => {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      setSaved(s => { onVideoSaved?.(data.id, !s); return !s; });
+    });
+  }, [data.id, guard, onVideoSaved]);
+
+  const openComments = useCallback(() => {
+    guard('comment', () => setShowComments(true));
+  }, [guard]);
+
+  const followUser = useCallback(() => {
+    guard('follow', () => {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      setFollowing(f => !f);
+    });
+  }, [guard]);
+
+  const needsMore = data.description.length > 40;
 
   return (
-    <View style={[styles.card, { height }]}>
+    <View style={[s.card, { height }]}>
       {/* Video */}
       <TouchableWithoutFeedback onPress={onTap}>
-        <View style={styles.videoWrap}>
+        <View style={StyleSheet.absoluteFill}>
           <Video
-            ref={videoRef}
+            ref={vidRef}
             source={{ uri: data.uri }}
-            style={styles.video}
+            style={StyleSheet.absoluteFill}
             resizeMode={ResizeMode.COVER}
-            shouldPlay={active && !isPaused}
+            shouldPlay={active && !paused}
             isLooping
-            isMuted={false}
-            // Preload: video loads but doesn't play until active
-            usePoster={preload && !active}
-            posterStyle={styles.video}
+            isMuted={!active} // Kesin kontrol: Sadece aktifse sesi ver
+            usePoster={true} // Her zaman poster kullan ki geç yüklemelerde siyah ekran kalmasın
+            posterSource={{ uri: data.user.avatar || 'https://i.pravatar.cc/100' }} // Geçici poster
+
           />
-          
-          {/* Play icon when paused */}
-          {isPaused && (
-            <View style={styles.playWrap}>
-              <View style={styles.playBtn}>
-                <Ionicons name="play" size={40} color="#fff" />
+          {/* Pause icon */}
+          {paused && (
+            <View style={s.pauseOverlay}>
+              <View style={s.pauseCircle}>
+                <Ionicons name="play" size={36} color="#fff" />
               </View>
             </View>
           )}
-
-          {/* Like animation */}
-          {showLikeAnim && (
-            <Animated.View style={[styles.likeAnim, { transform: [{ scale: likeScale }], opacity: likeOpacity }]}>
-              <Ionicons name="heart" size={120} color="#fff" />
-            </Animated.View>
-          )}
+          {/* Heart animation */}
+          <Animated.View
+            style={[s.likeAnim, {
+              transform: [{ scale: likeAnim }],
+              opacity: likeOpacity,
+            }]}
+            pointerEvents="none"
+          >
+            <Ionicons name="heart" size={100} color="rgba(255,255,255,0.95)" />
+          </Animated.View>
         </View>
       </TouchableWithoutFeedback>
 
-      {/* Overlay - only on active */}
-      {active && (
-        <View style={[styles.overlay, { paddingBottom: overlayBottomPadding }]}>
-          {/* Gradient for text readability */}
-          <LinearGradient
-            colors={['transparent', 'rgba(0,0,0,0.3)', 'rgba(0,0,0,0.8)']}
-            style={styles.gradient}
-            pointerEvents="none"
-          />
-
-          {/* Info - solda */}
-          <View style={styles.info}>
-            <View style={styles.userRow}>
-              <TouchableOpacity onPress={() => onUserPress?.(data.user.id)} activeOpacity={0.8}>
-                <Image source={{ uri: data.user.avatar }} style={styles.avatar} contentFit="cover" transition={200} />
+      {/* Gradient + overlay — ALWAYS rendered, pointer/opacity controlled by active */}
+      <LinearGradient
+        colors={['transparent', 'rgba(0,0,0,0.18)', 'rgba(0,0,0,0.72)']}
+        style={s.gradient}
+        pointerEvents="none"
+      />
+      <View style={[s.overlay, { opacity: active ? 1 : 0 }]} pointerEvents={active ? 'box-none' : 'none'}>
+        {/* Left: user info + description */}
+        <View style={s.left}>
+          {/* User row */}
+          <View style={s.userRow}>
+            <TouchableOpacity onPress={() => onUserPress?.(data.user.id)} activeOpacity={0.8}>
+              <Image
+                source={{ uri: data.user.avatar || 'https://i.pravatar.cc/100' }}
+                style={s.avatar}
+                contentFit="cover"
+                transition={150}
+              />
+            </TouchableOpacity>
+            <View style={s.userMeta}>
+              <TouchableOpacity onPress={() => onUserPress?.(data.user.id)}>
+                <Text style={s.username} numberOfLines={1}>@{data.user.username}</Text>
               </TouchableOpacity>
-              <View style={styles.userInfo}>
-                <View style={styles.nameRow}>
-                  <TouchableOpacity onPress={() => onUserPress?.(data.user.id)} activeOpacity={0.8} style={styles.usernameContainer}>
-                    <Text style={styles.username} numberOfLines={1} ellipsizeMode="tail">@{data.user.username}</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity 
-                    style={styles.followBtn} 
-                    onPress={() => {
-                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                      setFollowing(!following);
-                    }}
-                  >
-                    <Text style={styles.followTxt}>{following ? 'Takip Ediliyor' : 'Takip Et'}</Text>
-                  </TouchableOpacity>
-                </View>
-                {data.topic && <Text style={styles.topic}>{data.topic}</Text>}
-              </View>
+              {data.topic && <Text style={s.topic}>{data.topic}</Text>}
             </View>
-            <Text style={styles.desc} numberOfLines={expanded ? 4 : 1}>
-              {expanded ? data.description : data.description.slice(0, 35)}{!expanded && needsMore && '...'}
-              {needsMore && (
-                <Text style={styles.more} onPress={() => setExpanded(e => !e)}>
-                  {' '}{expanded ? 'kapat' : 'dahası'}
-                </Text>
-              )}
-            </Text>
+            <TouchableOpacity
+              style={[s.followBtn, following && s.followBtnActive]}
+              onPress={followUser}
+            >
+              <Text style={[s.followTxt, following && s.followTxtActive]}>
+                {following ? 'Takip' : 'Takip Et'}
+              </Text>
+            </TouchableOpacity>
           </View>
 
-          {/* Actions - sağda */}
-          <View style={styles.actions}>
-            <ActionBtn name={liked ? 'heart' : 'heart-outline'} count={likes} color={liked ? '#FF2D55' : '#fff'} onPress={toggleLike} />
-            <ActionBtn name="chatbubble" count={data.comments} onPress={() => setShowComments(true)} />
-            <ActionBtn 
-              name="bookmark" 
-              color={saved ? '#FFD60A' : '#fff'} 
-              onPress={() => {
-                const newSaved = !saved;
-                setSaved(newSaved);
-                if (onVideoSaved) {
-                  onVideoSaved(data.id, newSaved);
-                }
-              }} 
-            />
-            <ActionBtn 
-              name="arrow-redo" 
-              count={data.shares} 
-              onPress={async () => {
-                try {
-                  await Share.share({
-                    message: `${data.user.username}'in videosuna göz at! 🎬\n${data.description}`,
-                    title: 'Video Paylaş',
-                  });
-                } catch (error) {
-                  // Kullanıcı iptal etti
-                }
-              }}
-            />
-          </View>
+          {/* Description */}
+          <Text style={s.desc} numberOfLines={expanded ? 4 : 1}>
+            {expanded ? data.description : data.description.slice(0, 40)}
+            {!expanded && needsMore && '...'}
+            {needsMore && (
+              <Text style={s.more} onPress={() => setExpanded(e => !e)}>
+                {' '}{expanded ? 'kapat' : 'daha fazla'}
+              </Text>
+            )}
+          </Text>
         </View>
-      )}
 
-      {/* Comments Modal */}
-      <CommentsModal 
-        visible={showComments} 
-        onClose={() => setShowComments(false)} 
-        videoId={data.id} 
+        {/* Right: action buttons */}
+        <View style={s.actions}>
+          <ActionBtn
+            icon="heart-outline"
+            filledIcon="heart"
+            count={likes}
+            color={liked ? '#FF3B5C' : '#fff'}
+            active={liked}
+            onPress={toggleLike}
+          />
+          <ActionBtn
+            icon="chatbubble-ellipses-outline"
+            count={data.comments}
+            onPress={openComments}
+          />
+          <ActionBtn
+            icon="bookmark-outline"
+            filledIcon="bookmark"
+            color={saved ? Colors.save : '#fff'}
+            active={saved}
+            onPress={toggleSave}
+          />
+          <ActionBtn
+            icon="arrow-redo-outline"
+            count={data.shares}
+            onPress={async () => {
+              try {
+                await Share.share({ message: `${data.user.username}'in videosuna göz at! 🎬\n${data.description}` });
+              } catch { }
+            }}
+          />
+        </View>
+      </View>
+
+      {/* Comments */}
+      <CommentsModal
+        visible={showComments}
+        onClose={() => setShowComments(false)}
+        videoId={data.id}
         commentCount={data.comments}
-        onCommentAdded={(newCount) => onVideoCommented?.(data.id, newCount)}
+        onCommentAdded={count => onVideoCommented?.(data.id, count)}
       />
     </View>
   );
-}, (prev, next) => 
-  prev.data.id === next.data.id && 
-  prev.active === next.active && 
+}, (prev, next) =>
+  prev.data.id === next.data.id &&
+  prev.active === next.active &&
   prev.preload === next.preload &&
   prev.height === next.height &&
-  prev.overlayBottomPadding === next.overlayBottomPadding &&
-  prev.showCommentInput === next.showCommentInput &&
+  prev.isAuthenticated === next.isAuthenticated &&
   prev.data.isLiked === next.data.isLiked &&
   prev.data.isSaved === next.data.isSaved &&
   prev.data.likes === next.data.likes &&
   prev.data.comments === next.data.comments
 );
 
-export default function HomeScreen({ isActive = true, videos = [], onUserPress, onVideoSaved, onVideoLiked, onVideoCommented, refreshKey }: Props) {
+// ─── HomeScreen ───────────────────────────────────────────────────────
+export default function HomeScreen({
+  isActive = true,
+  isAuthenticated = false,
+  videos = [],
+  onUserPress,
+  onVideoSaved,
+  onVideoLiked,
+  onVideoCommented,
+  refreshKey,
+}: HomeScreenProps) {
   const [idx, setIdx] = useState(0);
-  const [h, setH] = useState(Dimensions.get('window').height - NAVBAR_H);
-  const flatListRef = useRef<FlatList>(null);
+  const [h, setH] = useState(FULL_H);
+  const listRef = useRef<any>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [guestModal, setGuestModal] = useState<{
+    visible: boolean;
+    action: 'like' | 'comment' | 'save' | 'follow' | 'create' | 'general';
+  }>({ visible: false, action: 'general' });
 
-  // Home butonuna tıklanınca en üste scroll
+  // Scroll to top when refreshKey changes (Home tab basıldığında)
   useEffect(() => {
     if (refreshKey && refreshKey > 0) {
-      flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
+      listRef.current?.scrollToOffset({ offset: 0, animated: true });
       setIdx(0);
     }
   }, [refreshKey]);
 
+  const onRefreshFeed = useCallback(() => {
+    setRefreshing(true);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setTimeout(() => {
+      // shuffle for demo purposes
+      setIdx(0);
+      listRef.current?.scrollToOffset({ offset: 0, animated: false });
+      setRefreshing(false);
+    }, 1000);
+  }, []);
+
   const onViewChange = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
-    if (viewableItems[0]?.index != null) setIdx(viewableItems[0].index);
+    if (viewableItems.length > 0 && viewableItems[0]?.index != null) {
+      setIdx(viewableItems[0].index);
+    }
   }).current;
 
-  const viewConfig = useRef({ itemVisiblePercentThreshold: 60 }).current;
-  const getLayout = useCallback((_: any, i: number) => ({ length: h, offset: h * i, index: i }), [h]);
-  const keyExt = useCallback((item: VideoItem) => item.id, []);
+  const viewConfig = useRef({ itemVisiblePercentThreshold: 70 }).current; // Daha geç tetiklesin ki ses hemen girmesin
 
-  const renderItem = useCallback(({ item, index }: { item: VideoItem; index: number }) => {
-    const isActiveItem = isActive && index === idx;
-    // Preload adjacent videos (prev and next)
-    const shouldPreload = isActive && (index === idx - 1 || index === idx + 1);
-    
-    return (
-      <VideoCard 
-        data={item} 
-        active={isActiveItem} 
-        preload={shouldPreload}
-        height={h} 
-        onUserPress={onUserPress}
-        onVideoSaved={onVideoSaved}
-        onVideoLiked={onVideoLiked}
-        onVideoCommented={onVideoCommented}
-      />
-    );
-  }, [isActive, idx, h, onUserPress, onVideoSaved, onVideoLiked, onVideoCommented]);
+  const showGuestModal = useCallback((action: 'like' | 'comment' | 'save' | 'follow' | 'create' | 'general') => {
+    setGuestModal({ visible: true, action });
+  }, []);
+
+  const renderItem = useCallback(({ item, index }: { item: VideoItem; index: number }) => (
+    <VideoCard
+      data={item}
+      active={isActive && index === idx}
+      preload={isActive && Math.abs(index - idx) <= 1} // Hem üst hem alt video preload edilsin
+      height={h}
+      isAuthenticated={isAuthenticated}
+      onUserPress={onUserPress}
+      onVideoSaved={onVideoSaved}
+      onVideoLiked={onVideoLiked}
+      onVideoCommented={onVideoCommented}
+      onAuthRequired={showGuestModal}
+    />
+  ), [isActive, idx, h, isAuthenticated, onUserPress, onVideoSaved, onVideoLiked, onVideoCommented, showGuestModal]);
 
   if (!videos.length) {
     return (
-      <View style={styles.empty}>
-        <Ionicons name="videocam-off-outline" size={48} color="#333" />
-        <Text style={styles.emptyTxt}>Henüz video yok</Text>
+      <View style={[s.container, s.empty]}>
+        <Ionicons name="film-outline" size={48} color={Colors.textDim} />
+        <Text style={s.emptyText}>Henüz video yok</Text>
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
-      <FlatList
-        ref={flatListRef}
+    <View
+      style={s.container}
+      onLayout={e => setH(e.nativeEvent.layout.height)}
+    >
+      <FlashList
+        ref={listRef}
         data={videos}
         renderItem={renderItem}
-        keyExtractor={keyExt}
+        keyExtractor={item => item.id}
         pagingEnabled
-        showsVerticalScrollIndicator={false}
         snapToInterval={h}
         snapToAlignment="start"
         decelerationRate="fast"
         disableIntervalMomentum
+        showsVerticalScrollIndicator={false}
         onViewableItemsChanged={onViewChange}
         viewabilityConfig={viewConfig}
-        getItemLayout={getLayout}
-        removeClippedSubviews
-        initialNumToRender={1}
-        maxToRenderPerBatch={2}
-        windowSize={3}
-        bounces={false}
-        overScrollMode="never"
+        removeClippedSubviews={false} // Android'deki ani kararmaları engeller
+        drawDistance={h * 2} // Preload tamponunu büyüttük (takılmaları önler)
+        bounces={true}
+        refreshing={refreshing}
+        onRefresh={onRefreshFeed}
+        overScrollMode="always"
+      />
+      <GuestAuthModal
+        visible={guestModal.visible}
+        action={guestModal.action}
+        onClose={() => setGuestModal(p => ({ ...p, visible: false }))}
       />
     </View>
   );
 }
 
-const styles = StyleSheet.create({
+// ─── Styles ───────────────────────────────────────────────────────────
+const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
-  empty: { flex: 1, backgroundColor: '#000', alignItems: 'center', justifyContent: 'center' },
-  emptyTxt: { color: '#444', fontSize: 14, marginTop: 8 },
-  card: { width: W, backgroundColor: '#000' },
-  videoWrap: { flex: 1 },
-  video: { flex: 1 },
-  playWrap: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
-  playBtn: { width: 72, height: 72, borderRadius: 36, backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center', paddingLeft: 4 },
-  overlay: { ...StyleSheet.absoluteFillObject, flexDirection: 'row', alignItems: 'flex-end', paddingBottom: 20, paddingHorizontal: 12 },
+  empty: { alignItems: 'center', justifyContent: 'center' },
+  emptyText: { color: Colors.textMuted, fontSize: 14, marginTop: 10 },
+
+  // Card
+  card: { width: W, backgroundColor: '#000', overflow: 'hidden' },
+
+  // Pause
+  pauseOverlay: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
+  pauseCircle: {
+    width: 68, height: 68, borderRadius: 34,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    alignItems: 'center', justifyContent: 'center', paddingLeft: 4,
+  },
+
+  // Like anim
+  likeAnim: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center', justifyContent: 'center',
+  },
+
+  // Gradient
   gradient: { ...StyleSheet.absoluteFillObject },
-  info: { flex: 1, marginRight: 14, zIndex: 1 },
-  actions: { alignItems: 'center', gap: 20, zIndex: 1 },
-  action: { alignItems: 'center', gap: 4 },
-  actionTxt: { color: '#fff', fontSize: 12, fontWeight: '600', fontFamily: 'GlacialIndifference-Regular' },
-  userRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
-  avatar: { width: 36, height: 36, borderRadius: 18, borderWidth: 2, borderColor: '#fff' },
-  userInfo: { flex: 1, minWidth: 0 },
-  nameRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 2 },
-  usernameContainer: { flexShrink: 1, minWidth: 0 },
-  username: { color: '#fff', fontSize: 14, fontWeight: '600', fontFamily: 'GlacialIndifference-Regular' },
-  followBtn: { paddingHorizontal: 12, paddingVertical: 4, borderRadius: 100, backgroundColor: 'rgba(255, 255, 255, 0.2)', flexShrink: 0, marginLeft: 5 },
-  followTxt: { color: '#fff', fontSize: 12, fontWeight: '600', fontFamily: 'GlacialIndifference-Regular' },
-  topic: { color: '#fff', fontSize: 13, fontWeight: '600', fontFamily: 'GlacialIndifference-Regular' },
-  desc: { color: '#fff', fontSize: 13, lineHeight: 18, fontFamily: 'GlacialIndifference-Regular' },
-  more: { color: '#888', fontSize: 13, fontWeight: '600', fontFamily: 'GlacialIndifference-Regular' },
-  likeAnim: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', pointerEvents: 'none', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.8, shadowRadius: 8, elevation: 10 },
+
+  // Overlay layout
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    paddingBottom: 24,
+    paddingHorizontal: 14,
+  },
+
+  // Left side
+  left: { flex: 1, marginRight: 12 },
+  userRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10, gap: 8 },
+  avatar: {
+    width: 38, height: 38, borderRadius: 19,
+    borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.6)',
+  },
+  userMeta: { flex: 1, minWidth: 0 },
+  username: { color: '#fff', fontSize: 14, fontWeight: '700', letterSpacing: -0.2 },
+  topic: { color: 'rgba(255,255,255,0.7)', fontSize: 12, marginTop: 1 },
+  followBtn: {
+    paddingHorizontal: 12, paddingVertical: 5,
+    borderRadius: 20,
+    borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.8)',
+  },
+  followBtnActive: { backgroundColor: 'rgba(255,255,255,0.15)', borderColor: 'transparent' },
+  followTxt: { color: '#fff', fontSize: 12, fontWeight: '600' },
+  followTxtActive: { color: 'rgba(255,255,255,0.7)' },
+  desc: { color: 'rgba(255,255,255,0.9)', fontSize: 13, lineHeight: 18 },
+  more: { color: 'rgba(255,255,255,0.6)', fontWeight: '600' },
+
+  // Right side
+  actions: { alignItems: 'center', gap: 18 },
+  actionBtn: { alignItems: 'center', gap: 3 },
+  actionCount: { color: '#fff', fontSize: 12, fontWeight: '600' },
+  save: { color: Colors.save },
 });
+
