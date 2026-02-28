@@ -10,7 +10,7 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
-  View,
+  View
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -88,6 +88,7 @@ export default function MainLayout() {
     visible: boolean;
     action: 'like' | 'comment' | 'save' | 'follow' | 'create' | 'general';
   }>({ visible: false, action: 'general' });
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null); // null = hidden
 
   const isAuth = authState.isAuthenticated;
 
@@ -139,14 +140,27 @@ export default function MainLayout() {
   const closeProfile = useCallback(() => { setUserProfileOpen(false); setSelectedUserId(null); }, []);
 
   const onVideoPublished = useCallback((videoUri: string, description?: string, topic?: string) => {
-    setVideos(prev => [{
-      id: `vid-${Date.now()}`, uri: videoUri,
-      user: { id: 'current', username: profile.username, avatar: profile.avatarUri },
-      description: description || '🎬', topic: topic ?? '',
-      likes: 0, comments: 0, shares: 0, isLiked: false, isSaved: false,
-    }, ...prev]);
-    setProfile(prev => ({ ...prev, videos: prev.videos + 1 }));
-    setTab(0);
+    // Simulate an upload animation
+    setUploadProgress(0);
+    let p = 0;
+    const interval = setInterval(() => {
+      p += Math.random() * 20;
+      if (p >= 100) {
+        p = 100;
+        clearInterval(interval);
+        setVideos(prev => [{
+          id: `vid-${Date.now()}`, uri: videoUri,
+          user: { id: 'current', username: profile.username, avatar: profile.avatarUri },
+          description: description || '🎬', topic: topic ?? '',
+          likes: 0, comments: 0, shares: 0, isLiked: false, isSaved: false,
+        }, ...prev]);
+        setProfile(prev => ({ ...prev, videos: prev.videos + 1 }));
+        setHomeRefreshKey(k => k + 1); // scroll to top (kendi videosu)
+        setTab(0);
+        setTimeout(() => setUploadProgress(null), 800);
+      }
+      setUploadProgress(Math.min(p, 100));
+    }, 200);
   }, [profile.username, profile.avatarUri]);
 
   const onVideoDelete = useCallback((videoId: string) => {
@@ -185,6 +199,7 @@ export default function MainLayout() {
             onVideoSaved={onVideoSaved}
             onVideoLiked={onVideoLiked}
             onVideoCommented={onVideoCommented}
+            onRefresh={() => setVideos(prev => [...prev].sort(() => Math.random() - 0.5))}
             refreshKey={homeRefreshKey}
           />
         </TabScreen>
@@ -253,6 +268,18 @@ export default function MainLayout() {
         action={guestModal.action}
         onClose={() => setGuestModal(p => ({ ...p, visible: false }))}
       />
+
+      {/* Upload Progress Bar */}
+      {uploadProgress !== null && (
+        <View style={styles.uploadBar}>
+          <View style={styles.uploadBg}>
+            <View style={[styles.uploadFill, { width: `${uploadProgress}%` }]} />
+          </View>
+          <Text style={styles.uploadText}>
+            {uploadProgress < 100 ? `Yükleniyor %${Math.round(uploadProgress)}` : '✓ Yayınlandı!'}
+          </Text>
+        </View>
+      )}
     </View>
   );
 }
@@ -324,5 +351,35 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 9,
     fontWeight: '700',
+  },
+
+  // Upload Progress
+  uploadBar: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0,
+    zIndex: 999,
+    backgroundColor: Colors.surface,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    gap: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 10,
+  },
+  uploadBg: {
+    height: 4, borderRadius: 2,
+    backgroundColor: Colors.surfaceAlt,
+    overflow: 'hidden',
+  },
+  uploadFill: {
+    height: 4, borderRadius: 2,
+    backgroundColor: Colors.primary,
+  },
+  uploadText: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+    fontWeight: '500',
   },
 });

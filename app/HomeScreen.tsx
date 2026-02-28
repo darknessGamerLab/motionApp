@@ -56,6 +56,7 @@ interface HomeScreenProps {
   onVideoSaved?: (id: string, isSaved: boolean) => void;
   onVideoLiked?: (id: string, isLiked: boolean, likes: number) => void;
   onVideoCommented?: (id: string, comments: number) => void;
+  onRefresh?: () => void;
   refreshKey?: number;
 }
 
@@ -358,6 +359,7 @@ export default function HomeScreen({
   onVideoSaved,
   onVideoLiked,
   onVideoCommented,
+  onRefresh,
   refreshKey,
 }: HomeScreenProps) {
   const [idx, setIdx] = useState(0);
@@ -379,14 +381,14 @@ export default function HomeScreen({
 
   const onRefreshFeed = useCallback(() => {
     setRefreshing(true);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    onRefresh?.(); // parent'ta videos'u shuffle eder
     setTimeout(() => {
-      // shuffle for demo purposes
       setIdx(0);
       listRef.current?.scrollToOffset({ offset: 0, animated: false });
       setRefreshing(false);
-    }, 1000);
-  }, []);
+    }, 800);
+  }, [onRefresh]);
 
   const onViewChange = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
     if (viewableItems.length > 0 && viewableItems[0]?.index != null) {
