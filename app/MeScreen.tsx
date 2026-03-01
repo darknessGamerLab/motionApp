@@ -216,10 +216,17 @@ export default function MeScreen({ isActive = false, userProfile, allVideos = []
             </TouchableOpacity>
             <View style={styles.statDivider} />
             <TouchableOpacity style={styles.statItem}>
+              <Text style={styles.statNumber}>{userProfile?.radarsCount || 0}</Text>
+              <Text style={styles.statLabel}>Radar</Text>
+            </TouchableOpacity>
+            <View style={styles.statDivider} />
+            <TouchableOpacity style={styles.statItem}>
               <Text style={styles.statNumber}>{formatViews(user.videos)}</Text>
               <Text style={styles.statLabel}>Video</Text>
             </TouchableOpacity>
           </View>
+
+
 
           {/* Action Buttons */}
           <View style={styles.actionButtons}>
@@ -508,6 +515,13 @@ const styles = StyleSheet.create({
   statNumber: { fontSize: 18, fontWeight: '700', color: Colors.text, marginBottom: 3 },
   statLabel: { fontSize: 12, color: Colors.textMuted, fontWeight: '500' },
   statDivider: { width: 1, height: 32, backgroundColor: Colors.border },
+  taxInfoBar: {
+    backgroundColor: 'rgba(0,0,0,0.04)',
+    paddingHorizontal: 12, paddingVertical: 4,
+    borderRadius: 6,
+    marginTop: 12, borderLeftWidth: 3, borderLeftColor: Colors.primary,
+  },
+  taxLabel: { fontSize: 10, fontWeight: '700', color: Colors.textSecondary, letterSpacing: 0.5 },
   actionButtons: { flexDirection: 'row', gap: 8, width: '100%', marginTop: 10 },
   actionButton: { flex: 1, paddingVertical: 10, borderRadius: 10, backgroundColor: Colors.surfaceAlt, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: Colors.border },
   actionButtonText: { fontSize: 14, fontWeight: '600', color: Colors.text },

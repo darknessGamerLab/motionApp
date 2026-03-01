@@ -1,0 +1,130 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum UserType {
+  individual
+  corporate
+}
+
+enum CorporateStatus {
+  pending
+  approved
+  rejected
+}
+
+model Profile {
+  id               String           @id @default(uuid())
+  username         String           @unique
+  full_name        String
+  bio              String?
+  avatar_url       String?
+  user_type        UserType         @default(individual)
+  talents          String[]
+  corporate_status CorporateStatus? // Sadece corporate hesaplar için: pending, approved, rejected
+  admin_message    String?          // Red veya onay sırasında adminin yazdığı mesaj
+  is_banned        Boolean          @default(false)
+  created_at       DateTime         @default(now())
+  updated_at       DateTime         @updatedAt
+
+  videos   Video[]
+  likes    Like[]
+  saves    Save[]
+  comments Comment[]
+
+  @@map("profiles")
+}
+
+model Video {
+  id             String   @id @default(uuid())
+  user_id        String
+  video_url      String
+  thumbnail_url  String?
+  description    String
+  topic          String?
+  likes_count    Int      @default(0)
+  comments_count Int      @default(0)
+  shares_count   Int      @default(0)
+  views_count    Int      @default(0)
+  created_at     DateTime @default(now())
+
+  profile  Profile   @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  likes    Like[]
+  saves    Save[]
+  comments Comment[]
+
+  @@map("videos")
+}
+
+model Like {
+  id         String   @id @default(uuid())
+  user_id    String
+  video_id   String
+  created_at DateTime @default(now())
+
+  profile Profile @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  video   Video   @relation(fields: [video_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, video_id])
+  @@map("likes")
+}
+
+model Save {
+  id         String   @id @default(uuid())
+  user_id    String
+  video_id   String
+  created_at DateTime @default(now())
+
+  profile Profile @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  video   Video   @relation(fields: [video_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, video_id])
+  @@map("saves")
+}
+
+model Comment {
+  id         String   @id @default(uuid())
+  user_id    String
+  video_id   String
+  content    String
+  created_at DateTime @default(now())
+
+  profile Profile @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  video   Video   @relation(fields: [video_id], references: [id], onDelete: Cascade)
+
+  @@map("comments")
+}
+
+// Admin Paneline Özel Yeni Tablolar:
+model Banner {
+  id         String   @id @default(uuid())
+  title      String
+  brand      String
+  image_url  String
+  target_url String?  
+  slider_pos Int      // 1 (FirstSlider), 2 (Second 25li), 3 (Third 100lü)
+  is_active  Boolean  @default(true)
+  clicks     Int      @default(0)
+  views      Int      @default(0)
+  created_at DateTime @default(now())
+
+  @@map("banners")
+}
+
+model Report {
+  id          String   @id @default(uuid())
+  reporter_id String   // Raporlayan kişi (user_id)
+  video_id    String?  // Gerekliyse Raporlanan video
+  reason      String   // Şikayet nedeni
+  status      String   @default("pending") // pending, resolved, rejected
+  admin_notes String?
+  created_at  DateTime @default(now())
+
+  @@map("reports")
+}

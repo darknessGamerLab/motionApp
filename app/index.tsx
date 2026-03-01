@@ -2,8 +2,9 @@ import GuestAuthModal from '@/components/GuestAuthModal';
 import Colors from '@/constants/Colors';
 import { getTalentById } from '@/constants/Talents';
 import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/lib/supabase';
 import { Ionicons } from '@expo/vector-icons';
-import React, { memo, useCallback, useMemo, useState } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Platform,
   StatusBar,
@@ -92,10 +93,8 @@ export default function MainLayout() {
 
   const isAuth = authState.isAuthenticated;
 
-  // Navbar yüksekliği = içerik + bottom safe area
   const navbarHeight = NAV_H + insets.bottom;
 
-  // StatusBar her render'da doğru renkte kalsın
   if (Platform.OS === 'android') {
     StatusBar.setBackgroundColor(Colors.surface);
     StatusBar.setBarStyle('dark-content');
@@ -118,6 +117,33 @@ export default function MainLayout() {
     }
   }, [tab, userProfileOpen]);
 
+  // Realtime Stats Sync
+  useEffect(() => {
+    const channel = supabase.channel('global-sync')
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'videos' }, (payload: any) => {
+        // Only update if the change didn't come from us (optional heuristic, here we filter for different count)
+        setVideos(prev => prev.map(v => {
+          if (v.id === payload.new.id) {
+            // Only update if external counter is significantly different or we aren't in high-frequency mode
+            return {
+              ...v,
+              likes: payload.new.likes_count,
+              comments: payload.new.comments_count,
+              shares: payload.new.shares_count
+            };
+          }
+          return v;
+        }));
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, []);
+
+  const loadMoreVideos = useCallback(() => {
+    setVideos(prev => [...prev, ...INITIAL_VIDEOS.sort(() => Math.random() - 0.5)]);
+  }, []);
+
   const initialProfile = useMemo(() => {
     const talentIds = authState.userData?.talents || [];
     const skills = talentIds.map((id: string) => getTalentById(id)?.name || '').filter(Boolean);
@@ -131,8 +157,12 @@ export default function MainLayout() {
       skills: skills.length > 0 ? skills : [],
       talents: talentIds,
       following: 0, followers: 0, videos: 0,
+      user_type: authState.profile?.user_type,
+      tax_office: authState.profile?.tax_office,
+      tax_number: authState.profile?.tax_number,
+      radarsCount: 0
     };
-  }, [authState.userData]);
+  }, [authState.userData, authState.profile]);
 
   const [profile, setProfile] = useState(initialProfile);
 
@@ -140,7 +170,6 @@ export default function MainLayout() {
   const closeProfile = useCallback(() => { setUserProfileOpen(false); setSelectedUserId(null); }, []);
 
   const onVideoPublished = useCallback((videoUri: string, description?: string, topic?: string) => {
-    // Simulate an upload animation
     setUploadProgress(0);
     let p = 0;
     const interval = setInterval(() => {
@@ -155,7 +184,7 @@ export default function MainLayout() {
           likes: 0, comments: 0, shares: 0, isLiked: false, isSaved: false,
         }, ...prev]);
         setProfile(prev => ({ ...prev, videos: prev.videos + 1 }));
-        setHomeRefreshKey(k => k + 1); // scroll to top (kendi videosu)
+        setHomeRefreshKey(k => k + 1);
         setTab(0);
         setTimeout(() => setUploadProgress(null), 800);
       }
@@ -172,14 +201,54 @@ export default function MainLayout() {
     });
   }, [profile.username]);
 
-  const onVideoSaved = useCallback((id: string, isSaved: boolean) =>
-    setVideos(prev => prev.map(v => v.id === id ? { ...v, isSaved } : v)), []);
+  const onVideoSaved = useCallback((id: string, isSaved: boolean) => {
+    // 1. Instant local update
+    setVideos(prev => prev.map(v => v.id === id ? { ...v, isSaved } : v));
 
-  const onVideoLiked = useCallback((id: string, isLiked: boolean, likes: number) =>
-    setVideos(prev => prev.map(v => v.id === id ? { ...v, isLiked, likes } : v)), []);
+    // 2. Background DB sync
+    if (isAuth && authState.user?.id) {
+      const userId = authState.user.id;
+      (async () => {
+        try {
+          if (isSaved) {
+            await supabase.from('saves').insert({ user_id: userId, video_id: id } as any);
+          } else {
+            await supabase.from('saves').delete().eq('user_id', userId).eq('video_id', id);
+          }
+        } catch (e) { console.error('Save sync error:', e); }
+      })();
+    }
+  }, [isAuth, authState.user]);
 
-  const onVideoCommented = useCallback((id: string, comments: number) =>
-    setVideos(prev => prev.map(v => v.id === id ? { ...v, comments } : v)), []);
+  const onVideoLiked = useCallback((id: string, isLiked: boolean, likes: number) => {
+    // 1. Instant local update
+    setVideos(prev => prev.map(v => v.id === id ? { ...v, isLiked, likes } : v));
+
+    // 2. Background DB sync
+    if (isAuth && authState.user?.id) {
+      const userId = authState.user.id;
+      (async () => {
+        try {
+          if (isLiked) {
+            await supabase.from('likes').insert({ user_id: userId, video_id: id } as any);
+          } else {
+            await supabase.from('likes').delete().eq('user_id', userId).eq('video_id', id);
+          }
+
+          // Trigger server-side increment (trigger handles likes_count usually, or we do manual)
+          await supabase.from('videos').update({
+            likes_count: likes
+          } as any).eq('id', id);
+        } catch (e) {
+          console.log('Like sync background task'); // Usually suppressed
+        }
+      })();
+    }
+  }, [isAuth, authState.user]);
+
+  const onVideoCommented = useCallback((id: string, comments: number) => {
+    setVideos(prev => prev.map(v => v.id === id ? { ...v, comments } : v));
+  }, []);
 
   const onProfileUpdate = useCallback((data: any) =>
     setProfile(prev => ({ ...prev, ...data })), []);
@@ -188,7 +257,6 @@ export default function MainLayout() {
 
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
-      {/* Content area — fills everything above navbar */}
       <View style={styles.content}>
         <TabScreen visible={tab === 0 && !isFullscreen}>
           <HomeScreen
@@ -200,6 +268,7 @@ export default function MainLayout() {
             onVideoLiked={onVideoLiked}
             onVideoCommented={onVideoCommented}
             onRefresh={() => setVideos(prev => [...prev].sort(() => Math.random() - 0.5))}
+            onEndReached={loadMoreVideos}
             refreshKey={homeRefreshKey}
           />
         </TabScreen>
@@ -252,7 +321,6 @@ export default function MainLayout() {
         )}
       </View>
 
-      {/* Bottom Navbar — safe area'yı içerir */}
       {!isFullscreen && (
         <View style={[styles.navbar, { height: navbarHeight, paddingBottom: insets.bottom }]}>
           <TabBtn icon={tab === 0 ? 'home' : 'home-outline'} active={tab === 0} onPress={handleHomePress} />
@@ -269,7 +337,6 @@ export default function MainLayout() {
         onClose={() => setGuestModal(p => ({ ...p, visible: false }))}
       />
 
-      {/* Upload Progress Bar */}
       {uploadProgress !== null && (
         <View style={styles.uploadBar}>
           <View style={styles.uploadBg}>
@@ -285,101 +352,42 @@ export default function MainLayout() {
 }
 
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: Colors.background,
-  },
-  content: {
-    flex: 1,
-  },
-  screen: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  hidden: {
-    opacity: 0,
-    pointerEvents: 'none',
-  },
-  fullscreen: {
-    ...StyleSheet.absoluteFillObject,
-    zIndex: 100,
-  },
+  root: { flex: 1, backgroundColor: Colors.background },
+  content: { flex: 1 },
+  screen: { ...StyleSheet.absoluteFillObject },
+  hidden: { opacity: 0, pointerEvents: 'none' },
+  fullscreen: { ...StyleSheet.absoluteFillObject, zIndex: 100 },
   navbar: {
     flexDirection: 'row',
     backgroundColor: Colors.surface,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: Colors.border,
-    // Shadow (iOS)
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -1 },
     shadowOpacity: 0.06,
     shadowRadius: 8,
-    // Elevation (Android)
     elevation: 8,
   },
-  tabBtn: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingTop: 8,
-  },
-  tabIconWrap: {
-    position: 'relative',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  tabBtn: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 8 },
+  tabIconWrap: { position: 'relative', alignItems: 'center', justifyContent: 'center' },
   createBtn: {
-    width: 44,
-    height: 30,
-    borderRadius: 10,
+    width: 44, height: 30, borderRadius: 10,
     backgroundColor: ACCENT,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: 'center', justifyContent: 'center',
   },
   badge: {
-    position: 'absolute',
-    top: -4,
-    right: -8,
+    position: 'absolute', top: -4, right: -8,
     backgroundColor: Colors.primary,
-    borderRadius: 8,
-    minWidth: 16,
-    height: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 3,
+    borderRadius: 8, minWidth: 16, height: 16,
+    alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3,
   },
-  badgeText: {
-    color: '#fff',
-    fontSize: 9,
-    fontWeight: '700',
-  },
-
-  // Upload Progress
+  badgeText: { color: '#fff', fontSize: 9, fontWeight: '700' },
   uploadBar: {
-    position: 'absolute',
-    top: 0, left: 0, right: 0,
-    zIndex: 999,
-    backgroundColor: Colors.surface,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    gap: 6,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 10,
+    position: 'absolute', top: 0, left: 0, right: 0, zIndex: 999,
+    backgroundColor: Colors.surface, paddingHorizontal: 20, paddingVertical: 10, gap: 6,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 8, elevation: 10,
   },
-  uploadBg: {
-    height: 4, borderRadius: 2,
-    backgroundColor: Colors.surfaceAlt,
-    overflow: 'hidden',
-  },
-  uploadFill: {
-    height: 4, borderRadius: 2,
-    backgroundColor: Colors.primary,
-  },
-  uploadText: {
-    fontSize: 12,
-    color: Colors.textSecondary,
-    fontWeight: '500',
-  },
+  uploadBg: { height: 4, borderRadius: 2, backgroundColor: Colors.surfaceAlt, overflow: 'hidden' },
+  uploadFill: { height: 4, borderRadius: 2, backgroundColor: Colors.primary },
+  uploadText: { fontSize: 12, color: Colors.textSecondary, fontWeight: '500' },
 });

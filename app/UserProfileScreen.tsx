@@ -1,17 +1,21 @@
 import CommentsModal from '@/components/CommentsModal';
 import ProfilePhotoCarousel from '@/components/ProfilePhotoCarousel';
 import Colors from '@/constants/Colors';
+import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/lib/supabase';
 import { formatNumber } from '@/utils/format';
 import { Ionicons } from '@expo/vector-icons';
 import { ResizeMode, Video } from 'expo-av';
 import * as Haptics from 'expo-haptics';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ActionSheetIOS,
   Alert,
   Animated,
   Dimensions,
   FlatList,
   Modal,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -59,15 +63,29 @@ export default function UserProfileScreen({
   onVideoLiked,
   onVideoCommented,
 }: UserProfileScreenProps) {
+  const { authState } = useAuth();
   const [activeTab, setActiveTab] = useState<'videos' | 'private'>('videos');
   const [activeProfileIndex, setActiveProfileIndex] = useState(1);
-  const [showReportMenu, setShowReportMenu] = useState(false);
-  const [isFollowing, setIsFollowing] = useState(false);
-  const [videoPlayerVisible, setVideoPlayerVisible] = useState(false);
-  const [videoPlayerVideos, setVideoPlayerVideos] = useState<VideoItem[]>([]);
-  const [videoPlayerStartIndex, setVideoPlayerStartIndex] = useState(0);
+  const [hasRadar, setHasRadar] = useState(false);
   const tabIndicatorPosition = useRef(new Animated.Value(0)).current;
   const contentPosition = useRef(new Animated.Value(0)).current;
+
+  // Real data fetching if userId is UUID
+  const [profileData, setProfileData] = useState<any>(null);
+
+  useEffect(() => {
+    const fetchProfile = async () => {
+      if (!userId || userId.length < 30) return; // Skip mock IDs
+      const { data } = await supabase.from('profiles').select('*').eq('id', userId).single();
+      if (data) setProfileData(data);
+
+      if (authState.user && authState.profile?.user_type === 'corporate') {
+        const { data: r } = await supabase.from('radars').select('*').eq('corporate_id', authState.user.id).eq('individual_id', userId).single();
+        setHasRadar(!!r);
+      }
+    };
+    fetchProfile();
+  }, [userId, authState.user, authState.profile]);
 
   useEffect(() => {
     Animated.parallel([
@@ -103,14 +121,88 @@ export default function UserProfileScreen({
     return allVideos.filter(v => v.user.id === user.id || v.user.username === user.username);
   }, [allVideos, user.id, user.username]);
 
-  const handleReport = () => {
+  const handleReport = async (reason: string) => {
+    if (!authState.user) {
+      Alert.alert('Hata', 'Rapor bildirmek için giriş yapmalısınız.');
+      return;
+    }
+
+    // UUID format check to prevent "invalid input syntax for type uuid"
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const cleanTargetId = userId && uuidRegex.test(userId) ? userId : null;
+
+    if (!cleanTargetId) {
+      // If it's a mock ID (like 'u2'), we can't report it to the real DB
+      Alert.alert('Bilgi', 'Bu örnek kullanıcı şu an raporlanamaz.');
+      return;
+    }
+
+    try {
+      const { error } = await supabase.from('reports').insert({
+        reporter_id: authState.user.id,
+        target_type: 'account' as 'account',
+        target_id: cleanTargetId,
+        reason: reason,
+        status: 'pending' as 'pending'
+      });
+
+      if (error) throw error;
+      Alert.alert('Bildirildi', 'Şikayetiniz incelenmek üzere ekibimize iletildi.');
+    } catch (err) {
+      console.error('Report error:', err);
+      Alert.alert('Hata', 'Rapor gönderilemedi.');
+    }
+  };
+
+  const onReportPress = () => {
     setShowReportMenu(false);
-    Alert.alert('Bildirildi', 'Bu kullanıcı raporlandı.');
+    const reasons = ['Spam', 'Uygunsuz İçerik', 'Nefret Söylemi', 'Sahte Hesap', 'Diğer'];
+
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          options: ['Vazgeç', ...reasons],
+          cancelButtonIndex: 0,
+          destructiveButtonIndex: reasons.indexOf('Uygunsuz İçerik') + 1,
+          title: 'Şikayet Et',
+          message: 'Bu hesabı neden şikayet ediyorsunuz?'
+        },
+        (buttonIndex) => {
+          if (buttonIndex > 0) handleReport(reasons[buttonIndex - 1]);
+        }
+      );
+    } else {
+      Alert.alert(
+        'Şikayet Et',
+        'Bu hesabı neden şikayet ediyorsunuz?',
+        [
+          { text: 'Vazgeç', style: 'cancel' },
+          ...reasons.map(r => ({ text: r, onPress: () => handleReport(r) }))
+        ]
+      );
+    }
   };
 
   const handleFollow = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setIsFollowing(!isFollowing);
+  };
+
+  const toggleRadar = async () => {
+    if (!authState.user || authState.profile?.user_type !== 'corporate') return;
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
+    try {
+      if (hasRadar) {
+        await supabase.from('radars').delete().eq('corporate_id', authState.user.id).eq('individual_id', userId);
+        setHasRadar(false);
+      } else {
+        await supabase.from('radars').insert({ corporate_id: authState.user.id, individual_id: userId });
+        setHasRadar(true);
+      }
+    } catch (err) {
+      console.error(err);
+    }
   };
 
   const openVideoPlayer = useCallback((videos: VideoItem[], startIndex: number) => {
@@ -207,8 +299,21 @@ export default function UserProfileScreen({
                 {isFollowing ? 'Takip Ediliyor' : 'Takip Et'}
               </Text>
             </TouchableOpacity>
+
+            {authState.profile?.user_type === 'corporate' && (
+              <TouchableOpacity
+                style={[styles.radarButton, hasRadar && styles.radarButtonActive]}
+                onPress={toggleRadar}
+              >
+                <Ionicons name="radio" size={18} color={hasRadar ? '#fff' : Colors.primary} />
+                <Text style={[styles.radarButtonText, hasRadar && styles.radarButtonTextActive]}>
+                  {hasRadar ? 'Radarda' : 'Radara Al'}
+                </Text>
+              </TouchableOpacity>
+            )}
+
             <TouchableOpacity style={styles.actionButton}>
-              <Text style={styles.actionButtonText}>Profili Paylaş</Text>
+              <Text style={styles.actionButtonText}>Paylaş</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -278,7 +383,7 @@ export default function UserProfileScreen({
       <Modal visible={showReportMenu} transparent animationType="fade" onRequestClose={() => setShowReportMenu(false)}>
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowReportMenu(false)}>
           <View style={styles.reportMenu}>
-            <TouchableOpacity style={styles.reportItem} onPress={handleReport}>
+            <TouchableOpacity style={styles.reportItem} onPress={onReportPress}>
               <Ionicons name="flag-outline" size={20} color={Colors.error} />
               <Text style={styles.reportText}>Bildir</Text>
             </TouchableOpacity>
@@ -452,6 +557,18 @@ const styles = StyleSheet.create({
   actionButtonText: { fontSize: 13, fontWeight: '600', color: Colors.text },
   followButtonActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
   followButtonTextActive: { color: '#fff' },
+  radarButton: {
+    flex: 1.2, paddingVertical: 10, borderRadius: 8,
+    backgroundColor: 'rgba(255, 60, 0, 0.08)',
+    alignItems: 'center', justifyContent: 'center',
+    flexDirection: 'row', gap: 6,
+    borderWidth: 1.5, borderColor: Colors.primary,
+  },
+  radarButtonActive: {
+    backgroundColor: Colors.primary,
+  },
+  radarButtonText: { fontSize: 13, fontWeight: '700', color: Colors.primary },
+  radarButtonTextActive: { color: '#fff' },
   tabs: {
     flexDirection: 'row',
     borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: Colors.border,

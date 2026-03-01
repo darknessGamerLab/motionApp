@@ -15,6 +15,8 @@ export interface Database {
           avatar_url: string | null;
           user_type: UserType;
           talents: string[];
+          tax_office: string | null;
+          tax_number: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -26,6 +28,8 @@ export interface Database {
           avatar_url?: string | null;
           user_type: UserType;
           talents?: string[];
+          tax_office?: string | null;
+          tax_number?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -37,6 +41,8 @@ export interface Database {
           avatar_url?: string | null;
           user_type?: UserType;
           talents?: string[];
+          tax_office?: string | null;
+          tax_number?: string | null;
           updated_at?: string;
         };
       };
@@ -113,29 +119,27 @@ export interface Database {
           id: string;
           user_id: string;
           video_id: string;
-          text: string;
+          content: string;
           created_at: string;
         };
         Insert: {
           id?: string;
           user_id: string;
           video_id: string;
-          text: string;
+          content: string;
           created_at?: string;
         };
         Update: {
-          text?: string;
+          content?: string;
         };
       };
       follows: {
         Row: {
-          id: string;
           follower_id: string;
           following_id: string;
           created_at: string;
         };
         Insert: {
-          id?: string;
           follower_id: string;
           following_id: string;
           created_at?: string;
@@ -146,41 +150,26 @@ export interface Database {
         Row: {
           id: string;
           user_id: string;
-          type: 'like' | 'comment' | 'follow' | 'radar';
-          from_user_id: string;
+          type: 'like' | 'comment' | 'follow' | 'system';
+          actor_id: string | null;
           video_id: string | null;
-          message: string | null;
+          content: string | null;
           is_read: boolean;
           created_at: string;
         };
         Insert: {
           id?: string;
           user_id: string;
-          type: 'like' | 'comment' | 'follow' | 'radar';
-          from_user_id: string;
+          type: 'like' | 'comment' | 'follow' | 'system';
+          actor_id?: string | null;
           video_id?: string | null;
-          message?: string | null;
+          content?: string | null;
           is_read?: boolean;
           created_at?: string;
         };
         Update: {
           is_read?: boolean;
         };
-      };
-      radar: {
-        Row: {
-          id: string;
-          corporate_id: string;
-          individual_id: string;
-          created_at: string;
-        };
-        Insert: {
-          id?: string;
-          corporate_id: string;
-          individual_id: string;
-          created_at?: string;
-        };
-        Update: never;
       };
       corporate_applications: {
         Row: {
@@ -215,10 +204,12 @@ export interface Database {
           title: string;
           subtitle: string | null;
           image_url: string;
-          cta_text: string | null;
-          cta_url: string | null;
+          brand: string | null;
+          target_url: string | null;
+          clicks: number;
+          views: number;
           is_active: boolean;
-          order_index: number;
+          slider_pos: number;
           created_at: string;
         };
         Insert: {
@@ -226,20 +217,90 @@ export interface Database {
           title: string;
           subtitle?: string | null;
           image_url: string;
-          cta_text?: string | null;
-          cta_url?: string | null;
+          brand?: string | null;
+          target_url?: string | null;
+          clicks?: number;
+          views?: number;
           is_active?: boolean;
-          order_index?: number;
+          slider_pos?: number;
           created_at?: string;
         };
         Update: {
           title?: string;
           subtitle?: string | null;
           image_url?: string;
-          cta_text?: string | null;
-          cta_url?: string | null;
+          brand?: string | null;
+          target_url?: string | null;
+          clicks?: number;
+          views?: number;
           is_active?: boolean;
-          order_index?: number;
+          slider_pos?: number;
+        };
+      };
+      reports: {
+        Row: {
+          id: string;
+          reporter_id: string;
+          target_type: 'account' | 'content';
+          target_id: string;
+          reason: string | null;
+          details: string | null;
+          status: 'pending' | 'investigating' | 'resolved' | 'dismissed';
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          reporter_id: string;
+          target_type: 'account' | 'content';
+          target_id: string;
+          reason?: string | null;
+          details?: string | null;
+          status?: 'pending' | 'investigating' | 'resolved' | 'dismissed';
+          created_at?: string;
+        };
+        Update: {
+          status?: 'pending' | 'investigating' | 'resolved' | 'dismissed';
+        };
+      };
+      radars: {
+        Row: {
+          id: string;
+          corporate_id: string;
+          individual_id: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          corporate_id: string;
+          individual_id: string;
+          created_at?: string;
+        };
+        Update: never;
+      };
+      radar: { // Legacy spotlight, can be removed eventually but keeping for now
+        Row: {
+          id: string;
+          user_id: string;
+          title: string;
+          description: string | null;
+          video_url: string | null;
+          image_url: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          title: string;
+          description?: string | null;
+          video_url?: string | null;
+          image_url?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          title?: string;
+          description?: string | null;
+          video_url?: string | null;
+          image_url?: string | null;
         };
       };
     };
@@ -247,12 +308,10 @@ export interface Database {
     Functions: {};
     Enums: {
       user_type: UserType;
-      notification_type: 'like' | 'comment' | 'follow' | 'radar';
     };
   };
 }
 
-// Helper types
 export type Profile = Database['public']['Tables']['profiles']['Row'];
 export type Video = Database['public']['Tables']['videos']['Row'];
 export type Like = Database['public']['Tables']['likes']['Row'];
@@ -260,23 +319,18 @@ export type Save = Database['public']['Tables']['saves']['Row'];
 export type Comment = Database['public']['Tables']['comments']['Row'];
 export type Follow = Database['public']['Tables']['follows']['Row'];
 export type Notification = Database['public']['Tables']['notifications']['Row'];
-export type Radar = Database['public']['Tables']['radar']['Row'];
+export type Radar = Database['public']['Tables']['radars']['Row'];
 export type CorporateApplication = Database['public']['Tables']['corporate_applications']['Row'];
 export type SponsorBanner = Database['public']['Tables']['sponsor_banners']['Row'];
+export type Report = Database['public']['Tables']['reports']['Row'];
 
 // Extended types with relations
 export interface VideoWithUser extends Video {
-  user: Profile;
+  user: {
+    username: string;
+    avatar_url: string | null;
+    full_name: string;
+  };
   is_liked?: boolean;
   is_saved?: boolean;
 }
-
-export interface CommentWithUser extends Comment {
-  user: Profile;
-}
-
-export interface NotificationWithUser extends Notification {
-  from_user: Profile;
-  video?: Video;
-}
-

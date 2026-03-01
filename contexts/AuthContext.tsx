@@ -131,14 +131,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Refresh profile from database
   const refreshProfile = async () => {
     if (!authState.user) return;
+    console.log('Refreshing profile for user:', authState.user.id);
 
-    const { data: profile } = await (supabase as any)
+    const { data: profile, error } = await (supabase as any)
       .from('profiles')
       .select('*')
       .eq('id', authState.user.id)
       .single();
 
+    if (error) {
+      console.error('Refresh profile error:', error);
+      return;
+    }
+
     if (profile) {
+      console.log('Profile refreshed, new type:', profile.user_type);
       setAuthState(prev => ({
         ...prev,
         profile,
@@ -327,8 +334,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         });
 
       if (dbError) {
-        // Table may not exist yet — still send notification
-        console.warn('corporate_applications table error:', dbError.message);
+        console.error('corporate_applications table error:', dbError.message);
+        return { error: 'Başvuru kaydedilirken bir hata oluştu: ' + dbError.message };
       }
 
       // Send notification email via Supabase Edge Function or SMTP

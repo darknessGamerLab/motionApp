@@ -5,6 +5,8 @@
 import CommentsModal from '@/components/CommentsModal';
 import GuestAuthModal from '@/components/GuestAuthModal';
 import Colors from '@/constants/Colors';
+import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/lib/supabase';
 import { formatNumber } from '@/utils/format';
 import { Ionicons } from '@expo/vector-icons';
 import { FlashList } from '@shopify/flash-list';
@@ -20,9 +22,8 @@ import React, {
   useState,
 } from 'react';
 import {
-  Animated,
-  Dimensions,
-  Share,
+  ActionSheetIOS, Alert, Animated,
+  Dimensions, Platform, Share,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -57,6 +58,7 @@ interface HomeScreenProps {
   onVideoLiked?: (id: string, isLiked: boolean, likes: number) => void;
   onVideoCommented?: (id: string, comments: number) => void;
   onRefresh?: () => void;
+  onEndReached?: () => void;
   refreshKey?: number;
 }
 
@@ -107,6 +109,7 @@ export const VideoCard = memo(({
   onVideoCommented?: (id: string, comments: number) => void;
   onAuthRequired?: (action: 'like' | 'comment' | 'save' | 'follow' | 'create' | 'general') => void;
 }) => {
+  const { authState } = useAuth();
   const vidRef = useRef<Video>(null);
   const [paused, setPaused] = useState(false);
   const [liked, setLiked] = useState(data.isLiked);
@@ -120,6 +123,12 @@ export const VideoCard = memo(({
   // Like animation
   const likeAnim = useRef(new Animated.Value(0)).current;
   const likeOpacity = useRef(new Animated.Value(0)).current;
+
+  // Sync with prop changes (e.g. from Realtime or other parent updates)
+  useEffect(() => {
+    setLikes(data.likes);
+    setLiked(data.isLiked);
+  }, [data.id, data.likes, data.isLiked]);
 
   const triggerLikeAnim = useCallback(() => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -168,7 +177,8 @@ export const VideoCard = memo(({
       if (!isAuthenticated) { onAuthRequired?.('like'); return; }
       if (!liked) {
         const n = likes + 1;
-        setLiked(true); setLikes(n);
+        setLiked(true);
+        setLikes(n);
         onVideoLiked?.(data.id, true, n);
       }
       triggerLikeAnim();
@@ -183,9 +193,15 @@ export const VideoCard = memo(({
   const toggleLike = useCallback(() => {
     guard('like', () => {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      const n = !liked ? likes + 1 : likes - 1;
-      setLiked(l => !l); setLikes(n);
-      onVideoLiked?.(data.id, !liked, n);
+      const isNowLiked = !liked;
+      const n = isNowLiked ? likes + 1 : likes - 1;
+
+      // SALİSELİK update: UI state directly
+      setLiked(isNowLiked);
+      setLikes(n);
+
+      // Let the parent update in background
+      onVideoLiked?.(data.id, isNowLiked, n);
     });
   }, [liked, likes, data.id, guard, onVideoLiked]);
 
@@ -206,6 +222,55 @@ export const VideoCard = memo(({
       setFollowing(f => !f);
     });
   }, [guard]);
+
+  const reportVideo = async (reason: string) => {
+    if (!authState.user) {
+      onAuthRequired?.('general');
+      return;
+    }
+    // UUID format check to prevent "invalid input syntax for type uuid"
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+    if (!uuidRegex.test(data.id)) {
+      Alert.alert('Bilgi', 'Bu örnek içerik şu an raporlanamaz.');
+      return;
+    }
+
+    try {
+      const { error } = await supabase.from('reports').insert({
+        reporter_id: authState.user.id,
+        target_type: 'content' as 'content',
+        target_id: data.id,
+        reason: reason,
+        status: 'pending' as 'pending'
+      });
+      if (error) throw error;
+      Alert.alert('Bildirildi', 'Bu içerik şikayetiniz üzerine incelenmeye alınmıştır.');
+    } catch (err) {
+      console.error('Video report error:', err);
+      Alert.alert('Hata', 'Rapor gönderilemedi.');
+    }
+  };
+
+  const onReportPress = () => {
+    const reasons = ['Spam', 'Uygunsuz İçerik', 'Telif Hakkı', 'Zorbalık', 'Diğer'];
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          options: ['Vazgeç', ...reasons],
+          cancelButtonIndex: 0,
+          destructiveButtonIndex: reasons.indexOf('Uygunsuz İçerik') + 1,
+          title: 'İçeriği Şikayet Et'
+        },
+        index => { if (index > 0) reportVideo(reasons[index - 1]); }
+      );
+    } else {
+      Alert.alert('Şikayet Et', 'Neden şikayet ediyorsunuz?', [
+        { text: 'Vazgeç', style: 'cancel' },
+        ...reasons.map(r => ({ text: r, onPress: () => reportVideo(r) }))
+      ]);
+    }
+  };
 
   const needsMore = data.description.length > 40;
 
@@ -325,6 +390,11 @@ export const VideoCard = memo(({
               } catch { }
             }}
           />
+          <ActionBtn
+            icon="flag-outline"
+            color="rgba(255,255,255,0.6)"
+            onPress={onReportPress}
+          />
         </View>
       </View>
 
@@ -352,7 +422,7 @@ export const VideoCard = memo(({
 
 // ─── HomeScreen ───────────────────────────────────────────────────────
 export default function HomeScreen({
-  isActive = true,
+  isActive = false,
   isAuthenticated = false,
   videos = [],
   onUserPress,
@@ -360,11 +430,12 @@ export default function HomeScreen({
   onVideoLiked,
   onVideoCommented,
   onRefresh,
-  refreshKey,
+  onEndReached,
+  refreshKey = 0
 }: HomeScreenProps) {
+  const [flatListRef, setFlatListRef] = useState<any>(null);
   const [idx, setIdx] = useState(0);
   const [h, setH] = useState(FULL_H);
-  const listRef = useRef<any>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [guestModal, setGuestModal] = useState<{
     visible: boolean;
@@ -373,11 +444,10 @@ export default function HomeScreen({
 
   // Scroll to top when refreshKey changes (Home tab basıldığında)
   useEffect(() => {
-    if (refreshKey && refreshKey > 0) {
-      listRef.current?.scrollToOffset({ offset: 0, animated: true });
-      setIdx(0);
+    if (flatListRef && refreshKey > 0) {
+      flatListRef.scrollToIndex({ index: 0, animated: true });
     }
-  }, [refreshKey]);
+  }, [refreshKey, flatListRef]);
 
   const onRefreshFeed = useCallback(() => {
     setRefreshing(true);
@@ -385,10 +455,10 @@ export default function HomeScreen({
     onRefresh?.(); // parent'ta videos'u shuffle eder
     setTimeout(() => {
       setIdx(0);
-      listRef.current?.scrollToOffset({ offset: 0, animated: false });
+      flatListRef?.scrollToOffset({ offset: 0, animated: false });
       setRefreshing(false);
     }, 800);
-  }, [onRefresh]);
+  }, [onRefresh, flatListRef]);
 
   const onViewChange = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
     if (viewableItems.length > 0 && viewableItems[0]?.index != null) {
@@ -432,7 +502,7 @@ export default function HomeScreen({
       onLayout={e => setH(e.nativeEvent.layout.height)}
     >
       <FlashList
-        ref={listRef}
+        ref={setFlatListRef}
         data={videos}
         renderItem={renderItem}
         keyExtractor={item => item.id}

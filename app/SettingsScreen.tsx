@@ -1,7 +1,8 @@
 import Colors from '@/constants/Colors';
 import { useAuth } from '@/contexts/AuthContext';
 import { Ionicons } from '@expo/vector-icons';
-import React, { useState } from 'react';
+import { useFocusEffect } from 'expo-router';
+import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -217,8 +218,14 @@ function CorporateUpgradeModal({
 
 export default function SettingsScreen({ onBackPress, onEditProfile }: SettingsScreenProps) {
   const insets = useSafeAreaInsets();
-  const { logout, authState } = useAuth();
+  const { logout, authState, refreshProfile } = useAuth();
   const [showCorporateModal, setShowCorporateModal] = useState(false);
+
+  useFocusEffect(
+    useCallback(() => {
+      refreshProfile();
+    }, [])
+  );
 
   const isCorporate = authState.userType === 'corporate';
 
