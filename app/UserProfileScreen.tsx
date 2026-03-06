@@ -1,12 +1,17 @@
 import CommentsModal from '@/components/CommentsModal';
 import ProfilePhotoCarousel from '@/components/ProfilePhotoCarousel';
+import { SkeletonLoader } from '@/components/SkeletonLoader';
 import Colors from '@/constants/Colors';
+import { getTalentById, getTalentByName } from '@/constants/Talents';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/lib/supabase';
+import { useProfile } from '@/hooks/useProfile';
+import { useVideoActions } from '@/hooks/useVideoActions';
+import { VideoItem } from '@/types/video';
 import { formatNumber } from '@/utils/format';
+import { animateTabSwitch } from '@/utils/transitions';
 import { Ionicons } from '@expo/vector-icons';
-import { ResizeMode, Video } from 'expo-av';
 import * as Haptics from 'expo-haptics';
+import { Image } from 'expo-image';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActionSheetIOS,
@@ -17,32 +22,23 @@ import {
   Modal,
   Platform,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   View,
-  ViewToken,
+  ViewToken
 } from 'react-native';
 import { VideoCard } from './HomeScreen';
+
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const GRID_COLUMNS = 3;
 const GRID_GAP = 2;
 const GRID_ITEM_WIDTH = (SCREEN_WIDTH - (GRID_GAP * (GRID_COLUMNS - 1))) / GRID_COLUMNS;
 
-interface VideoItem {
-  id: string;
-  uri: string;
-  user: { id: string; username: string; avatar?: string };
-  description: string;
-  topic?: string;
-  likes: number;
-  comments: number;
-  shares: number;
-  isLiked: boolean;
-  isSaved: boolean;
-}
+
 
 interface UserProfileScreenProps {
   isActive?: boolean;
@@ -52,6 +48,7 @@ interface UserProfileScreenProps {
   onVideoSaved?: (videoId: string, isSaved: boolean) => void;
   onVideoLiked?: (videoId: string, isLiked: boolean, newLikeCount: number) => void;
   onVideoCommented?: (videoId: string, newCommentCount: number) => void;
+  onUserFollowed?: (userId: string, isFollowing: boolean) => void;
 }
 
 export default function UserProfileScreen({
@@ -62,94 +59,95 @@ export default function UserProfileScreen({
   onVideoSaved,
   onVideoLiked,
   onVideoCommented,
+  onUserFollowed,
 }: UserProfileScreenProps) {
   const { authState } = useAuth();
   const [activeTab, setActiveTab] = useState<'videos' | 'private'>('videos');
-  const [activeProfileIndex, setActiveProfileIndex] = useState(1);
-  const [hasRadar, setHasRadar] = useState(false);
+  const [showReportMenu, setShowReportMenu] = useState(false);
+  const [videoPlayerVisible, setVideoPlayerVisible] = useState(false);
+  const [videoPlayerVideos, setVideoPlayerVideos] = useState<VideoItem[]>([]);
+  const [videoPlayerStartIndex, setVideoPlayerStartIndex] = useState(0);
+
+  // Tab animasyon değerleri
   const tabIndicatorPosition = useRef(new Animated.Value(0)).current;
   const contentPosition = useRef(new Animated.Value(0)).current;
 
-  // Real data fetching if userId is UUID
-  const [profileData, setProfileData] = useState<any>(null);
+  // ─── useProfile hook — cache'li, tek noktadan veri ──────────────────────────
+  const {
+    profile: profileData,
+    videos: userDbVideos,
+    loading,
+    isFollowing,
+    setIsFollowing,
+  } = useProfile(userId);
 
+  // ─── useVideoActions hook — merkezi aksiyonlar ────────────────────
+  const { follow, report } = useVideoActions({
+    currentUserId: authState.user?.id,
+    isAuthenticated: !!authState.user,
+  });
+
+  // Tab animasyonu — merkezi transitions utility'si
   useEffect(() => {
-    const fetchProfile = async () => {
-      if (!userId || userId.length < 30) return; // Skip mock IDs
-      const { data } = await supabase.from('profiles').select('*').eq('id', userId).single();
-      if (data) setProfileData(data);
-
-      if (authState.user && authState.profile?.user_type === 'corporate') {
-        const { data: r } = await supabase.from('radars').select('*').eq('corporate_id', authState.user.id).eq('individual_id', userId).single();
-        setHasRadar(!!r);
-      }
-    };
-    fetchProfile();
-  }, [userId, authState.user, authState.profile]);
-
-  useEffect(() => {
-    Animated.parallel([
-      Animated.spring(tabIndicatorPosition, {
-        toValue: activeTab === 'videos' ? 0 : 1,
-        useNativeDriver: true,
-        friction: 8,
-      }),
-      Animated.spring(contentPosition, {
-        toValue: activeTab === 'videos' ? 0 : -SCREEN_WIDTH,
-        useNativeDriver: true,
-        friction: 8,
-      }),
-    ]).start();
+    const tabIdx = activeTab === 'videos' ? 0 : 1;
+    const contentVal = activeTab === 'videos' ? 0 : -SCREEN_WIDTH;
+    animateTabSwitch(tabIndicatorPosition, contentPosition, tabIdx, contentVal).start();
   }, [activeTab]);
 
+  // Fade in animasyonu — ekran açılınca
+  const screenOpacity = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (!loading) {
+      Animated.timing(screenOpacity, {
+        toValue: 1,
+        duration: 280,
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [loading]);
+
+  // Kullanıcı bilgilerini türet — avatars kolonunu doğru oku
   const user = useMemo(() => ({
-    id: userId || 'u2',
-    username: 'ayseozturk',
-    fullName: 'Ayşe Öztürk',
-    bio: 'Müzik tutkunu 🎵 Şarkıcı 🎤',
-    avatars: [
-      'https://i.pravatar.cc/300?img=5',
-      'https://i.pravatar.cc/300?img=15',
-      'https://i.pravatar.cc/300?img=25',
-    ],
-    skills: ['Müzik', 'Dans', 'Sanat'],
-    following: 520,
-    followers: 2840,
-  }), [userId]);
+    id: profileData?.id || userId || '',
+    username: profileData?.username || '...',
+    fullName: profileData?.full_name || '',
+    bio: profileData?.bio || '',
+    // ✅ DÜZELDİ: avatars kolonunu oku (eski avatar_urls değil), null safe
+    avatars: (
+      Array.isArray(profileData?.avatars) && profileData.avatars.length > 0
+        ? profileData.avatars
+        : profileData?.avatar_url
+          ? [profileData.avatar_url]
+          : ['https://ui-avatars.com/api/?name=User&background=random']
+    ),
+    skills: Array.isArray(profileData?.talents) ? profileData.talents : [],
+    following: profileData?.following_count ?? 0,
+    followers: profileData?.followers_count ?? 0,
+    videos: profileData?.videos_count ?? 0,
+    user_type: profileData?.user_type || 'individual',
+  }), [profileData, userId]);
 
-  const userVideos = useMemo(() => {
-    return allVideos.filter(v => v.user.id === user.id || v.user.username === user.username);
-  }, [allVideos, user.id, user.username]);
+  // Videolar — önce DB'den gelen, fallback olarak parent feed
+  const displayVideos = useMemo(() => {
+    if (userDbVideos.length > 0) return userDbVideos as VideoItem[];
+    return allVideos.filter(v => v.user.id === user.id);
+  }, [userDbVideos, allVideos, user.id]);
 
+  // Şikayet
   const handleReport = async (reason: string) => {
     if (!authState.user) {
       Alert.alert('Hata', 'Rapor bildirmek için giriş yapmalısınız.');
       return;
     }
-
-    // UUID format check to prevent "invalid input syntax for type uuid"
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    const cleanTargetId = userId && uuidRegex.test(userId) ? userId : null;
-
+    const cleanTargetId = userId && isValidUUID(userId) ? userId : null;
     if (!cleanTargetId) {
-      // If it's a mock ID (like 'u2'), we can't report it to the real DB
       Alert.alert('Bilgi', 'Bu örnek kullanıcı şu an raporlanamaz.');
       return;
     }
-
     try {
-      const { error } = await supabase.from('reports').insert({
-        reporter_id: authState.user.id,
-        target_type: 'account' as 'account',
-        target_id: cleanTargetId,
-        reason: reason,
-        status: 'pending' as 'pending'
-      });
-
-      if (error) throw error;
+      await report(cleanTargetId, 'account', reason);
       Alert.alert('Bildirildi', 'Şikayetiniz incelenmek üzere ekibimize iletildi.');
-    } catch (err) {
-      console.error('Report error:', err);
+    } catch {
       Alert.alert('Hata', 'Rapor gönderilemedi.');
     }
   };
@@ -157,7 +155,6 @@ export default function UserProfileScreen({
   const onReportPress = () => {
     setShowReportMenu(false);
     const reasons = ['Spam', 'Uygunsuz İçerik', 'Nefret Söylemi', 'Sahte Hesap', 'Diğer'];
-
     if (Platform.OS === 'ios') {
       ActionSheetIOS.showActionSheetWithOptions(
         {
@@ -167,9 +164,7 @@ export default function UserProfileScreen({
           title: 'Şikayet Et',
           message: 'Bu hesabı neden şikayet ediyorsunuz?'
         },
-        (buttonIndex) => {
-          if (buttonIndex > 0) handleReport(reasons[buttonIndex - 1]);
-        }
+        (buttonIndex) => { if (buttonIndex > 0) handleReport(reasons[buttonIndex - 1]); }
       );
     } else {
       Alert.alert(
@@ -177,33 +172,33 @@ export default function UserProfileScreen({
         'Bu hesabı neden şikayet ediyorsunuz?',
         [
           { text: 'Vazgeç', style: 'cancel' },
-          ...reasons.map(r => ({ text: r, onPress: () => handleReport(r) }))
+          ...reasons.map(r => ({ text: r, onPress: () => handleReport(r) })),
         ]
       );
     }
   };
 
-  const handleFollow = () => {
+  // ─── handleFollowOrRadar — hem bireysel Takip Et hem kurumsal Radara Al
+  // ÖNEMLİ: Radar = Takip, aynı follows tablosu, sadece UI labelı farklı
+  const handleFollowOrRadar = useCallback(async () => {
+    if (!authState.user || !userId) return;
+    if (!isValidUUID(userId)) {
+      Alert.alert('Bilgi', 'Bu kullanıcıya bu işlem uygulanamaz.');
+      return;
+    }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setIsFollowing(!isFollowing);
-  };
 
-  const toggleRadar = async () => {
-    if (!authState.user || authState.profile?.user_type !== 'corporate') return;
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    const newState = !isFollowing;
+    setIsFollowing(newState);
+    onUserFollowed?.(userId, newState);
 
     try {
-      if (hasRadar) {
-        await supabase.from('radars').delete().eq('corporate_id', authState.user.id).eq('individual_id', userId);
-        setHasRadar(false);
-      } else {
-        await supabase.from('radars').insert({ corporate_id: authState.user.id, individual_id: userId });
-        setHasRadar(true);
-      }
-    } catch (err) {
-      console.error(err);
+      // follows tablosuna yaz - corporate veya individual fark etmez
+      await follow(userId, newState);
+    } catch {
+      setIsFollowing(!newState); // rollback
     }
-  };
+  }, [authState.user, userId, isFollowing, follow, setIsFollowing, onUserFollowed]);
 
   const openVideoPlayer = useCallback((videos: VideoItem[], startIndex: number) => {
     setVideoPlayerVideos(videos);
@@ -221,15 +216,15 @@ export default function UserProfileScreen({
       <TouchableOpacity
         style={[styles.videoItem, { marginRight: isLastInRow ? 0 : GRID_GAP, marginBottom: isLastRow ? 0 : GRID_GAP }]}
         activeOpacity={0.8}
-        onPress={() => openVideoPlayer(userVideos, index)}
+        onPress={() => openVideoPlayer(displayVideos, index)}
       >
-        <Video
-          source={{ uri: item.uri }}
+        {/* ✅ DÜZELDİ: expo-image + thumbnail_url kullan */}
+        <Image
+          source={(item as any).thumbnail_url || item.user.avatar || 'https://ui-avatars.com/api/?background=333&color=fff&name=V'}
           style={styles.videoThumbnail}
-          resizeMode={ResizeMode.COVER}
-          shouldPlay={false}
-          isMuted
-          pointerEvents="none"
+          contentFit="cover"
+          cachePolicy="memory-disk"
+          transition={150}
         />
         <View style={styles.viewsOverlay}>
           <Ionicons name="play" size={10} color="#fff" />
@@ -237,10 +232,38 @@ export default function UserProfileScreen({
         </View>
       </TouchableOpacity>
     );
-  }, [userVideos, openVideoPlayer]);
+  }, [displayVideos, openVideoPlayer]);
+
+  // ─── Loading state: skeleton göster ─────────────────────────────────────────
+  if (loading) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <View style={styles.headerLeft}>
+            <TouchableOpacity style={styles.headerButton} onPress={onBackPress}>
+              <Ionicons name="arrow-back" size={22} color={Colors.text} />
+            </TouchableOpacity>
+            <SkeletonLoader width={120} height={16} borderRadius={8} />
+          </View>
+        </View>
+        <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+          <SkeletonLoader.ProfileHeader />
+          <View style={{ padding: 20, gap: 4 }}>
+            {Array.from({ length: 6 }).map((_, i) => (
+              <View key={i} style={{ flexDirection: 'row', gap: 2 }}>
+                {Array.from({ length: 3 }).map((_, j) => (
+                  <SkeletonLoader.GridTile key={j} size={GRID_ITEM_WIDTH} />
+                ))}
+              </View>
+            ))}
+          </View>
+        </ScrollView>
+      </View>
+    );
+  }
 
   return (
-    <View style={styles.container}>
+    <Animated.View style={[styles.container, { opacity: screenOpacity }]}>
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
@@ -256,21 +279,24 @@ export default function UserProfileScreen({
 
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false} scrollEnabled={isActive}>
         <View style={styles.profileSection}>
-          {/* Avatar stack */}
-          {/* 3 Photos Carousel */}
+          {/* 3 Profil Fotoğrafı */}
           <ProfilePhotoCarousel
             avatars={user.avatars}
             size={90}
-            isEditable={false} // Başkasının profili düzenlenmez
+            isEditable={false}
           />
 
           <Text style={styles.fullName}>{user.fullName}</Text>
           <Text style={styles.bio} numberOfLines={1}>{user.bio}</Text>
 
           <View style={styles.skillsContainer}>
-            {user.skills.map((skill, index) => (
-              <Text key={index} style={styles.skillText}>#{skill.toLowerCase()}</Text>
-            ))}
+            {user.skills.map((skill: string, index: number) => {
+              const talent = getTalentById(skill) || getTalentByName(skill);
+              const label = talent ? talent.name : skill;
+              return (
+                <Text key={index} style={styles.skillText}>#{label.toLowerCase()}</Text>
+              );
+            })}
           </View>
 
           <View style={styles.stats}>
@@ -285,36 +311,52 @@ export default function UserProfileScreen({
             </TouchableOpacity>
             <View style={styles.statDivider} />
             <TouchableOpacity style={styles.statItem}>
-              <Text style={styles.statNumber}>{formatNumber(userVideos.length)}</Text>
+              <Text style={styles.statNumber}>{formatNumber(displayVideos.length)}</Text>
               <Text style={styles.statLabel}>Video</Text>
             </TouchableOpacity>
           </View>
 
           <View style={styles.actionButtons}>
-            <TouchableOpacity
-              style={[styles.actionButton, isFollowing && styles.followButtonActive]}
-              onPress={handleFollow}
-            >
-              <Text style={[styles.actionButtonText, isFollowing && styles.followButtonTextActive]}>
-                {isFollowing ? 'Takip Ediliyor' : 'Takip Et'}
-              </Text>
-            </TouchableOpacity>
+            {authState.user?.id !== userId && (
+              <>
+                <TouchableOpacity
+                  style={[styles.actionButton, styles.primaryActionButton, isFollowing ? styles.followButtonActive : styles.followButtonInactive]}
+                  onPress={handleFollowOrRadar}
+                >
+                  {authState.profile?.user_type === 'corporate' ? (
+                    // Kurumsal görünce: Radara Al / Radarda
+                    <>
+                      <Ionicons
+                        name={isFollowing ? 'radio' : 'radio-outline'}
+                        size={15}
+                        color={isFollowing ? '#fff' : Colors.primary}
+                      />
+                      <Text style={[styles.actionButtonText, { color: isFollowing ? '#fff' : Colors.primary }]}>
+                        {isFollowing ? 'Radarda' : 'Radara Al'}
+                      </Text>
+                    </>
+                  ) : (
+                    // Bireysel görünce: Takip Et / Takip Ediliyor
+                    <Text style={[styles.actionButtonText, isFollowing ? styles.followButtonTextActive : { color: Colors.primary }]}>
+                      {isFollowing ? 'Takip Ediliyor' : 'Takip Et'}
+                    </Text>
+                  )}
+                </TouchableOpacity>
 
-            {authState.profile?.user_type === 'corporate' && (
-              <TouchableOpacity
-                style={[styles.radarButton, hasRadar && styles.radarButtonActive]}
-                onPress={toggleRadar}
-              >
-                <Ionicons name="radio" size={18} color={hasRadar ? '#fff' : Colors.primary} />
-                <Text style={[styles.radarButtonText, hasRadar && styles.radarButtonTextActive]}>
-                  {hasRadar ? 'Radarda' : 'Radara Al'}
-                </Text>
-              </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.actionButton}
+                  onPress={() => {
+                    Share.share({
+                      title: `@${user.username} - motionApp`,
+                      message: `motionApp'te @${user.username} profilini incele!`,
+                    }).catch(() => { });
+                  }}
+                >
+                  <Ionicons name="share-social-outline" size={15} color={Colors.text} />
+                  <Text style={styles.actionButtonText}>Paylaş</Text>
+                </TouchableOpacity>
+              </>
             )}
-
-            <TouchableOpacity style={styles.actionButton}>
-              <Text style={styles.actionButtonText}>Paylaş</Text>
-            </TouchableOpacity>
           </View>
         </View>
 
@@ -343,10 +385,10 @@ export default function UserProfileScreen({
 
         <Animated.View style={[styles.gridContainer, { transform: [{ translateX: contentPosition }] }]}>
           <View style={styles.gridPage}>
-            {userVideos.length > 0 ? (
+            {displayVideos.length > 0 ? (
               <FlatList
-                data={userVideos}
-                renderItem={renderVideoItem(userVideos.length)}
+                data={displayVideos}
+                renderItem={renderVideoItem(displayVideos.length)}
                 keyExtractor={(item) => item.id}
                 numColumns={GRID_COLUMNS}
                 scrollEnabled={false}
@@ -379,7 +421,7 @@ export default function UserProfileScreen({
         onVideoCommented={onVideoCommented}
       />
 
-      {/* Report Menu */}
+      {/* Şikayet Menüsü */}
       <Modal visible={showReportMenu} transparent animationType="fade" onRequestClose={() => setShowReportMenu(false)}>
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowReportMenu(false)}>
           <View style={styles.reportMenu}>
@@ -390,11 +432,11 @@ export default function UserProfileScreen({
           </View>
         </TouchableOpacity>
       </Modal>
-    </View>
+    </Animated.View>
   );
 }
 
-// ─── Video Player Modal ────────────────────────────────────────────────
+// ─── Video Player Modal ─────────────────────────────────────────────────────
 const COMMENT_INPUT_HEIGHT = 70;
 
 function UserVideoPlayerModal({
@@ -405,6 +447,7 @@ function UserVideoPlayerModal({
   onVideoLiked?: (videoId: string, isLiked: boolean, newLikeCount: number) => void;
   onVideoCommented?: (videoId: string, newCommentCount: number) => void;
 }) {
+  const { authState } = useAuth();
   const [idx, setIdx] = useState(startIndex);
   const [showComments, setShowComments] = useState(false);
   const videoHeight = SCREEN_HEIGHT - COMMENT_INPUT_HEIGHT;
@@ -418,21 +461,23 @@ function UserVideoPlayerModal({
   const viewConfig = useRef({ itemVisiblePercentThreshold: 60 }).current;
   const getLayout = useCallback((_: any, i: number) => ({ length: videoHeight, offset: videoHeight * i, index: i }), [videoHeight]);
   const keyExt = useCallback((item: VideoItem) => item.id, []);
-
   const currentVideo = videos[idx];
 
+  // ✅ DÜZELDİ: isAuthenticated ve onAuthRequired geçildi
   const renderItem = useCallback(({ item, index }: { item: VideoItem; index: number }) => (
     <View style={{ height: videoHeight }}>
       <VideoCard
         data={item}
         active={index === idx}
         height={videoHeight}
+        isAuthenticated={!!authState.user}       // ✅ FIX
         onVideoSaved={onVideoSaved}
         onVideoLiked={onVideoLiked}
         onVideoCommented={onVideoCommented}
+        onAuthRequired={() => Alert.alert('Giriş Gerekli', 'Bu işlem için giriş yapmalısınız.')}
       />
     </View>
-  ), [idx, videoHeight, onVideoSaved, onVideoLiked, onVideoCommented]);
+  ), [idx, videoHeight, authState.user, onVideoSaved, onVideoLiked, onVideoCommented]);
 
   if (!visible || !videos.length) return null;
 
@@ -464,6 +509,9 @@ function UserVideoPlayerModal({
             onScrollToIndexFailed={() => { }}
             bounces={false}
             overScrollMode="never"
+            initialNumToRender={1}
+            maxToRenderPerBatch={2}
+            windowSize={3}
           />
         </View>
 
@@ -549,26 +597,28 @@ const styles = StyleSheet.create({
   statDivider: { width: 1, height: 28, backgroundColor: Colors.border },
   actionButtons: { flexDirection: 'row', gap: 8, width: '100%', marginTop: 12 },
   actionButton: {
-    flex: 1, paddingVertical: 10, borderRadius: 8,
+    flex: 1, paddingVertical: 9, borderRadius: 8,
     backgroundColor: Colors.surfaceAlt,
-    alignItems: 'center',
+    alignItems: 'center', justifyContent: 'center',
+    flexDirection: 'row', gap: 5,
     borderWidth: 1, borderColor: Colors.border,
+    minHeight: 38,
   },
   actionButtonText: { fontSize: 13, fontWeight: '600', color: Colors.text },
   followButtonActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
+  followButtonInactive: { borderColor: Colors.primary, backgroundColor: 'transparent' },
   followButtonTextActive: { color: '#fff' },
-  radarButton: {
-    flex: 1.2, paddingVertical: 10, borderRadius: 8,
-    backgroundColor: 'rgba(255, 60, 0, 0.08)',
-    alignItems: 'center', justifyContent: 'center',
-    flexDirection: 'row', gap: 6,
-    borderWidth: 1.5, borderColor: Colors.primary,
+  primaryActionButton: {
+    flex: 1.2,
+    backgroundColor: Colors.surfaceAlt,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    minHeight: 38,
   },
-  radarButtonActive: {
-    backgroundColor: Colors.primary,
-  },
-  radarButtonText: { fontSize: 13, fontWeight: '700', color: Colors.primary },
-  radarButtonTextActive: { color: '#fff' },
   tabs: {
     flexDirection: 'row',
     borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: Colors.border,

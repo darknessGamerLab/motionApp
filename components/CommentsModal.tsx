@@ -1,4 +1,7 @@
+import { SkeletonLoader } from '@/components/SkeletonLoader';
 import Colors from '@/constants/Colors';
+import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/lib/supabase';
 import { Ionicons } from '@expo/vector-icons';
 import { FlashList } from '@shopify/flash-list';
 import * as Haptics from 'expo-haptics';
@@ -7,6 +10,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   Animated,
   Dimensions,
+  Easing,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -35,13 +39,7 @@ interface Props {
   onCommentAdded?: (newCount: number) => void;
 }
 
-const MOCK_COMMENTS: Comment[] = [
-  { id: '1', user: { username: 'ahmet_y', avatar: 'https://i.pravatar.cc/100?img=1' }, text: 'Harika video! 🔥 Çok güzel bir içerik olmuş', time: '2s', likes: 14 },
-  { id: '2', user: { username: 'ayse_o', avatar: 'https://i.pravatar.cc/100?img=2' }, text: 'Çok güzel olmuş, tebrikler 👏', time: '5d', likes: 7 },
-  { id: '3', user: { username: 'mehmet_k', avatar: 'https://i.pravatar.cc/100?img=3' }, text: 'Süper bir çalışma 💯', time: '1h', likes: 3 },
-  { id: '4', user: { username: 'zeynep_d', avatar: 'https://i.pravatar.cc/100?img=4' }, text: 'Beni çok etkiledi devam et!', time: '3h', likes: 22 },
-  { id: '5', user: { username: 'emre_c', avatar: 'https://i.pravatar.cc/100?img=5' }, text: 'Ne zaman bir sonraki geliyor? 😍', time: '6h', likes: 5 },
-];
+// Removed MOCK_COMMENTS
 
 function CommentRow({ item }: { item: Comment }) {
   const [liked, setLiked] = useState(false);
@@ -64,9 +62,6 @@ function CommentRow({ item }: { item: Comment }) {
           <Text style={cs.time}>{item.time}</Text>
         </View>
         <Text style={cs.text}>{item.text}</Text>
-        <TouchableOpacity onPress={() => { }} style={cs.replyBtn}>
-          <Text style={cs.replyText}>Yanıtla</Text>
-        </TouchableOpacity>
       </View>
       <TouchableOpacity onPress={handleLike} style={cs.likeBtn}>
         <Animated.View style={{ transform: [{ scale }] }}>
@@ -93,40 +88,115 @@ const cs = StyleSheet.create({
 });
 
 export default function CommentsModal({ visible, onClose, videoId, commentCount, onCommentAdded }: Props) {
-  const [comments, setComments] = useState<Comment[]>(MOCK_COMMENTS);
+  const { authState } = useAuth();
+  const [comments, setComments] = useState<Comment[]>([]);
   const [text, setText] = useState('');
+  const [loading, setLoading] = useState(false);
   const inputRef = useRef<TextInput>(null);
   const listRef = useRef<any>(null);
   const slideAnim = useRef(new Animated.Value(H)).current;
 
   useEffect(() => {
     if (visible) {
-      Animated.spring(slideAnim, {
-        toValue: 0, tension: 65, friction: 11,
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 320,
+        easing: Easing.out(Easing.cubic),
         useNativeDriver: true,
       }).start();
+      fetchComments();
     } else {
       Animated.timing(slideAnim, {
-        toValue: H, duration: 250, useNativeDriver: true,
+        toValue: H, duration: 240,
+        easing: Easing.in(Easing.quad),
+        useNativeDriver: true,
       }).start();
+      setComments([]);
     }
-  }, [visible, slideAnim]);
+  }, [visible, slideAnim, videoId]);
 
-  const handlePost = () => {
-    if (!text.trim()) return;
+  const fetchComments = async () => {
+    if (!videoId) return;
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('comments')
+        .select(`
+          id,
+          text,
+          content,
+          created_at,
+          profiles!inner ( username, avatar_url )
+        `)
+        .eq('video_id', videoId)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Fetch comments error:', error);
+        return;
+      }
+
+      if (data) {
+        const formatted = data.map((c: any) => ({
+          id: c.id,
+          user: {
+            username: c.profiles?.username || 'user',
+            avatar: c.profiles?.avatar_url || `https://ui-avatars.com/api/?name=${c.profiles?.username || 'u'}`
+          },
+          text: c.content || c.text || '',
+          time: new Date(c.created_at).toLocaleDateString(),
+          likes: 0
+        }));
+        setComments(formatted);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handlePost = async () => {
+    if (!text.trim() || !authState.user || !videoId) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    const newComment: Comment = {
+
+    const content = text.trim();
+    setText(''); // clear input immediately for optimistic UI
+
+    // Optimistic insert
+    const optimisticComment: Comment = {
       id: Date.now().toString(),
-      user: { username: 'sen', avatar: 'https://i.pravatar.cc/100?img=99' },
-      text: text.trim(),
+      user: {
+        username: authState.userData?.username || 'You',
+        avatar: (authState.userData as any)?.avatar_url || `https://ui-avatars.com/api/?name=${authState.userData?.username || 'me'}`
+      },
+      text: content,
       time: 'şimdi',
       likes: 0,
     };
-    const updated = [newComment, ...comments];
-    setComments(updated);
-    setText('');
-    onCommentAdded?.(updated.length);
+
+    setComments(prev => [optimisticComment, ...prev]);
+    // ✅ DÜZELTİLDİ: commentCount prop'unu kullan (stale closure hatası önlendi)
+    onCommentAdded?.(commentCount + 1);
     setTimeout(() => listRef.current?.scrollToOffset({ offset: 0, animated: true }), 100);
+
+    try {
+      const { error } = await (supabase as any)
+        .from('comments')
+        .insert({
+          video_id: videoId,
+          user_id: authState.user.id,
+          content,
+          text: content, // DB has 'text' column; 'content' added as alias
+        });
+
+      if (error) {
+        console.error('Insert comment error:', error);
+        // Optionally revert optimistic UI here on fail
+      }
+    } catch (err) {
+      console.error(err);
+    }
   };
 
   if (!visible) return null;
@@ -153,27 +223,39 @@ export default function CommentsModal({ visible, onClose, videoId, commentCount,
         {/* Separator */}
         <View style={ms.sep} />
 
-        {/* Comments */}
-        <FlashList
-          ref={listRef}
-          data={comments}
-          renderItem={({ item }) => <CommentRow item={item} />}
-          keyExtractor={i => i.id}
-          showsVerticalScrollIndicator={false}
-          ListEmptyComponent={
-            <View style={ms.empty}>
-              <Ionicons name="chatbubble-outline" size={40} color={Colors.textDim} />
-              <Text style={ms.emptyText}>Henüz yorum yok</Text>
-              <Text style={ms.emptySubtext}>İlk yorumu sen yap!</Text>
-            </View>
-          }
-          ItemSeparatorComponent={() => <View style={ms.rowSep} />}
-        />
+        {/* Comments — skeleton while loading, list when ready */}
+        {loading ? (
+          <>
+            {Array.from({ length: 6 }).map((_, i) => (
+              <SkeletonLoader.NotifRow key={i} />
+            ))}
+          </>
+        ) : (
+          <FlashList
+            ref={listRef}
+            data={comments}
+            renderItem={({ item }) => <CommentRow item={item} />}
+            keyExtractor={i => i.id}
+            showsVerticalScrollIndicator={false}
+            ListEmptyComponent={
+              <View style={ms.empty}>
+                <Ionicons name="chatbubble-outline" size={40} color={Colors.textDim} />
+                <Text style={ms.emptyText}>Henüz yorum yok</Text>
+                <Text style={ms.emptySubtext}>İlk yorumu sen yap!</Text>
+              </View>
+            }
+            ItemSeparatorComponent={() => <View style={ms.rowSep} />}
+          />
+        )}
 
         {/* Input */}
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <View style={ms.inputRow}>
-            <Image source={{ uri: 'https://i.pravatar.cc/100?img=99' }} style={ms.myAvatar} contentFit="cover" />
+            <Image
+              source={{ uri: authState.profile?.avatar_url || (authState.userData as any)?.avatar_url || 'https://ui-avatars.com/api/?name=U' }}
+              style={ms.myAvatar}
+              contentFit="cover"
+            />
             <View style={ms.inputWrap}>
               <TextInput
                 ref={inputRef}

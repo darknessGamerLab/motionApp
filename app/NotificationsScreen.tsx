@@ -1,20 +1,22 @@
+import { SkeletonLoader } from '@/components/SkeletonLoader';
 import Colors from '@/constants/Colors';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
+import { isValidUUID } from '@/utils/validate';
+
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
 import { useFocusEffect } from 'expo-router';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   Animated,
   FlatList,
   RefreshControl,
   StyleSheet,
   Text,
   TouchableOpacity,
-  View,
+  View
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -48,17 +50,9 @@ const timeAgo = (date: string) => {
   return `${Math.floor(days / 7)} hf`;
 };
 
-const MOCK: Notif[] = [
-  { id: '1', type: 'like', user: { id: 'u1', username: 'ahmet_y', avatar: 'https://i.pravatar.cc/100?img=1' }, content: 'videonu beğendi', time: '2 sn', isRead: false, thumbnail: 'https://picsum.photos/60/80?random=1' },
-  { id: '2', type: 'follow', user: { id: 'u2', username: 'ayse_o', avatar: 'https://i.pravatar.cc/100?img=2' }, content: 'seni takip etti', time: '5 dk', isRead: false },
-  { id: '3', type: 'radar', user: { id: 'u10', username: 'TechCorp', avatar: 'https://i.pravatar.cc/100?img=10', isCompany: true }, content: 'seni radara aldı', time: '1 sa', isRead: true },
-  { id: '4', type: 'comment', user: { id: 'u3', username: 'mehmet_k', avatar: 'https://i.pravatar.cc/100?img=3' }, content: 'yorum yaptı: "Harika! 🔥"', time: '3 sa', isRead: true, thumbnail: 'https://picsum.photos/60/80?random=2' },
-  { id: '5', type: 'like', user: { id: 'u4', username: 'zeynep_d', avatar: 'https://i.pravatar.cc/100?img=4' }, content: 'videonu beğendi', time: '1 gün', isRead: true, thumbnail: 'https://picsum.photos/60/80?random=3' },
-  { id: '6', type: 'radar', user: { id: 'u11', username: 'BrandX', avatar: 'https://i.pravatar.cc/100?img=11', isCompany: true }, content: 'seni radara aldı', time: '2 gün', isRead: true },
-  { id: '7', type: 'follow', user: { id: 'u5', username: 'emre_c', avatar: 'https://i.pravatar.cc/100?img=15' }, content: 'seni takip etti', time: '3 gün', isRead: true },
-  { id: '8', type: 'like', user: { id: 'u6', username: 'deniz_y', avatar: 'https://i.pravatar.cc/100?img=20' }, content: 'videonu beğendi', time: '5 gün', isRead: true, thumbnail: 'https://picsum.photos/60/80?random=4' },
-  { id: '9', type: 'comment', user: { id: 'u7', username: 'selin_t', avatar: 'https://i.pravatar.cc/100?img=7' }, content: 'yorum yaptı: "Devam et lütfen 💯"', time: '1 hf', isRead: true, thumbnail: 'https://picsum.photos/60/80?random=5' },
-];
+// MOCK data removed — notifications are now 100% real from Supabase notifications table
+// Trigger `enrich_notification_thumbnail_trigger` auto-populates thumbnail_url on insert
+
 
 const NOTIF_COLORS: Record<NotifType, string> = {
   like: '#FF3B62',
@@ -75,15 +69,25 @@ const NOTIF_ICONS: Record<NotifType, any> = {
   system: 'notifications',
 };
 
-function NotifRow({
-  item, onUserPress, onMarkRead,
+// ─── NotifRow — memoized, receives follow state from parent (no per-row DB call) ───
+const NotifRow = memo(function NotifRow({
+  item, onUserPress, onMarkRead, initialFollowing, onFollowChange,
 }: {
   item: Notif;
   onUserPress?: (id: string) => void;
   onMarkRead: (id: string) => void;
+  initialFollowing?: boolean;
+  // Called after DB follow/unfollow so parent can sync ALL rows for this user
+  onFollowChange?: (userId: string, isFollowing: boolean) => void;
 }) {
-  const [following, setFollowing] = useState(false);
-  const scale = new Animated.Value(1);
+  const { authState } = useAuth();
+  const [following, setFollowing] = useState(initialFollowing ?? false);
+  const scale = useRef(new Animated.Value(1)).current;
+
+  // Sync when prop changes (parent batch-loaded follow states)
+  useEffect(() => {
+    if (initialFollowing !== undefined) setFollowing(initialFollowing);
+  }, [initialFollowing]);
 
   const handlePress = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -93,6 +97,27 @@ function NotifRow({
     ]).start();
     onMarkRead(item.id);
     onUserPress?.(item.user.id);
+  };
+
+  const handleFollow = async () => {
+    if (!authState.user || !item.user.id) return;
+    if (!isValidUUID(item.user.id)) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const newFollowing = !following;
+    setFollowing(newFollowing);
+    // Propagate to parent immediately so all rows from same user sync
+    onFollowChange?.(item.user.id, newFollowing);
+    try {
+      if (newFollowing) {
+        await (supabase as any).from('follows').insert({ follower_id: authState.user.id, following_id: item.user.id });
+      } else {
+        await (supabase as any).from('follows').delete().eq('follower_id', authState.user.id).eq('following_id', item.user.id);
+      }
+    } catch (e) {
+      // Rollback both local and parent state
+      setFollowing(f => !f);
+      onFollowChange?.(item.user.id, !newFollowing);
+    }
   };
 
   return (
@@ -134,10 +159,7 @@ function NotifRow({
         ) : (item.type === 'follow' || item.type === 'radar') && (
           <TouchableOpacity
             style={[s.followBtn, following && s.followBtnOut]}
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              setFollowing(f => !f);
-            }}
+            onPress={handleFollow}
           >
             <Text style={[s.followTxt, following && s.followTxtOut]}>
               {following ? 'Takip Ediliyor' : 'Takip Et'}
@@ -147,7 +169,11 @@ function NotifRow({
       </TouchableOpacity>
     </Animated.View>
   );
-}
+}, (prev, next) =>
+  prev.item.id === next.item.id &&
+  prev.item.isRead === next.item.isRead &&
+  prev.initialFollowing === next.initialFollowing
+);
 
 const TABS: { key: TabType; label: string; icon: any }[] = [
   { key: 'all', label: 'Tümü', icon: 'apps-outline' },
@@ -163,9 +189,26 @@ export default function NotificationsScreen({ isActive = true, onUserPress }: Pr
   const [notifs, setNotifs] = useState<Notif[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  // follow states batch-fetched once instead of N per-row queries
+  const [followMap, setFollowMap] = useState<Record<string, boolean>>({});
 
-  const fetchNotifs = async () => {
+  // Throttle: track when we last fetched so useFocusEffect doesn't spam DB
+  const lastFetchTime = useRef(0);
+  const FETCH_THROTTLE_MS = 60_000; // only refetch if >60s stale
+
+  // When not authenticated, show empty state
+  useEffect(() => {
+    if (!authState.user) {
+      setLoading(false);
+      setNotifs([]);
+    }
+  }, [authState.user]);
+
+  const fetchNotifs = useCallback(async (force = false) => {
     if (!authState.user) return;
+    // Throttle: skip if result is fresh and not forced
+    if (!force && Date.now() - lastFetchTime.current < FETCH_THROTTLE_MS) return;
+
     try {
       const { data, error } = await supabase
         .from('notifications')
@@ -180,6 +223,7 @@ export default function NotificationsScreen({ isActive = true, onUserPress }: Pr
         .order('created_at', { ascending: false });
 
       if (error) throw error;
+      lastFetchTime.current = Date.now();
 
       const formatted: Notif[] = (data as any[] || []).map(d => ({
         id: d.id,
@@ -192,23 +236,39 @@ export default function NotificationsScreen({ isActive = true, onUserPress }: Pr
         content: d.message || '',
         time: timeAgo(d.created_at),
         isRead: d.is_read,
-        thumbnail: d.video_id ? 'https://picsum.photos/60/80' : undefined,
+        thumbnail: d.thumbnail_url || undefined,
       }));
 
-      console.log('Fetched notifs count:', formatted.length);
       setNotifs(formatted);
+
+      // Batch-fetch follow statuses for follow/radar notifications in ONE query
+      // instead of N individual queries per NotifRow
+      const followNotifs = formatted.filter(
+        n => (n.type === 'follow' || n.type === 'radar') && n.user.id
+      );
+      if (followNotifs.length > 0 && authState.user) {
+        const targetIds = followNotifs.map(n => n.user.id);
+        const { data: followData } = await (supabase as any)
+          .from('follows')
+          .select('following_id')
+          .eq('follower_id', authState.user.id)
+          .in('following_id', targetIds);
+        const map: Record<string, boolean> = {};
+        (followData || []).forEach((r: any) => { map[r.following_id] = true; });
+        setFollowMap(map);
+      }
     } catch (err) {
       console.error('Fetch notifs error:', err);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, [authState.user]);
 
+  // Initial fetch + realtime subscription
   useEffect(() => {
-    fetchNotifs();
+    fetchNotifs(true); // force=true on mount (first visit)
 
-    // Realtime Notifications
     if (!authState.user) return;
     const channel = supabase.channel(`notifs-${authState.user.id}`)
       .on('postgres_changes', {
@@ -216,46 +276,44 @@ export default function NotificationsScreen({ isActive = true, onUserPress }: Pr
         schema: 'public',
         table: 'notifications',
         filter: `user_id=eq.${authState.user.id}`
-      }, (payload) => {
-        console.log('New notification received!', payload.new);
+      }, () => {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-
-        // Refetch to get joined profile data
-        fetchNotifs();
+        fetchNotifs(true); // force on realtime push
       })
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [authState.user]);
+  }, [authState.user, fetchNotifs]);
 
-  // Sayfa açıldığında hem bildirimleri hem de profili tazele
-  // Bu sayede kurumsal onay gelince statü anında güncellenir
+  // Focus: only refetch if data is stale (>60s) — prevents every tab-open triggering a request
   useFocusEffect(
     useCallback(() => {
-      fetchNotifs();
-      refreshProfile();
-    }, [])
+      // Non-forced: respects the 60s throttle
+      fetchNotifs(false);
+      refreshProfile(); // refreshProfile already has its own 30s throttle inside AuthContext
+    }, [fetchNotifs, refreshProfile])
   );
 
   const onRefresh = () => {
     setRefreshing(true);
-    fetchNotifs();
+    fetchNotifs(true); // force=true on manual pull-to-refresh
     refreshProfile();
   };
 
-  const filtered = notifs.filter(n =>
+  // useMemo: re-filter only when tab or notifs change, not on every render
+  const filtered = useMemo(() => notifs.filter(n =>
     tab === 'all' ? true :
       tab === 'likes' ? n.type === 'like' || n.type === 'comment' :
         tab === 'follows' ? n.type === 'follow' :
           tab === 'radar' ? n.type === 'radar' :
             false
-  );
+  ), [tab, notifs]);
 
   const unread = notifs.filter(n => !n.isRead).length;
 
   const markRead = useCallback(async (id: string) => {
     setNotifs(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n));
-    await supabase.from('notifications').update({ is_read: true } as any).eq('id', id);
+    await (supabase as any).from('notifications').update({ is_read: true }).eq('id', id);
   }, []);
 
   const markAll = useCallback(async () => {
@@ -264,8 +322,25 @@ export default function NotificationsScreen({ isActive = true, onUserPress }: Pr
     if (unreadIds.length === 0) return;
 
     setNotifs(prev => prev.map(n => ({ ...n, isRead: true })));
-    await supabase.from('notifications').update({ is_read: true } as any).in('id', unreadIds);
+    await (supabase as any).from('notifications').update({ is_read: true }).in('id', unreadIds);
   }, [notifs]);
+
+  // NOTE: This MUST be declared here (top-level), NOT inside the JSX renderItem prop.
+  // Putting useCallback inside JSX causes it to run conditionally (inside a ternary),
+  // which violates the Rules of Hooks → "Rendered more hooks than during previous render".
+  const handleFollowChange = useCallback((userId: string, isFollowing: boolean) => {
+    setFollowMap(prev => ({ ...prev, [userId]: isFollowing }));
+  }, []);
+
+  const renderNotifRow = useCallback(({ item }: { item: Notif }) => (
+    <NotifRow
+      item={item}
+      onUserPress={onUserPress}
+      onMarkRead={markRead}
+      initialFollowing={followMap[item.user.id]}
+      onFollowChange={handleFollowChange}
+    />
+  ), [onUserPress, markRead, followMap, handleFollowChange]);
 
   return (
     <View style={s.container}>
@@ -316,15 +391,16 @@ export default function NotificationsScreen({ isActive = true, onUserPress }: Pr
 
       {/* List */}
       {loading && notifs.length === 0 ? (
-        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-          <ActivityIndicator color={Colors.primary} size="large" />
+        // ✅ DÜZELDİ: Spinner yerine skeleton loader — daha pres geliyor
+        <View style={{ paddingTop: 8 }}>
+          {Array.from({ length: 7 }).map((_, i) => (
+            <SkeletonLoader.NotifRow key={i} />
+          ))}
         </View>
       ) : (
         <FlatList
           data={filtered}
-          renderItem={({ item }: { item: Notif }) => (
-            <NotifRow item={item} onUserPress={onUserPress} onMarkRead={markRead} />
-          )}
+          renderItem={renderNotifRow}
           keyExtractor={(i: Notif) => i.id}
           showsVerticalScrollIndicator={false}
           refreshControl={

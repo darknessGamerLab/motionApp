@@ -1,150 +1,180 @@
-import axios from 'axios';
-import { AlertCircle, CheckCircle, FileText, XCircle } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import api from '../lib/api';
+import { Briefcase, CheckCircle, Clock, Search, X, XCircle } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 
-interface CorporateProfile {
-    id: string;
-    username: string;
-    full_name: string;
-    corporate_status: 'pending' | 'approved' | 'rejected';
-    created_at: string;
-}
+
+const fmtDate = (d: string) => new Date(d).toLocaleDateString('tr-TR', { day: 'numeric', month: 'short', year: 'numeric' });
 
 export default function CorporateApprovals() {
-    const [pendingUsers, setPendingUsers] = useState<CorporateProfile[]>([]);
+    const [applications, setApplications] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
-    const [error, setError] = useState('');
-    const [actionMessage, setActionMessage] = useState('');
+    const [filterStatus, setFilterStatus] = useState('pending');
+    const [search, setSearch] = useState('');
+    const [actionLoading, setActionLoading] = useState<string | null>(null);
 
-    const fetchPending = async () => {
+    const load = async () => {
+        setLoading(true);
         try {
-            setLoading(true);
-            const res = await axios.get('http://localhost:5000/api/users/corporate/pending');
-            setPendingUsers(res.data);
-            setError('');
-        } catch (err: any) {
-            console.error(err);
-            setError('Veriler yüklenirken bir sorun oluştu.');
-        } finally {
-            setLoading(false);
-        }
+            const { data } = await api.get(`/api/corporate-applications`);
+            setApplications(data);
+        } catch (e) {
+            // Fallback to pending endpoint
+            try {
+                const { data } = await api.get(`/api/users/corporate/pending`);
+                setApplications(data.map((d: any) => ({ ...d, status: 'pending' })));
+            } catch { }
+        } finally { setLoading(false); }
     };
 
-    useEffect(() => {
-        fetchPending();
-    }, []);
+    useEffect(() => { load(); }, []);
 
-    const handleApprove = async (id: string) => {
+    const updateStatus = async (id: string, status: string) => {
+        setActionLoading(id + '_' + status);
+        // State-first
+        setApplications(prev => prev.map(a => a.id === id ? { ...a, corporate_status: status, status } : a));
         try {
-            const msg = prompt('Özel onay mesajı girin (Boş bırakılırsa standart mesaj gönderilir):');
-            await axios.put(`http://localhost:5000/api/users/corporate/${id}/approve`, {
-                admin_message: msg || undefined
-            });
-            setActionMessage('Kullanıcı başarıyla onaylandı.');
-            setPendingUsers(prev => prev.filter(u => u.id !== id));
-            setTimeout(() => setActionMessage(''), 3000);
-        } catch (err) {
-            alert('Onay işlemi başarısız!');
-        }
+            await api.put(`/api/corporate-applications/${id}/status`, { status });
+        } catch { load(); } finally { setActionLoading(null); }
     };
 
-    const handleReject = async (id: string) => {
-        try {
-            const msg = prompt('Özel red sebebi girin (Boş bırakılırsa standart mesaj gönderilir):');
-            await axios.put(`http://localhost:5000/api/users/corporate/${id}/reject`, {
-                admin_message: msg || undefined
-            });
-            setActionMessage('Kullanıcı başvurusu reddedildi.');
-            setPendingUsers(prev => prev.filter(u => u.id !== id));
-            setTimeout(() => setActionMessage(''), 3000);
-        } catch (err) {
-            alert('Red işlemi başarısız!');
-        }
-    };
+    const filtered = useMemo(() => applications.filter(a => {
+        const statusVal = a.corporate_status || a.status || 'pending';
+        const matchStatus = filterStatus === 'all' || statusVal === filterStatus;
+        const q = search.toLowerCase();
+        const matchSearch = !q ||
+            a.username?.toLowerCase().includes(q) ||
+            a.full_name?.toLowerCase().includes(q) ||
+            a.tax_number?.toLowerCase().includes(q);
+        return matchStatus && matchSearch;
+    }), [applications, search, filterStatus]);
+
+    const counts = useMemo(() => ({
+        pending: applications.filter(a => (a.corporate_status || a.status) === 'pending').length,
+        approved: applications.filter(a => (a.corporate_status || a.status) === 'approved').length,
+        rejected: applications.filter(a => (a.corporate_status || a.status) === 'rejected').length,
+    }), [applications]);
 
     return (
-        <div>
-            <div className="flex justify-between items-center mb-6">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', animation: 'fadeIn 0.4s ease' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
                 <div>
-                    <h2 className="text-2xl font-bold text-slate-800">Kurumsal Hesap Onayları</h2>
-                    <p className="text-slate-500">Gelen kurumsal üyelik taleplerini buradan inceleyebilir, onaylayıp reddedebilirsiniz.</p>
+                    <h2 className="page-title">Corporate Applications</h2>
+                    <p style={{ fontSize: '0.8125rem', color: 'var(--color-text-3)', marginTop: '0.25rem' }}>
+                        {counts.pending} awaiting review
+                    </p>
+                </div>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    {[
+                        { key: 'pending', label: 'Pending', val: counts.pending, color: '#f59e0b' },
+                        { key: 'approved', label: 'Approved', val: counts.approved, color: '#10b981' },
+                        { key: 'rejected', label: 'Rejected', val: counts.rejected, color: '#ef4444' },
+                    ].map(s => (
+                        <div key={s.key} style={{
+                            background: 'var(--color-surface)', border: '1px solid var(--color-border)',
+                            borderRadius: 'var(--radius-md)', padding: '0.375rem 0.75rem', textAlign: 'center',
+                            cursor: 'pointer',
+                        }} onClick={() => setFilterStatus(s.key)}>
+                            <p style={{ fontSize: '0.875rem', fontWeight: 800, color: s.color, fontFamily: 'Outfit, sans-serif' }}>{s.val}</p>
+                            <p style={{ fontSize: '0.625rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--color-text-3)' }}>{s.label}</p>
+                        </div>
+                    ))}
                 </div>
             </div>
 
-            {actionMessage && (
-                <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded relative mb-4">
-                    <span className="block sm:inline">{actionMessage}</span>
+            <div style={{ display: 'flex', gap: '0.75rem' }}>
+                <div className="search-box" style={{ flex: 1, maxWidth: '360px' }}>
+                    <Search size={14} style={{ color: 'var(--color-text-3)' }} />
+                    <input placeholder="Search by username or tax number..." value={search} onChange={e => setSearch(e.target.value)} />
                 </div>
-            )}
+                <div className="filter-tabs">
+                    {['all', 'pending', 'approved', 'rejected'].map(s => (
+                        <button key={s} className={`filter-tab ${filterStatus === s ? 'active' : ''}`} onClick={() => setFilterStatus(s)}>
+                            {s.charAt(0).toUpperCase() + s.slice(1)}
+                        </button>
+                    ))}
+                </div>
+            </div>
 
-            {error ? (
-                <div className="bg-red-50 text-red-600 p-4 rounded-lg flex items-center gap-3">
-                    <AlertCircle />
-                    <span>{error}</span>
-                    <button onClick={fetchPending} className="ml-auto underline text-sm">Tekrar Dene</button>
-                </div>
-            ) : loading ? (
-                <div className="flex justify-center items-center h-48">
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-                </div>
-            ) : pendingUsers.length === 0 ? (
-                <div className="bg-slate-50 border border-slate-200 rounded-xl p-12 text-center">
-                    <FileText className="mx-auto h-12 w-12 text-slate-400 mb-4" />
-                    <h3 className="text-lg font-medium text-slate-900 mb-1">Bekleyen Talep Yok</h3>
-                    <p className="text-slate-500">Şu anda incelenmeyi bekleyen kurumsal hesap isteği bulunmuyor.</p>
-                </div>
-            ) : (
-                <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
-                    <table className="w-full text-left border-collapse">
-                        <thead>
-                            <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 text-sm">
-                                <th className="p-4 font-medium">Kullanıcı Adı</th>
-                                <th className="p-4 font-medium">Ad / Soyad (Firma)</th>
-                                <th className="p-4 font-medium">Başvuru Tarihi</th>
-                                <th className="p-4 font-medium text-right">Aksiyonlar</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {pendingUsers.map(user => (
-                                <tr key={user.id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
-                                    <td className="p-4">
-                                        <div className="flex items-center gap-3">
-                                            <div className="bg-indigo-100 text-indigo-700 w-8 h-8 rounded-full flex items-center justify-center font-bold">
-                                                {user.username.charAt(0).toUpperCase()}
+            <div className="table-wrap">
+                <table className="data-table">
+                    <thead>
+                        <tr>
+                            <th>Applicant</th>
+                            <th>Tax Office</th>
+                            <th>Tax Number</th>
+                            <th>Applied</th>
+                            <th>Status</th>
+                            <th style={{ textAlign: 'right' }}>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {loading ? (
+                            <tr><td colSpan={6}><div className="empty-state"><Briefcase size={32} /><p>Loading...</p></div></td></tr>
+                        ) : filtered.length === 0 ? (
+                            <tr><td colSpan={6}><div className="empty-state"><Briefcase size={32} /><p>No applications found</p></div></td></tr>
+                        ) : filtered.map(a => {
+                            const statusVal = a.corporate_status || a.status || 'pending';
+                            return (
+                                <tr key={a.id}>
+                                    <td>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
+                                            <img
+                                                src={a.avatar_url || `https://ui-avatars.com/api/?name=${a.username}&background=0f172a&color=fff&size=32`}
+                                                className="avatar avatar-md" alt=""
+                                            />
+                                            <div>
+                                                <p style={{ fontWeight: 700, fontSize: '0.8125rem' }}>@{a.username}</p>
+                                                <p style={{ fontSize: '0.6875rem', color: 'var(--color-text-3)' }}>{a.full_name}</p>
                                             </div>
-                                            <span className="font-medium text-slate-800">@{user.username}</span>
                                         </div>
                                     </td>
-                                    <td className="p-4 text-slate-600">{user.full_name}</td>
-                                    <td className="p-4 text-slate-500 text-sm">
-                                        {new Date(user.created_at).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' })}
+                                    <td style={{ fontSize: '0.8125rem' }}>{a.tax_office || '—'}</td>
+                                    <td>
+                                        <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '0.8125rem', fontWeight: 600 }}>
+                                            {a.tax_number || '—'}
+                                        </span>
                                     </td>
-                                    <td className="p-4">
-                                        <div className="flex items-center justify-end gap-2">
-                                            <button
-                                                disabled={loading}
-                                                onClick={() => handleApprove(user.id)}
-                                                className="flex items-center gap-1 px-3 py-1.5 bg-green-500 hover:bg-green-600 text-white rounded-md text-sm transition-colors"
-                                            >
-                                                <CheckCircle size={16} />
-                                                <span>Onayla</span>
-                                            </button>
-                                            <button
-                                                disabled={loading}
-                                                onClick={() => handleReject(user.id)}
-                                                className="flex items-center gap-1 px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 rounded-md text-sm transition-colors"
-                                            >
-                                                <XCircle size={16} />
-                                                <span>Reddet</span>
-                                            </button>
+                                    <td style={{ fontSize: '0.75rem', color: 'var(--color-text-3)' }}>{fmtDate(a.created_at)}</td>
+                                    <td>
+                                        <div style={{
+                                            display: 'inline-flex', alignItems: 'center', gap: '0.25rem', padding: '0.2rem 0.6rem', borderRadius: '999px', fontSize: '0.6875rem', fontWeight: 700,
+                                            background: statusVal === 'approved' ? '#f0fdf4' : statusVal === 'rejected' ? '#fef2f2' : '#fffbeb',
+                                            color: statusVal === 'approved' ? '#10b981' : statusVal === 'rejected' ? '#ef4444' : '#f59e0b',
+                                        }}>
+                                            {statusVal === 'approved' ? <CheckCircle size={10} /> : statusVal === 'rejected' ? <XCircle size={10} /> : <Clock size={10} />}
+                                            {statusVal.charAt(0).toUpperCase() + statusVal.slice(1)}
                                         </div>
+                                    </td>
+                                    <td style={{ textAlign: 'right' }}>
+                                        {statusVal === 'pending' ? (
+                                            <div style={{ display: 'flex', gap: '0.375rem', justifyContent: 'flex-end' }}>
+                                                <button
+                                                    className="btn btn-sm"
+                                                    style={{ background: '#f0fdf4', color: '#10b981', border: '1px solid #bbf7d0' }}
+                                                    onClick={() => updateStatus(a.id, 'approved')}
+                                                    disabled={!!actionLoading}
+                                                >
+                                                    <CheckCircle size={12} /> Approve
+                                                </button>
+                                                <button
+                                                    className="btn btn-sm"
+                                                    style={{ background: '#fef2f2', color: '#ef4444', border: '1px solid #fecaca' }}
+                                                    onClick={() => updateStatus(a.id, 'rejected')}
+                                                    disabled={!!actionLoading}
+                                                >
+                                                    <X size={12} /> Reject
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <span style={{ fontSize: '0.75rem', color: 'var(--color-text-3)' }}>Processed</span>
+                                        )}
                                     </td>
                                 </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-            )}
+                            );
+                        })}
+                    </tbody>
+                </table>
+            </div>
         </div>
     );
 }

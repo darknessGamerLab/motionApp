@@ -1,252 +1,349 @@
-import axios from 'axios';
+import api from '../lib/api';
 import {
-    Activity,
-    Ban,
-    Eye,
-    Save,
+    Ban, Briefcase,
+    Clock,
     Search,
-    Trash2,
-    Users as UsersIcon,
-    Video as VideoIcon
+    Trash2, UserCheck, Users, Zap
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
-interface UserProfile {
-    id: string;
-    username: string;
-    full_name: string;
-    user_type: 'individual' | 'corporate';
-    tax_office?: string | null;
-    tax_number?: string | null;
-    radars_count: number;
-    created_at: string;
-    updated_at: string;
-    is_banned?: boolean;
-    _count: {
-        videos: number;
-        likes: number;
-        comments: number;
-    };
-    followers_count: number;
-    following_count: number;
-}
 
-export default function Users() {
-    const [users, setUsers] = useState<UserProfile[]>([]);
+
+const fmtNum = (n: any) => {
+    if (!n && n !== 0) return '—';
+    if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
+    return String(n);
+};
+
+const fmtDate = (d: string) => new Date(d).toLocaleDateString('tr-TR');
+
+export default function UsersPage() {
+    const [users, setUsers] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
-    const [searchTerm, setSearchTerm] = useState('');
-    const [filterType, setFilterType] = useState<'all' | 'individual' | 'corporate'>('all');
-    const [localTypes, setLocalTypes] = useState<Record<string, 'individual' | 'corporate'>>({});
-    const [savingId, setSavingId] = useState<string | null>(null);
+    const [search, setSearch] = useState('');
+    const [filterType, setFilterType] = useState('all');
+    const [filterStatus, setFilterStatus] = useState('all');
+    const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+    const [actionLoading, setActionLoading] = useState<string | null>(null);
 
-    const fetchUsers = async () => {
+    const load = async () => {
+        setLoading(true);
         try {
-            setLoading(true);
-            const res = await axios.get('http://localhost:5000/api/users');
-            setUsers(res.data);
-        } catch (err) {
-            console.error('Kullanıcılar çekilemedi:', err);
-        } finally {
-            setLoading(false);
-        }
+            const { data } = await api.get(`/api/users`);
+            setUsers(data);
+        } catch (e) { console.error(e); } finally { setLoading(false); }
     };
 
-    useEffect(() => {
-        fetchUsers();
-    }, []);
+    useEffect(() => { load(); }, []);
 
-    const handleBan = async (id: string, isBanned: boolean) => {
-        const action = isBanned ? 'kaldırmak' : 'atmak';
-        if (!confirm(`Kullanıcıya ban ${action} istediğinize emin misiniz?`)) return;
+    const toggleBan = async (id: string, isBanned: boolean) => {
+        setActionLoading(id + '_ban');
+        // State-first update
+        setUsers(prev => prev.map(u => u.id === id ? { ...u, is_banned: !isBanned } : u));
         try {
-            await axios.put(`http://localhost:5000/api/users/${id}/ban`, { is_banned: !isBanned });
-            setUsers(prev => prev.map(u => u.id === id ? { ...u, is_banned: !isBanned } : u));
-        } catch (err) {
-            alert('Ban işlemi başarısız!');
-        }
+            await api.put(`/api/users/${id}/ban`, { is_banned: !isBanned });
+        } catch {
+            setUsers(prev => prev.map(u => u.id === id ? { ...u, is_banned: isBanned } : u));
+        } finally { setActionLoading(null); }
     };
 
-    const handleTypeChange = (id: string, newType: 'individual' | 'corporate') => {
-        setLocalTypes(prev => ({ ...prev, [id]: newType }));
-    };
-
-    const handleSaveType = async (user: UserProfile) => {
-        const newType = localTypes[user.id];
-        if (!newType || newType === user.user_type) return;
-
+    const toggleType = async (id: string, type: string) => {
+        const next = type === 'corporate' ? 'individual' : 'corporate';
+        setActionLoading(id + '_type');
+        setUsers(prev => prev.map(u => u.id === id ? { ...u, user_type: next } : u));
         try {
-            setSavingId(user.id);
-            await axios.put(`http://localhost:5000/api/users/${user.id}/type`, { user_type: newType });
-            setUsers(prev => prev.map(u => u.id === user.id ? { ...u, user_type: newType } : u));
-            setLocalTypes(prev => {
-                const next = { ...prev };
-                delete next[user.id];
-                return next;
-            });
-        } catch (err) {
-            alert('Kaydetme işlemi başarısız!');
-        } finally {
-            setSavingId(null);
-        }
+            await api.put(`/api/users/${id}/type`, { user_type: next });
+        } catch {
+            setUsers(prev => prev.map(u => u.id === id ? { ...u, user_type: type } : u));
+        } finally { setActionLoading(null); }
     };
 
-    const handleDelete = async (id: string) => {
-        if (!confirm('Kullanıcıyı TAMAMEN silmek üzeresiniz. Bu işlem geri alınamaz!')) return;
+    const deleteUser = async (id: string) => {
+        setUsers(prev => prev.filter(u => u.id !== id));
+        setConfirmDelete(null);
         try {
-            await axios.delete(`http://localhost:5000/api/users/${id}`);
-            setUsers(prev => prev.filter(u => u.id !== id));
-        } catch (err) {
-            alert('Silme işlemi başarısız!');
-        }
+            await api.delete(`/api/users/${id}`);
+        } catch { load(); }
     };
 
-    const filteredUsers = users.filter(u => {
-        const matchesSearch = u.username.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            u.full_name.toLowerCase().includes(searchTerm.toLowerCase());
-        const matchesFilter = filterType === 'all' || u.user_type === filterType;
-        return matchesSearch && matchesFilter;
-    });
+    const filtered = useMemo(() => {
+        return users.filter(u => {
+            const q = search.toLowerCase();
+            const matchSearch = !q ||
+                u.username?.toLowerCase().includes(q) ||
+                u.full_name?.toLowerCase().includes(q) ||
+                u.id?.toLowerCase().includes(q) ||
+                u.tax_number?.toLowerCase()?.includes(q);
+            const matchType = filterType === 'all' || u.user_type === filterType;
+            const matchStatus = filterStatus === 'all' || (filterStatus === 'banned' ? u.is_banned : !u.is_banned);
+            return matchSearch && matchType && matchStatus;
+        });
+    }, [users, search, filterType, filterStatus]);
+
+    const stats = useMemo(() => ({
+        total: users.length,
+        individual: users.filter(u => u.user_type === 'individual').length,
+        corporate: users.filter(u => u.user_type === 'corporate').length,
+        banned: users.filter(u => u.is_banned).length,
+    }), [users]);
 
     return (
-        <div className="space-y-6">
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', animation: 'fadeIn 0.4s ease' }}>
+
+            {/* Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
                 <div>
-                    <h2 className="text-2xl font-bold text-slate-800">Kullanıcı Yönetimi</h2>
-                    <p className="text-slate-500">Tüm kullanıcıları izleyin, inceleyin ve yetkilerini yönetin.</p>
+                    <h2 className="page-title">User Management</h2>
+                    <p style={{ fontSize: '0.8125rem', color: 'var(--color-text-3)', marginTop: '0.25rem' }}>
+                        Full CRUD control over all platform members
+                    </p>
                 </div>
-                <div className="flex items-center gap-3 w-full md:w-auto">
-                    <div className="relative flex-1 md:w-64">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                        <input
-                            type="text"
-                            placeholder="Ara (Username, Ad...)"
-                            className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                        />
-                    </div>
-                    <select
-                        className="px-4 py-2 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary bg-white transition-all text-sm font-medium"
-                        value={filterType}
-                        onChange={(e) => setFilterType(e.target.value as any)}
-                    >
-                        <option value="all">Tümü</option>
-                        <option value="individual">Bireysel</option>
-                        <option value="corporate">Kurumsal</option>
-                    </select>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    {[
+                        { label: 'Total', value: stats.total, color: 'var(--color-primary)' },
+                        { label: 'Individual', value: stats.individual, color: '#8b5cf6' },
+                        { label: 'Corporate', value: stats.corporate, color: '#10b981' },
+                        { label: 'Banned', value: stats.banned, color: '#ef4444' },
+                    ].map((s, i) => (
+                        <div key={i} style={{
+                            background: 'var(--color-surface)', border: '1px solid var(--color-border)',
+                            borderRadius: 'var(--radius-md)', padding: '0.375rem 0.875rem', textAlign: 'center',
+                        }}>
+                            <p style={{ fontSize: '0.9375rem', fontWeight: 800, color: s.color, fontFamily: 'Outfit, sans-serif' }}>{s.value}</p>
+                            <p style={{ fontSize: '0.625rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--color-text-3)' }}>{s.label}</p>
+                        </div>
+                    ))}
                 </div>
             </div>
 
-            <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
-                <div className="overflow-x-auto">
-                    <table className="w-full text-left border-collapse">
-                        <thead>
-                            <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 text-[11px] uppercase tracking-wider font-bold">
-                                <th className="p-4">Kullanıcı & Profil</th>
-                                <th className="p-4 text-center">Video</th>
-                                <th className="p-4 text-center">Radar</th>
-                                <th className="p-4 text-center">Takip</th>
-                                <th className="p-4">Bilgiler & Vergi</th>
-                                <th className="p-4">Statü</th>
-                                <th className="p-4 text-right">Aksiyonlar</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {loading ? (
-                                [1, 2, 3, 4, 5].map(i => (
-                                    <tr key={i} className="animate-pulse border-b border-slate-100">
-                                        <td colSpan={7} className="p-4"><div className="h-10 bg-slate-100 rounded-md w-full"></div></td>
-                                    </tr>
-                                ))
-                            ) : filteredUsers.length === 0 ? (
-                                <tr>
-                                    <td colSpan={7} className="p-20 text-center">
-                                        <UsersIcon className="mx-auto h-12 w-12 text-slate-300 mb-2" />
-                                        <p className="text-slate-500 font-medium">Kullanıcı bulunamadı.</p>
-                                    </td>
-                                </tr>
-                            ) : (
-                                filteredUsers.map(user => (
-                                    <tr key={user.id} className={`border-b border-slate-100 hover:bg-slate-50/80 transition-colors ${user.is_banned ? 'bg-red-50/30' : ''}`}>
-                                        <td className="p-4">
-                                            <div className="flex items-center gap-3">
-                                                <div className="bg-slate-200 w-10 h-10 rounded-full overflow-hidden flex-shrink-0">
-                                                    <div className="w-full h-full flex items-center justify-center font-bold text-slate-500 bg-gradient-to-br from-slate-100 to-slate-200 uppercase">
-                                                        {user.username.charAt(0)}
-                                                    </div>
-                                                </div>
-                                                <div>
-                                                    <div className="font-bold text-slate-900 leading-tight">@{user.username}</div>
-                                                    <div className="text-xs text-slate-500">{user.full_name}</div>
-                                                </div>
-                                            </div>
-                                        </td>
-                                        <td className="p-4 text-center">
-                                            <div className="inline-flex items-center gap-1 bg-indigo-50 text-indigo-700 px-2 py-1 rounded text-xs font-bold">
-                                                <VideoIcon size={12} />
-                                                {user._count?.videos || 0}
-                                            </div>
-                                        </td>
-                                        <td className="p-4 text-center">
-                                            <div className="inline-flex items-center gap-1 bg-rose-50 text-rose-600 px-2 py-1 rounded text-xs font-bold">
-                                                <Activity size={12} />
-                                                {user.radars_count || 0}
-                                            </div>
-                                        </td>
-                                        <td className="p-4 text-center text-sm font-semibold text-slate-600">
-                                            {user.followers_count || 0} / {user.following_count || 0}
-                                        </td>
-                                        <td className="p-4">
-                                            {user.user_type === 'corporate' ? (
-                                                <div className="flex flex-col text-[10px]">
-                                                    <span className="font-bold text-slate-700">{user.tax_office || 'VD Belirtilmemiş'}</span>
-                                                    <span className="text-slate-500">{user.tax_number || 'VN Belirtilmemiş'}</span>
-                                                </div>
-                                            ) : (
-                                                <span className="text-[10px] text-slate-400 font-medium italic">Bireysel Kullanıcı</span>
-                                            )}
-                                        </td>
-                                        <td className="p-4">
-                                            <select
-                                                className={`text-[10px] font-black uppercase ring-1 px-2 py-0.5 rounded-full outline-none bg-transparent cursor-pointer transition-all ${(localTypes[user.id] || user.user_type) === 'corporate'
-                                                    ? 'text-amber-600 ring-amber-100 bg-amber-50 hover:bg-amber-100'
-                                                    : 'text-blue-500 ring-blue-100 bg-blue-50 hover:bg-blue-100'
-                                                    }`}
-                                                value={localTypes[user.id] || user.user_type}
-                                                onChange={(e) => handleTypeChange(user.id, e.target.value as any)}
-                                            >
-                                                <option value="individual">Bireysel</option>
-                                                <option value="corporate">Kurumsal</option>
-                                            </select>
-                                        </td>
-                                        <td className="p-4">
-                                            <div className="flex items-center justify-end gap-1.5 transition-all">
-                                                <button className="p-1.5 text-slate-400 hover:text-primary hover:bg-slate-100 rounded-md transition-all" title="İncele"><Eye size={18} /></button>
-                                                {localTypes[user.id] && localTypes[user.id] !== user.user_type && (
-                                                    <button
-                                                        onClick={() => handleSaveType(user)}
-                                                        disabled={savingId === user.id}
-                                                        className={`p-1.5 rounded-md transition-all text-green-600 bg-green-50 hover:bg-green-100 animate-in zoom-in duration-200`}
-                                                        title="Değişikliği Kaydet"
-                                                    ><Save size={18} /></button>
-                                                )}
-                                                <button onClick={() => handleBan(user.id, user.is_banned || false)} className={`p-1.5 rounded-md transition-all ${user.is_banned ? 'text-green-600 bg-green-50 hover:bg-green-100' : 'text-slate-400 hover:text-amber-600 hover:bg-slate-100'}`} title={user.is_banned ? "Banı Kaldır" : "Banla"}><Ban size={18} /></button>
-                                                <button onClick={() => handleDelete(user.id)} className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-slate-100 rounded-md transition-all" title="Kullanıcıyı Sil"><Trash2 size={18} /></button>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                ))
-                            )}
-                        </tbody>
-                    </table>
+            {/* Controls */}
+            <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                <div className="search-box" style={{ flex: 1, minWidth: '200px' }}>
+                    <Search size={14} style={{ color: 'var(--color-text-3)', flexShrink: 0 }} />
+                    <input
+                        placeholder="Search by username, name, ID, tax number..."
+                        value={search}
+                        onChange={e => setSearch(e.target.value)}
+                    />
                 </div>
-                {!loading && filteredUsers.length > 0 && (
-                    <div className="p-4 bg-slate-50 border-t border-slate-100 text-[10px] text-slate-400 font-medium uppercase tracking-widest flex justify-between">
-                        <span>Toplam {filteredUsers.length} Kullanıcı Listeleniyor</span>
-                        <span>MotionAdmin v2.1.0 Sync</span>
-                    </div>
-                )}
+
+                <div className="filter-tabs">
+                    {['all', 'individual', 'corporate'].map(t => (
+                        <button key={t} className={`filter-tab ${filterType === t ? 'active' : ''}`}
+                            onClick={() => setFilterType(t)}>
+                            {t.charAt(0).toUpperCase() + t.slice(1)}
+                        </button>
+                    ))}
+                </div>
+
+                <div className="filter-tabs">
+                    {['all', 'active', 'banned'].map(t => (
+                        <button key={t} className={`filter-tab ${filterStatus === t ? 'active' : ''}`}
+                            onClick={() => setFilterStatus(t)}>
+                            {t.charAt(0).toUpperCase() + t.slice(1)}
+                        </button>
+                    ))}
+                </div>
+
+                <span style={{ fontSize: '0.75rem', color: 'var(--color-text-3)', fontWeight: 500 }}>
+                    {filtered.length} of {users.length}
+                </span>
             </div>
+
+            {/* Table */}
+            <div className="table-wrap">
+                <table className="data-table">
+                    <thead>
+                        <tr>
+                            <th>User</th>
+                            <th>Type</th>
+                            <th>Joined</th>
+                            <th style={{ textAlign: 'center' }}>Videos</th>
+                            <th style={{ textAlign: 'center' }}>Likes</th>
+                            <th style={{ textAlign: 'center' }}>Comments</th>
+                            <th style={{ textAlign: 'center' }}>Radar</th>
+                            <th>Status</th>
+                            <th style={{ textAlign: 'right' }}>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {loading ? (
+                            <tr>
+                                <td colSpan={9}>
+                                    <div className="empty-state">
+                                        <div style={{ width: 24, height: 24, border: '3px solid var(--color-border)', borderTopColor: 'var(--color-primary)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                                        <p>Loading users...</p>
+                                    </div>
+                                </td>
+                            </tr>
+                        ) : filtered.length === 0 ? (
+                            <tr>
+                                <td colSpan={9}>
+                                    <div className="empty-state">
+                                        <Users size={32} />
+                                        <p>No users found</p>
+                                    </div>
+                                </td>
+                            </tr>
+                        ) : filtered.map(u => (
+                            <tr key={u.id}>
+                                {/* User Identity */}
+                                <td>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
+                                        <div style={{ position: 'relative', flexShrink: 0 }}>
+                                            <img
+                                                src={u.avatar_url || `https://ui-avatars.com/api/?name=${u.username}&background=0f172a&color=fff&size=32`}
+                                                className="avatar avatar-md"
+                                                alt=""
+                                            />
+                                            <span
+                                                className="status-dot"
+                                                style={{
+                                                    position: 'absolute', bottom: -1, right: -1,
+                                                    width: '0.5rem', height: '0.5rem',
+                                                    border: '1.5px solid white',
+                                                    background: u.is_banned ? 'var(--color-danger)' : 'var(--color-success)',
+                                                }}
+                                            />
+                                        </div>
+                                        <div>
+                                            <p style={{ fontWeight: 700, fontSize: '0.8125rem', color: 'var(--color-text)' }}>
+                                                @{u.username}
+                                            </p>
+                                            <p style={{ fontSize: '0.6875rem', color: 'var(--color-text-3)' }}>{u.full_name}</p>
+                                        </div>
+                                    </div>
+                                </td>
+
+                                {/* Type */}
+                                <td>
+                                    <button
+                                        onClick={() => toggleType(u.id, u.user_type)}
+                                        disabled={actionLoading === u.id + '_type'}
+                                        style={{
+                                            display: 'inline-flex', alignItems: 'center', gap: '0.25rem',
+                                            padding: '0.2rem 0.6rem', borderRadius: '999px',
+                                            fontSize: '0.6875rem', fontWeight: 700,
+                                            textTransform: 'uppercase', letterSpacing: '0.05em',
+                                            cursor: 'pointer', border: 'none',
+                                            background: u.user_type === 'corporate' ? 'var(--color-primary-light)' : '#f5f3ff',
+                                            color: u.user_type === 'corporate' ? 'var(--color-primary)' : '#8b5cf6',
+                                            transition: 'all 0.15s',
+                                        }}
+                                        title="Click to toggle type"
+                                    >
+                                        {u.user_type === 'corporate' ? <Briefcase size={10} /> : <Zap size={10} />}
+                                        {u.user_type}
+                                    </button>
+                                </td>
+
+                                {/* Joined */}
+                                <td>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+                                        <Clock size={11} style={{ color: 'var(--color-text-3)' }} />
+                                        <span style={{ fontSize: '0.75rem', color: 'var(--color-text-2)' }}>{fmtDate(u.created_at)}</span>
+                                    </div>
+                                </td>
+
+                                {/* Metrics */}
+                                <td style={{ textAlign: 'center' }}>
+                                    <span style={{ fontWeight: 700, fontFamily: 'JetBrains Mono, monospace', fontSize: '0.8125rem' }}>
+                                        {fmtNum(u.metrics?.videos)}
+                                    </span>
+                                </td>
+                                <td style={{ textAlign: 'center' }}>
+                                    <span style={{ fontWeight: 700, fontFamily: 'JetBrains Mono, monospace', fontSize: '0.8125rem', color: '#ef4444' }}>
+                                        {fmtNum(u.metrics?.likes)}
+                                    </span>
+                                </td>
+                                <td style={{ textAlign: 'center' }}>
+                                    <span style={{ fontWeight: 700, fontFamily: 'JetBrains Mono, monospace', fontSize: '0.8125rem', color: '#f59e0b' }}>
+                                        {fmtNum(u.metrics?.comments)}
+                                    </span>
+                                </td>
+                                <td style={{ textAlign: 'center' }}>
+                                    <div style={{ display: 'flex', gap: '0.25rem', justifyContent: 'center' }}>
+                                        <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--color-text-3)' }}>
+                                            ↓{u.metrics?.radar_in || 0} · ↑{u.metrics?.radar_out || 0}
+                                        </span>
+                                    </div>
+                                </td>
+
+                                {/* Status */}
+                                <td>
+                                    {u.is_banned ? (
+                                        <span className="badge badge-danger">Banned</span>
+                                    ) : (
+                                        <span className="badge badge-success">Active</span>
+                                    )}
+                                </td>
+
+                                {/* Actions */}
+                                <td>
+                                    <div style={{ display: 'flex', gap: '0.375rem', justifyContent: 'flex-end' }}>
+                                        <button
+                                            onClick={() => toggleBan(u.id, u.is_banned)}
+                                            disabled={actionLoading === u.id + '_ban'}
+                                            className="btn btn-sm btn-icon"
+                                            style={{
+                                                background: u.is_banned ? 'var(--color-success-light)' : 'var(--color-danger-light)',
+                                                color: u.is_banned ? 'var(--color-success)' : 'var(--color-danger)',
+                                                border: `1px solid ${u.is_banned ? '#bbf7d0' : '#fecaca'}`,
+                                            }}
+                                            title={u.is_banned ? 'Unban user' : 'Ban user'}
+                                        >
+                                            {u.is_banned ? <UserCheck size={13} /> : <Ban size={13} />}
+                                        </button>
+
+                                        <button
+                                            onClick={() => setConfirmDelete(u.id)}
+                                            className="btn btn-sm btn-icon"
+                                            style={{
+                                                background: 'var(--color-danger-light)',
+                                                color: 'var(--color-danger)',
+                                                border: '1px solid #fecaca',
+                                            }}
+                                            title="Delete user permanently"
+                                        >
+                                            <Trash2 size={13} />
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+
+            {/* Delete Confirm Modal */}
+            {confirmDelete && (
+                <div className="modal-backdrop" onClick={() => setConfirmDelete(null)}>
+                    <div className="modal" style={{ maxWidth: '24rem' }} onClick={e => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <div>
+                                <p style={{ fontWeight: 800, fontFamily: 'Outfit, sans-serif', fontSize: '1rem', color: 'var(--color-danger)' }}>
+                                    Delete User
+                                </p>
+                                <p style={{ fontSize: '0.8125rem', color: 'var(--color-text-3)', marginTop: '0.375rem' }}>
+                                    This action is permanent and cannot be undone. All user data will be removed.
+                                </p>
+                            </div>
+                        </div>
+                        <div className="modal-footer">
+                            <button className="btn btn-secondary" onClick={() => setConfirmDelete(null)}>Cancel</button>
+                            <button className="btn btn-danger" onClick={() => deleteUser(confirmDelete)}>
+                                <Trash2 size={13} /> Delete Permanently
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            <style>{`
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
         </div>
     );
 }

@@ -2,6 +2,7 @@ import CustomCropper from '@/components/CustomCropper';
 import Colors from '@/constants/Colors';
 import { TALENTS, getTalentById } from '@/constants/Talents';
 import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/lib/supabase';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
@@ -42,7 +43,14 @@ export default function EditProfileScreen({ onClose, userProfile, onSave }: Edit
   const [fullName, setFullName] = useState(userProfile.fullName);
   const [bio, setBio] = useState(userProfile.bio || '');
   const [avatarUri, setAvatarUri] = useState(userProfile.avatarUri);
-  const [avatars, setAvatars] = useState(userProfile.avatars);
+  // Her zaman tam 3 slotlu array — eksik slotlar boş string ile doldurulur
+  const normalizeAvatars = (arr: string[]) => {
+    const result = [...arr];
+    while (result.length < 3) result.push('');
+    return result.slice(0, 3); // Maksimum 3
+  };
+
+  const [avatars, setAvatars] = useState(() => normalizeAvatars(userProfile.avatars));
 
   const dbTalents = (authState.userData?.talents || []).filter(Boolean);
   const initialTalents: string[] = dbTalents.length > 0 ? dbTalents : (userProfile.talents || []);
@@ -103,12 +111,64 @@ export default function EditProfileScreen({ onClose, userProfile, onSave }: Edit
     try {
       const skills = selectedTalents.map(id => getTalentById(id)?.name || '').filter(Boolean);
 
+      let finalAvatarUrl = avatarUri;
+      let finalAvatars = [...avatars];
+
       // ✅ SUPABASE'E KAYDET (bu eksikti!)
       if (authState.user) {
+
+        const { data: sessionData } = await supabase.auth.getSession();
+        const session = sessionData.session;
+        const uploadUrlBase = `${process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://mhgxrzejobmkuwylyelx.supabase.co'}/storage/v1/object/avatars/${authState.user.id}`;
+
+        // Upload new avatars in the array
+        for (let i = 0; i < finalAvatars.length; i++) {
+          const uri = finalAvatars[i];
+          if (uri && !uri.startsWith('http')) {
+            try {
+              const formData = new FormData();
+              const uniqueName = `avatar_${i}_${Date.now()}.jpg`;
+              formData.append('file', {
+                uri: uri,
+                name: uniqueName,
+                type: 'image/jpeg',
+              } as any);
+
+              const response = await fetch(`${uploadUrlBase}/${uniqueName}`, {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${session?.access_token}`,
+                },
+                body: formData as any,
+              });
+
+              if (response.ok) {
+                const resData: any = await response.json();
+                const pUrlNode = await (supabase as any).storage.from('avatars').getPublicUrl(resData.Key?.split('/').slice(1).join('/') || `${authState.user.id}/${uniqueName}`);
+                finalAvatars[i] = pUrlNode.data?.publicUrl || uri;
+
+                // If it's the first avatar (index 0), update finalAvatarUrl
+                if (i === 0) {
+                  finalAvatarUrl = pUrlNode.data?.publicUrl || uri;
+                }
+              } else {
+                console.error(`Avatar ${i} upload response not OK:`, await response.text());
+              }
+            } catch (uploadError) {
+              console.error(`Avatar ${i} upload error:`, uploadError);
+            }
+          }
+        }
+
+        // Boş slotları temizle (sadece gerçek URL'leri kaydet)
+        const cleanAvatars = finalAvatars.filter(u => u && u.length > 0);
+
         const { error } = await updateProfile({
           full_name: fullName.trim(),
           bio: bio.trim() || null,
           talents: selectedTalents,
+          avatar_url: finalAvatarUrl,
+          avatars: cleanAvatars,
         } as any);
         if (error) {
           Alert.alert('Hata', error);
@@ -118,10 +178,11 @@ export default function EditProfileScreen({ onClose, userProfile, onSave }: Edit
       }
 
       // Local state güncelle
-      setUserData({ fullName: fullName.trim(), talents: selectedTalents });
+      setUserData({ fullName: fullName.trim(), talents: selectedTalents, avatar_url: finalAvatarUrl } as any);
 
-      // Parent'a bildir
-      onSave({ fullName: fullName.trim(), bio: bio.trim(), avatarUri, avatars, skills, talents: selectedTalents });
+      // Boş slotları parent'a gönderme
+      const cleanAvatarsFinal = finalAvatars.filter(u => u && u.length > 0);
+      onSave({ fullName: fullName.trim(), bio: bio.trim(), avatarUri: finalAvatarUrl, avatars: cleanAvatarsFinal, skills, talents: selectedTalents });
       onClose();
     } catch (e) {
       Alert.alert('Hata', 'Profil kaydedilemedi');

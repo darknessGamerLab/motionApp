@@ -320,7 +320,7 @@ export default function SettingsScreen({ onBackPress, onEditProfile }: SettingsS
           />
         </View>
 
-        <Text style={styles.versionText}>Versiyon 2.0.1</Text>
+        <Text style={styles.versionText}>Versiyon 2.0.3</Text>
       </ScrollView>
 
       <CorporateUpgradeModal

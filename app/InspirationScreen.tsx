@@ -1,9 +1,11 @@
 import CommentsModal from '@/components/CommentsModal';
 import Colors from '@/constants/Colors';
+import { supabase } from '@/lib/supabase';
+import { VideoItem } from '@/types/video';
 import { formatNumber } from '@/utils/format';
 import { Ionicons } from '@expo/vector-icons';
-import { ResizeMode, Video } from 'expo-av';
 import * as Haptics from 'expo-haptics';
+import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import React, {
   useCallback,
@@ -23,7 +25,8 @@ import {
   TouchableOpacity,
   View
 } from 'react-native';
-import { VideoCard, VideoItem } from './HomeScreen';
+import { VideoCard } from './HomeScreen';
+
 
 const { width: W, height: H } = Dimensions.get('window');
 
@@ -34,30 +37,9 @@ const TILE_W = (W - GRID_GAP * (COLS - 1)) / COLS;
 const TILE_H = TILE_W * 1.4;
 const SPONSOR_ROW = 2; // Insert sponsor slider after this many grid rows (0-indexed)
 
-// ─── Sponsored Banner Data ───────────────────────────────────
-const FIRST_BANNERS = [
-  { id: 'sp1', image: 'https://picsum.photos/800/400?random=1', title: 'Yeni Sezon Koleksiyonu', brand: 'FashionBrand' },
-  { id: 'sp2', image: 'https://picsum.photos/800/400?random=2', title: 'Spor Ayakkabıda %40 İndirim', brand: 'SportMax' },
-  { id: 'sp3', image: 'https://picsum.photos/800/400?random=3', title: 'Teknoloji Festivali Başladı', brand: 'TechWorld' },
-  { id: 'sp4', image: 'https://picsum.photos/800/400?random=4', title: 'Yaz Tatili Fırsatları', brand: 'TravelGo' },
-  { id: 'sp5', image: 'https://picsum.photos/800/400?random=5', title: 'Organik Cilt Bakımı', brand: 'NatureSkin' },
-  { id: 'sp6', image: 'https://picsum.photos/800/400?random=6', title: 'Online Eğitimde Dev Kampanya', brand: 'LearnPlus' },
-  { id: 'sp7', image: 'https://picsum.photos/800/400?random=7', title: 'Akıllı Ev Sistemleri', brand: 'SmartHome' },
-];
+// ─── Sponsored Banner Seed ─────────────────────────────────────
+// Banner data now fetched from sponsor_banners table (see useEffect inside InspirationScreen)
 
-const SECONDARY_BANNERS = Array.from({ length: 25 }, (_, i) => ({
-  id: `sec-${i}`,
-  image: `https://picsum.photos/800/400?random=${i + 10}`,
-  title: `Özel Fırsat ${i + 1}`,
-  brand: `Brand ${i + 1}`
-}));
-
-const THIRD_BANNERS = Array.from({ length: 100 }, (_, i) => ({
-  id: `thd-${i}`,
-  image: `https://picsum.photos/800/400?random=${i + 40}`,
-  title: `Süper Kampanya ${i + 1}`,
-  brand: `GlobalBrand ${i + 1}`
-}));
 
 // ─── YouTube-style filter chips ──────────────────────────────
 const FILTERS = [
@@ -86,24 +68,27 @@ const GridTile = React.memo(({ item, onPress }: {
   item: VideoItem; onPress: () => void;
 }) => (
   <TouchableOpacity style={tc.tile} onPress={onPress} activeOpacity={0.9}>
-    <Video
-      source={{ uri: item.uri }}
+    {/* FIX: expo-image instead of expo-av Video — eliminates native video decoder per tile */}
+    {/* Each Video decoder = 5–15MB; 30 tiles = 150–450MB. expo-image uses shared cached memory */}
+    <Image
+      source={item.thumbnail_url || item.user.avatar || 'https://i.pravatar.cc/100'}
       style={StyleSheet.absoluteFill}
-      resizeMode={ResizeMode.COVER}
-      shouldPlay={false}
-      isMuted
-      pointerEvents="none"
-      posterSource={{ uri: item.user.avatar || 'https://i.pravatar.cc/100' }}
-      usePoster
+      contentFit="cover"
+      transition={200}
+      cachePolicy="memory-disk"
     />
+    {/* Play indicator overlay */}
+    <View style={tc.playOverlay} pointerEvents="none">
+      <Ionicons name="play" size={16} color="rgba(255,255,255,0.85)" />
+    </View>
     <LinearGradient
       colors={['transparent', 'rgba(0,0,0,0.5)']}
       style={tc.gradient}
       pointerEvents="none"
     />
     <View style={tc.viewCount}>
-      <Ionicons name="play" size={9} color="#fff" />
-      <Text style={tc.viewText}>{formatNumber(item.likes * 12)}</Text>
+      <Ionicons name="heart" size={9} color="#fff" />
+      <Text style={tc.viewText}>{formatNumber(item.likes)}</Text>
     </View>
   </TouchableOpacity>
 ));
@@ -118,6 +103,10 @@ const tc = StyleSheet.create({
   },
   gradient: {
     position: 'absolute', bottom: 0, left: 0, right: 0, height: 32,
+  },
+  playOverlay: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    alignItems: 'center', justifyContent: 'center',
   },
   viewCount: {
     position: 'absolute', bottom: 4, left: 5,
@@ -173,15 +162,12 @@ function BannerSlider({ data }: { data: any[] }) {
         })}
         renderItem={({ item }) => (
           <View style={sp.slide}>
-            <Video
-              source={{ uri: 'https://videos.pexels.com/video-files/3045163/3045163-uhd_2560_1440_25fps.mp4' }}
+            {/* FIX: expo-image instead of expo-av Video in banner slider — image is sufficient */}
+            <Image
+              source={item.image}
               style={[StyleSheet.absoluteFill, { width: W }]}
-              resizeMode={ResizeMode.COVER}
-              shouldPlay={false}
-              isMuted
-              posterSource={{ uri: item.image }}
-              usePoster
-              posterStyle={{ width: W, height: TILE_H, resizeMode: 'cover' }}
+              contentFit="cover"
+              cachePolicy="memory-disk"
             />
             <LinearGradient
               colors={['transparent', 'rgba(0,0,0,0.85)']}
@@ -276,7 +262,7 @@ function FullscreenPlayer({ visible, videos, startIndex, onClose, onVideoSaved, 
   const renderItem = useCallback(({ item, index }: { item: VideoItem; index: number }) => (
     <View style={{ height: videoH }}>
       <VideoCard
-        data={item} active={index === idx} height={videoH} preload={Math.abs(index - idx) <= 1}
+        data={item} active={index === idx} paused={false} height={videoH}
         onVideoSaved={onVideoSaved} onVideoLiked={onVideoLiked} onVideoCommented={onVideoCommented} isAuthenticated={true}
       />
     </View>
@@ -384,10 +370,33 @@ export default function InspirationScreen({
   const [playerVisible, setPlayerVisible] = useState(false);
   const [playerVideos, setPlayerVideos] = useState<VideoItem[]>([]);
   const [playerStart, setPlayerStart] = useState(0);
+  // Real sponsor banners from DB
+  const [dbBanners, setDbBanners] = useState<any[]>([]);
+
+  // Fetch sponsor banners from DB on mount
+  useEffect(() => {
+    (supabase as any).from('sponsor_banners')
+      .select('id, title, subtitle, image_url, brand, cta_text, target_url, is_active')
+      .eq('is_active', true)
+      .order('display_order', { ascending: true })
+      .then(({ data }: any) => {
+        if (data && data.length > 0) {
+          setDbBanners(data.map((b: any) => ({
+            id: b.id,
+            image: b.image_url,
+            title: b.title,
+            brand: b.brand || b.subtitle || '',
+          })));
+        }
+      });
+  }, []);
+
+  const secondaryBanners = useMemo(() => dbBanners.slice(0, 10), [dbBanners]);
+  const thirdBanners = useMemo(() => dbBanners.slice(10), [dbBanners]);
 
   const allVideos = useMemo(() => {
-    let list = videos.length > 3 ? [...videos, ...MOCK] : [...MOCK];
-    list = list.sort((a, b) => a.id.localeCompare(b.id));
+    // Use only real videos from parent feed — no mock fallback
+    let list = [...videos];
 
     // Filter by chip
     if (filter !== 'all') {
@@ -479,7 +488,7 @@ export default function InspirationScreen({
           </Text>
         </View>
       ) : (
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 0 }}>
+        <ScrollView showsVerticalScrollIndicator={false} bounces={false} overScrollMode="never" contentContainerStyle={{ padding: 0 }}>
           {rows.map((row, ri) => (
             <React.Fragment key={`frag-${ri}`}>
               <View style={s.gridRow}>
@@ -494,9 +503,9 @@ export default function InspirationScreen({
                   <View key={`empty-${i}`} style={{ width: TILE_W, height: TILE_H }} />
                 ))}
               </View>
-              {ri === SPONSOR_ROW && <BannerSlider data={FIRST_BANNERS} />}
-              {ri === SPONSOR_ROW + 5 && <BannerSlider data={SECONDARY_BANNERS} />}
-              {ri === SPONSOR_ROW + 13 && <BannerSlider data={THIRD_BANNERS} />}
+              {ri === SPONSOR_ROW && <BannerSlider data={dbBanners.slice(0, 7)} />}
+              {ri === SPONSOR_ROW + 5 && <BannerSlider data={secondaryBanners} />}
+              {ri === SPONSOR_ROW + 13 && <BannerSlider data={thirdBanners} />}
             </React.Fragment>
           ))}
         </ScrollView>

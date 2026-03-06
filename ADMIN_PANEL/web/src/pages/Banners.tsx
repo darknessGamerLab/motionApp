@@ -1,208 +1,291 @@
-import axios from 'axios';
-import { ExternalLink, Image as ImageIcon, MonitorPlay, Plus, Trash2 } from 'lucide-react';
-import React, { useEffect, useState } from 'react';
+import api from '../lib/api';
+import { BarChart2, Eye, Image as ImageIcon, MousePointer, PauseCircle, PlayCircle, Plus, RefreshCw, Trash2, X } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 
-interface Banner {
-    id: string;
-    title: string;
-    brand: string;
-    image_url: string;
-    target_url: string | null;
-    slider_pos: number;
-    is_active: boolean;
-    clicks: number;
-    views: number;
-}
+
+const fmtNum = (n: any) => n >= 1000 ? (n / 1000).toFixed(1) + 'K' : String(n ?? 0);
+const pct = (a: number, b: number) => b > 0 ? ((a / b) * 100).toFixed(1) + '%' : '0%';
+
+const EMPTY_BANNER = {
+    title: '', brand_name: '', image_url: '', link_url: '',
+    is_active: true, slider_pos: 1, index_visible: true,
+};
 
 export default function Banners() {
-    const [banners, setBanners] = useState<Banner[]>([]);
+    const [banners, setBanners] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
-    const [showAddModal, setShowAddModal] = useState(false);
-    const [newBanner, setNewBanner] = useState({
-        title: '',
-        brand: '',
-        image_url: '',
-        target_url: '',
-        slider_pos: 1
-    });
+    const [showForm, setShowForm] = useState(false);
+    const [form, setForm] = useState(EMPTY_BANNER);
+    const [editingId, setEditingId] = useState<string | null>(null);
+    const [confirmDelete, setConfirmDelete] = useState<any>(null);
 
-    const fetchBanners = async () => {
+    const load = async () => {
+        setLoading(true);
         try {
-            setLoading(true);
-            const res = await axios.get('http://localhost:5000/api/banners');
-            setBanners(res.data);
-        } catch (err) {
-            console.error('Bannerlar çekilemedi:', err);
-        } finally {
-            setLoading(false);
-        }
+            const { data } = await api.get(`/api/banners`);
+            setBanners(data);
+        } catch (e) { console.error(e); } finally { setLoading(false); }
     };
 
-    useEffect(() => {
-        fetchBanners();
-    }, []);
+    useEffect(() => { load(); }, []);
 
-    const handleAddBanner = async (e: React.FormEvent) => {
-        e.preventDefault();
-        try {
-            await axios.post('http://localhost:5000/api/banners', newBanner);
-            setShowAddModal(false);
-            setNewBanner({ title: '', brand: '', image_url: '', target_url: '', slider_pos: 1 });
-            fetchBanners();
-        } catch (err) {
-            alert('Banner eklenemedi!');
+    const save = async () => {
+        if (editingId) {
+            // State-first update
+            setBanners(prev => prev.map(b => b.id === editingId ? { ...b, ...form } : b));
+            try { await api.put(`/api/banners/${editingId}`, form); }
+            catch { load(); }
+        } else {
+            const { data } = await api.post(`/api/banners`, form);
+            setBanners(prev => [data, ...prev]);
         }
+        setShowForm(false);
+        setEditingId(null);
+        setForm(EMPTY_BANNER);
     };
 
-    const handleDelete = async (id: string) => {
-        if (!confirm('Bu reklamı silmek istediğinize emin misiniz?')) return;
-        try {
-            await axios.delete(`http://localhost:5000/api/banners/${id}`);
-            setBanners(prev => prev.filter(b => b.id !== id));
-        } catch (err) {
-            alert('Silme işlemi başarısız!');
-        }
+    const toggleActive = async (id: string, isActive: boolean) => {
+        setBanners(prev => prev.map(b => b.id === id ? { ...b, is_active: !isActive } : b));
+        try { await api.put(`/api/banners/${id}`, { is_active: !isActive }); }
+        catch { load(); }
     };
+
+    const del = async (id: string) => {
+        setBanners(prev => prev.filter(b => b.id !== id));
+        setConfirmDelete(null);
+        try { await api.delete(`/api/banners/${id}`); } catch { load(); }
+    };
+
+    const startEdit = (b: any) => {
+        setForm({
+            title: b.title || '',
+            brand_name: b.brand_name || '',
+            image_url: b.image_url || '',
+            link_url: b.link_url || '',
+            is_active: b.is_active ?? true,
+            slider_pos: b.slider_pos || 1,
+            index_visible: b.index_visible ?? true,
+        });
+        setEditingId(b.id);
+        setShowForm(true);
+    };
+
+    const totalCtrl = useMemo(() => ({
+        impressions: banners.reduce((a, b) => a + (b.views || 0), 0),
+        clicks: banners.reduce((a, b) => a + (b.clicks || 0), 0),
+        idx_views: banners.reduce((a, b) => a + (b.index_views || 0), 0),
+    }), [banners]);
 
     return (
-        <div className="space-y-6">
-            <div className="flex justify-between items-center">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', animation: 'fadeIn 0.4s ease' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
                 <div>
-                    <h2 className="text-2xl font-bold text-slate-800">Banner & Reklam Yönetimi</h2>
-                    <p className="text-slate-500">Uygulama içindeki 3 farklı slider alanını yönetin.</p>
+                    <h2 className="page-title">Sponsorships</h2>
+                    <p style={{ fontSize: '0.8125rem', color: 'var(--color-text-3)', marginTop: '0.25rem' }}>
+                        {banners.length} campaigns · {banners.filter(b => b.is_active).length} active
+                    </p>
                 </div>
-                <button
-                    onClick={() => setShowAddModal(true)}
-                    className="bg-primary hover:bg-opacity-90 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-all shadow-md shadow-primary/20"
-                >
-                    <Plus size={20} />
-                    Yeni Reklam Ekle
-                </button>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <button className="btn btn-secondary btn-sm" onClick={load}><RefreshCw size={13} /></button>
+                    <button className="btn btn-primary btn-sm" onClick={() => { setShowForm(true); setEditingId(null); setForm(EMPTY_BANNER); }}>
+                        <Plus size={13} /> New Campaign
+                    </button>
+                </div>
             </div>
 
+            {/* Platform totals */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem' }}>
+                {[
+                    { label: 'Banner Impressions', value: fmtNum(totalCtrl.impressions), icon: Eye, color: '#2563eb', bg: 'var(--color-primary-light)' },
+                    { label: 'Index Views', value: fmtNum(totalCtrl.idx_views), icon: BarChart2, color: '#8b5cf6', bg: '#f5f3ff' },
+                    { label: 'Total Clicks', value: fmtNum(totalCtrl.clicks), icon: MousePointer, color: '#10b981', bg: '#f0fdf4' },
+                ].map((s, i) => (
+                    <div key={i} className="stat-card" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                        <div className="stat-icon" style={{ background: s.bg }}>
+                            <s.icon size={18} style={{ color: s.color }} />
+                        </div>
+                        <div>
+                            <p className="stat-value" style={{ fontSize: '1.25rem' }}>{s.value}</p>
+                            <p className="stat-label">{s.label}</p>
+                        </div>
+                    </div>
+                ))}
+            </div>
+
+            {/* Banner Grid */}
             {loading ? (
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 animate-pulse">
-                    {[1, 2, 3].map(i => <div key={i} className="h-64 bg-slate-200 rounded-xl"></div>)}
-                </div>
+                <div className="empty-state"><ImageIcon size={32} /><p>Loading campaigns...</p></div>
             ) : banners.length === 0 ? (
-                <div className="text-center py-20 bg-white border-2 border-dashed border-slate-200 rounded-2xl">
-                    <ImageIcon className="mx-auto h-12 w-12 text-slate-300 mb-4" />
-                    <h3 className="text-lg font-medium text-slate-900">Henüz Reklam Yok</h3>
-                    <p className="text-slate-500">İlk reklam kampanyanızı oluşturmak için yukarıdaki butonu kullanın.</p>
-                </div>
+                <div className="empty-state"><ImageIcon size={40} /><p>No campaigns yet. Create your first one.</p></div>
             ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {banners.map(banner => (
-                        <div key={banner.id} className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow group">
-                            <div className="relative h-40 bg-slate-100">
-                                <img src={banner.image_url} alt={banner.title} className="w-full h-full object-cover" />
-                                <div className="absolute top-2 right-2 bg-black/50 backdrop-blur-md text-white text-xs px-2 py-1 rounded-md">
-                                    Slider {banner.slider_pos}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: '1rem' }}>
+                    {banners.map(b => {
+                        const ctr = pct(b.clicks || 0, b.views || 0);
+                        const idxCtr = pct(b.clicks || 0, b.index_views || 0);
+                        return (
+                            <div key={b.id} className="card" style={{ overflow: 'hidden', transition: 'all 0.2s' }}>
+                                {/* Image */}
+                                <div style={{ height: '8rem', background: '#0f172a', position: 'relative', overflow: 'hidden' }}>
+                                    {b.image_url ? (
+                                        <img src={b.image_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: b.is_active ? 1 : 0.4 }} />
+                                    ) : (
+                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
+                                            <ImageIcon size={32} style={{ color: '#334155' }} />
+                                        </div>
+                                    )}
+                                    <div style={{
+                                        position: 'absolute', top: '0.5rem', left: '0.5rem',
+                                        background: b.is_active ? 'rgba(16,185,129,0.9)' : 'rgba(239,68,68,0.9)',
+                                        color: 'white', fontSize: '0.625rem', fontWeight: 800,
+                                        padding: '0.2rem 0.5rem', borderRadius: '999px', textTransform: 'uppercase', letterSpacing: '0.05em',
+                                    }}>
+                                        {b.is_active ? 'LIVE' : 'PAUSED'}
+                                    </div>
+                                    <div style={{
+                                        position: 'absolute', top: '0.5rem', right: '0.5rem',
+                                        background: 'rgba(15,23,42,0.7)', color: 'white',
+                                        fontSize: '0.625rem', fontWeight: 700, padding: '0.2rem 0.5rem',
+                                        borderRadius: '999px',
+                                    }}>
+                                        #{b.slider_pos}
+                                    </div>
+                                </div>
+
+                                {/* Info */}
+                                <div style={{ padding: '1rem' }}>
+                                    <p style={{ fontWeight: 700, fontFamily: 'Outfit, sans-serif', fontSize: '0.9375rem', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
+                                        {b.title || '(no title)'}
+                                    </p>
+                                    <p style={{ fontSize: '0.75rem', color: 'var(--color-text-3)', marginTop: '0.125rem' }}>{b.brand_name || '—'}</p>
+
+                                    {/* Metrics */}
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.5rem', marginTop: '0.875rem' }}>
+                                        {[
+                                            { label: 'Views', value: fmtNum(b.views || 0) },
+                                            { label: 'Idx Views', value: fmtNum(b.index_views || 0) },
+                                            { label: 'Clicks', value: fmtNum(b.clicks || 0) },
+                                        ].map((m, i) => (
+                                            <div key={i} style={{ textAlign: 'center', padding: '0.375rem', background: 'var(--color-surface-2)', borderRadius: '0.5rem' }}>
+                                                <p style={{ fontWeight: 800, fontFamily: 'JetBrains Mono, monospace', fontSize: '0.875rem' }}>{m.value}</p>
+                                                <p style={{ fontSize: '0.5625rem', textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--color-text-3)', fontWeight: 700, marginTop: '0.125rem' }}>{m.label}</p>
+                                            </div>
+                                        ))}
+                                    </div>
+
+                                    {/* CTR Row */}
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.625rem', padding: '0.375rem 0', borderTop: '1px solid var(--color-border-2)' }}>
+                                        <span style={{ fontSize: '0.6875rem', color: 'var(--color-text-3)' }}>Banner CTR: <strong style={{ color: 'var(--color-text)' }}>{ctr}</strong></span>
+                                        <span style={{ fontSize: '0.6875rem', color: 'var(--color-text-3)' }}>Index CTR: <strong style={{ color: 'var(--color-text)' }}>{idxCtr}</strong></span>
+                                    </div>
+
+                                    {/* Actions */}
+                                    <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem' }}>
+                                        <button
+                                            onClick={() => toggleActive(b.id, b.is_active)}
+                                            className="btn btn-sm"
+                                            style={{
+                                                flex: 1,
+                                                background: b.is_active ? 'var(--color-warning-light)' : 'var(--color-success-light)',
+                                                color: b.is_active ? 'var(--color-warning)' : 'var(--color-success)',
+                                                border: `1px solid ${b.is_active ? '#fde68a' : '#bbf7d0'}`,
+                                            }}
+                                        >
+                                            {b.is_active ? <PauseCircle size={13} /> : <PlayCircle size={13} />}
+                                            {b.is_active ? 'Pause' : 'Activate'}
+                                        </button>
+                                        <button onClick={() => startEdit(b)} className="btn btn-secondary btn-sm" style={{ flex: 1 }}>
+                                            Edit
+                                        </button>
+                                        <button
+                                            onClick={() => setConfirmDelete(b)}
+                                            className="btn btn-sm btn-icon"
+                                            style={{ background: 'var(--color-danger-light)', color: 'var(--color-danger)', border: '1px solid #fecaca' }}
+                                        >
+                                            <Trash2 size={13} />
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
-                            <div className="p-4">
-                                <div className="flex justify-between items-start mb-2">
-                                    <div>
-                                        <span className="text-[10px] font-bold text-primary uppercase tracking-wider">{banner.brand}</span>
-                                        <h3 className="font-semibold text-slate-800 line-clamp-1">{banner.title}</h3>
-                                    </div>
-                                    <button
-                                        onClick={() => handleDelete(banner.id)}
-                                        className="text-slate-400 hover:text-red-500 transition-colors p-1"
-                                    >
-                                        <Trash2 size={18} />
-                                    </button>
+                        );
+                    })}
+                </div>
+            )}
+
+            {/* Create/Edit Modal */}
+            {showForm && (
+                <div className="modal-backdrop" onClick={() => setShowForm(false)}>
+                    <div className="modal" onClick={e => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <p style={{ fontWeight: 800, fontFamily: 'Outfit, sans-serif', fontSize: '1.125rem' }}>
+                                {editingId ? 'Edit Campaign' : 'New Campaign'}
+                            </p>
+                            <button onClick={() => setShowForm(false)} className="btn btn-secondary btn-sm btn-icon">
+                                <X size={14} />
+                            </button>
+                        </div>
+                        <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                            {[
+                                { key: 'title', label: 'Campaign Title' },
+                                { key: 'brand_name', label: 'Brand Name' },
+                                { key: 'image_url', label: 'Image URL' },
+                                { key: 'link_url', label: 'Destination URL' },
+                            ].map(f => (
+                                <div key={f.key}>
+                                    <label className="form-label">{f.label}</label>
+                                    <input
+                                        className="form-input"
+                                        value={(form as any)[f.key]}
+                                        onChange={e => setForm(prev => ({ ...prev, [f.key]: e.target.value }))}
+                                    />
                                 </div>
-                                <div className="flex items-center gap-4 mt-4 text-xs text-slate-500 border-t pt-4">
-                                    <div className="flex items-center gap-1">
-                                        <MonitorPlay size={14} />
-                                        <span>{banner.views} Gösterim</span>
-                                    </div>
-                                    <div className="flex items-center gap-1">
-                                        <ExternalLink size={14} />
-                                        <span>{banner.clicks} Tıklama</span>
+                            ))}
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                                <div>
+                                    <label className="form-label">Slider Position</label>
+                                    <input type="number" className="form-input" min={1} value={form.slider_pos}
+                                        onChange={e => setForm(prev => ({ ...prev, slider_pos: parseInt(e.target.value) }))} />
+                                </div>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                    <label className="form-label">Visibility</label>
+                                    <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', marginTop: '0.25rem' }}>
+                                        <label style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', fontSize: '0.8125rem', cursor: 'pointer' }}>
+                                            <input type="checkbox" checked={form.is_active} onChange={e => setForm(prev => ({ ...prev, is_active: e.target.checked }))} />
+                                            Active
+                                        </label>
+                                        <label style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', fontSize: '0.8125rem', cursor: 'pointer' }}>
+                                            <input type="checkbox" checked={form.index_visible} onChange={e => setForm(prev => ({ ...prev, index_visible: e.target.checked }))} />
+                                            Index
+                                        </label>
                                     </div>
                                 </div>
                             </div>
                         </div>
-                    ))}
+                        <div className="modal-footer">
+                            <button className="btn btn-secondary" onClick={() => setShowForm(false)}>Cancel</button>
+                            <button className="btn btn-primary" onClick={save}>
+                                {editingId ? 'Save Changes' : 'Create Campaign'}
+                            </button>
+                        </div>
+                    </div>
                 </div>
             )}
 
-            {/* Add Modal */}
-            {showAddModal && (
-                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                    <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl animate-in fade-in zoom-in duration-200">
-                        <h3 className="text-xl font-bold text-slate-900 mb-4">Yeni Reklam Kampanyası</h3>
-                        <form onSubmit={handleAddBanner} className="space-y-4">
+            {/* Delete Modal */}
+            {confirmDelete && (
+                <div className="modal-backdrop" onClick={() => setConfirmDelete(null)}>
+                    <div className="modal" style={{ maxWidth: '24rem' }} onClick={e => e.stopPropagation()}>
+                        <div className="modal-header">
                             <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">Marka Adı</label>
-                                <input
-                                    type="text" required
-                                    placeholder="Örn: Nike, Redbull"
-                                    className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
-                                    value={newBanner.brand}
-                                    onChange={e => setNewBanner({ ...newBanner, brand: e.target.value })}
-                                />
+                                <p style={{ fontWeight: 800, fontSize: '1rem', color: 'var(--color-danger)', fontFamily: 'Outfit, sans-serif' }}>Delete Campaign</p>
+                                <p style={{ fontSize: '0.8125rem', color: 'var(--color-text-3)', marginTop: '0.375rem' }}>
+                                    "{confirmDelete.title}" will be permanently removed.
+                                </p>
                             </div>
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">Reklam Başlığı</label>
-                                <input
-                                    type="text" required
-                                    placeholder="Örn: Sınırlarını Zorla"
-                                    className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
-                                    value={newBanner.title}
-                                    onChange={e => setNewBanner({ ...newBanner, title: e.target.value })}
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">Görsel / Video URL</label>
-                                <input
-                                    type="url" required
-                                    placeholder="https://..."
-                                    className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
-                                    value={newBanner.image_url}
-                                    onChange={e => setNewBanner({ ...newBanner, image_url: e.target.value })}
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">Hedef Link (Opsiyonel)</label>
-                                <input
-                                    type="url"
-                                    placeholder="https://..."
-                                    className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
-                                    value={newBanner.target_url}
-                                    onChange={e => setNewBanner({ ...newBanner, target_url: e.target.value })}
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">Yayınlanacak Alan</label>
-                                <select
-                                    className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
-                                    value={newBanner.slider_pos}
-                                    onChange={e => setNewBanner({ ...newBanner, slider_pos: parseInt(e.target.value) })}
-                                >
-                                    <option value={1}>1. Ana Banner (Giriş)</option>
-                                    <option value={2}>2. Orta Banner (25'li)</option>
-                                    <option value={13}>3. Alt Banner (100'lü)</option>
-                                </select>
-                            </div>
-                            <div className="flex gap-3 mt-6">
-                                <button
-                                    type="button"
-                                    onClick={() => setShowAddModal(false)}
-                                    className="flex-1 px-4 py-2 border border-slate-200 text-slate-600 rounded-lg hover:bg-slate-50 transition-colors"
-                                >
-                                    Vazgeç
-                                </button>
-                                <button
-                                    type="submit"
-                                    className="flex-1 px-4 py-2 bg-primary text-white rounded-lg hover:bg-opacity-90 shadow-lg shadow-primary/20 transition-all font-semibold"
-                                >
-                                    Kampanyayı Başlat
-                                </button>
-                            </div>
-                        </form>
+                        </div>
+                        <div className="modal-footer">
+                            <button className="btn btn-secondary" onClick={() => setConfirmDelete(null)}>Cancel</button>
+                            <button className="btn btn-danger" onClick={() => del(confirmDelete.id)}>Delete</button>
+                        </div>
                     </div>
                 </div>
             )}

@@ -1,10 +1,25 @@
+/**
+ * app/index.tsx — Ana layout ve tab navigasyonu
+ *
+ * Sadece şunları yönetir:
+ *   • Tab navigasyonu (5 tab)
+ *   • Profil state (authState'ten türetme)
+ *   • Video feed → useFeed hook'una delege edildi
+ *   • Fullscreen ekran geçişleri (CreateScreen, UserProfileScreen)
+ *   • Upload progress banner
+ *
+ * Daha önce ~660 satırdı; video fetch, realtime, optimistic updates
+ * hooks/useFeed.ts'e taşınarak bu dosya ~280 satıra indi.
+ */
+
 import GuestAuthModal from '@/components/GuestAuthModal';
 import Colors from '@/constants/Colors';
 import { getTalentById } from '@/constants/Talents';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/lib/supabase';
+import { useFeed } from '@/hooks/useFeed';
 import { Ionicons } from '@expo/vector-icons';
-import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import { Image } from 'expo-image';
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Platform,
   StatusBar,
@@ -23,58 +38,72 @@ import NotificationsScreen from './NotificationsScreen';
 import UserProfileScreen from './UserProfileScreen';
 
 const ACCENT = Colors.primary;
-const NAV_H = 52; // Navbar içeriği
+const NAV_H = 52;
 
-// ─── Tab Button ────────────────────────────────────────────────────
-const TabBtn = memo(({ icon, active, onPress, isCreate, badge }: {
+// ─── Tab Button ──────────────────────────────────────────────────────
+const TabBtn = memo(({ icon, active, onPress, isCreate, badge, avatar }: {
   icon: string;
   active: boolean;
   onPress: () => void;
   isCreate?: boolean;
   badge?: number;
+  avatar?: string | null;
 }) => (
   <TouchableOpacity style={styles.tabBtn} onPress={onPress} activeOpacity={0.7}>
     {isCreate ? (
       <View style={styles.createBtn}>
         <Ionicons name="add" size={20} color="#fff" />
       </View>
+    ) : avatar ? (
+      <View style={[styles.tabIconWrap, active && styles.tabAvatarActive]}>
+        <Image source={{ uri: avatar }} style={styles.tabAvatar} contentFit="cover" cachePolicy="memory-disk" />
+        {!!badge && <View style={styles.badge}><Text style={styles.badgeText}>{badge > 9 ? '9+' : badge}</Text></View>}
+      </View>
     ) : (
       <View style={styles.tabIconWrap}>
-        <Ionicons
-          name={icon as any}
-          size={24}
-          color={active ? ACCENT : Colors.textMuted}
-        />
-        {!!badge && (
-          <View style={styles.badge}>
-            <Text style={styles.badgeText}>{badge > 9 ? '9+' : badge}</Text>
-          </View>
-        )}
+        <Ionicons name={icon as any} size={24} color={active ? ACCENT : Colors.textMuted} />
+        {!!badge && <View style={styles.badge}><Text style={styles.badgeText}>{badge > 9 ? '9+' : badge}</Text></View>}
       </View>
     )}
   </TouchableOpacity>
 ));
 
-// ─── Tab Screen ─────────────────────────────────────────────────────
-const TabScreen = memo(({ visible, children }: { visible: boolean; children: React.ReactNode }) => (
-  <View style={[styles.screen, !visible && styles.hidden]}>
-    {children}
-  </View>
-));
+// ─── Lazy Tab Screen ─────────────────────────────────────────────────
+// Renders nothing until first visited, then keeps alive hidden
+const LazyTabScreen = memo(({ visible, children }: { visible: boolean; children: React.ReactNode }) => {
+  const hasBeenVisible = useRef(false);
+  if (visible) hasBeenVisible.current = true;
+  if (!hasBeenVisible.current) return null;
+  return <View style={[styles.screen, !visible && styles.hidden]}>{children}</View>;
+});
 
-// ─── Video data ─────────────────────────────────────────────────────
-const INITIAL_VIDEOS = [
-  { id: '1', uri: 'https://videos.pexels.com/video-files/3195394/3195394-uhd_2560_1440_25fps.mp4', user: { id: 'u1', username: 'ahmetyilmaz', avatar: 'https://i.pravatar.cc/100?img=1' }, description: 'Son maçtan kareler! ⚽🔥', topic: '#futbol', likes: 12500, comments: 234, shares: 89, isLiked: false, isSaved: false },
-  { id: '2', uri: 'https://videos.pexels.com/video-files/3045163/3045163-uhd_2560_1440_25fps.mp4', user: { id: 'u2', username: 'ayseozturk', avatar: 'https://i.pravatar.cc/100?img=5' }, description: 'Yeni şarkım çıktı! 🎵🎤', topic: '#müzik', likes: 34200, comments: 567, shares: 234, isLiked: true, isSaved: false },
-  { id: '3', uri: 'https://videos.pexels.com/video-files/2491284/2491284-uhd_2560_1440_25fps.mp4', user: { id: 'u3', username: 'mehmetkaya', avatar: 'https://i.pravatar.cc/100?img=12' }, description: 'Bugünün antrenmanı 💪', topic: '#fitness', likes: 8900, comments: 145, shares: 67, isLiked: false, isSaved: true },
-  { id: '4', uri: 'https://videos.pexels.com/video-files/2495382/2495382-uhd_2560_1440_25fps.mp4', user: { id: 'u4', username: 'zeynepdemir', avatar: 'https://i.pravatar.cc/100?img=9' }, description: 'İstanbul\'dan manzaralar 🏙️', topic: '#seyahat', likes: 15600, comments: 312, shares: 123, isLiked: false, isSaved: false },
-  { id: '5', uri: 'https://videos.pexels.com/video-files/3045163/3045163-uhd_2560_1440_25fps.mp4', user: { id: 'u5', username: 'emrecetin', avatar: 'https://i.pravatar.cc/100?img=15' }, description: 'Komik anlar 😂', topic: '#komedi', likes: 27800, comments: 890, shares: 456, isLiked: true, isSaved: false },
-  { id: '6', uri: 'https://videos.pexels.com/video-files/2495382/2495382-uhd_2560_1440_25fps.mp4', user: { id: 'u6', username: 'elifaksoy', avatar: 'https://i.pravatar.cc/100?img=20' }, description: 'Yeni koleksiyonumuz ✨', topic: '#moda', likes: 18900, comments: 423, shares: 189, isLiked: false, isSaved: true },
-  { id: '7', uri: 'https://videos.pexels.com/video-files/3195394/3195394-uhd_2560_1440_25fps.mp4', user: { id: 'u7', username: 'canarslan', avatar: 'https://i.pravatar.cc/100?img=25' }, description: 'Son teknoloji ürünleri 🚀', topic: '#teknoloji', likes: 11200, comments: 278, shares: 98, isLiked: false, isSaved: false },
-  { id: '8', uri: 'https://videos.pexels.com/video-files/2491284/2491284-uhd_2560_1440_25fps.mp4', user: { id: 'u8', username: 'sedaaslan', avatar: 'https://i.pravatar.cc/100?img=30' }, description: 'Yeni tarifim 🍰', topic: '#yemek', likes: 23400, comments: 567, shares: 234, isLiked: true, isSaved: false },
-  { id: '9', uri: 'https://videos.pexels.com/video-files/3045163/3045163-uhd_2560_1440_25fps.mp4', user: { id: 'u9', username: 'burakyildiz', avatar: 'https://i.pravatar.cc/100?img=35' }, description: 'Dans performansı 💃', topic: '#dans', likes: 16700, comments: 389, shares: 156, isLiked: false, isSaved: true },
-  { id: '10', uri: 'https://videos.pexels.com/video-files/2495382/2495382-uhd_2560_1440_25fps.mp4', user: { id: 'u10', username: 'denizyilmaz', avatar: 'https://i.pravatar.cc/100?img=40' }, description: 'Çizim sürecim 🎨', topic: '#sanat', likes: 9800, comments: 198, shares: 78, isLiked: false, isSaved: false },
-];
+// ─── Profile builder helper ───────────────────────────────────────────
+function buildProfile(authState: any) {
+  const p = authState.profile as any;
+  const talentIds = authState.userData?.talents || [];
+  const skills = talentIds.map((id: string) => getTalentById(id)?.name || '').filter(Boolean);
+  const avatarFallback = p?.username
+    ? `https://ui-avatars.com/api/?name=${encodeURIComponent(p.username)}&background=random&size=300`
+    : 'https://ui-avatars.com/api/?name=U&background=888&color=fff&size=300';
+  return {
+    id: p?.id || 'current',
+    username: p?.username || authState.userData?.username || 'kullanici',
+    fullName: p?.full_name || authState.userData?.fullName || 'Kullanıcı',
+    bio: p?.bio || 'Merhaba! 👋',
+    avatarUri: p?.avatar_url || avatarFallback,
+    avatars: p?.avatars?.length > 0 ? p.avatars : p?.avatar_url ? [p.avatar_url] : [avatarFallback],
+    avatar: p?.avatar_url || avatarFallback,
+    skills: skills.length > 0 ? skills : [],
+    talents: talentIds,
+    following: p?.following_count ?? 0,
+    followers: p?.followers_count ?? 0,
+    videos: p?.videos_count ?? 0,
+    radarsCount: p?.radars_count ?? 0,
+    user_type: p?.user_type,
+    tax_office: p?.tax_office,
+    tax_number: p?.tax_number,
+  };
+}
 
 // ─── Main Layout ─────────────────────────────────────────────────────
 export default function MainLayout() {
@@ -84,21 +113,55 @@ export default function MainLayout() {
   const [userProfileOpen, setUserProfileOpen] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [homeRefreshKey, setHomeRefreshKey] = useState(0);
-  const [videos, setVideos] = useState(INITIAL_VIDEOS);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [guestModal, setGuestModal] = useState<{
     visible: boolean;
     action: 'like' | 'comment' | 'save' | 'follow' | 'create' | 'general';
   }>({ visible: false, action: 'general' });
-  const [uploadProgress, setUploadProgress] = useState<number | null>(null); // null = hidden
 
   const isAuth = authState.isAuthenticated;
-
+  const userId = authState.user?.id;
   const navbarHeight = NAV_H + insets.bottom;
 
-  if (Platform.OS === 'android') {
-    StatusBar.setBackgroundColor(Colors.surface);
-    StatusBar.setBarStyle('dark-content');
-  }
+  // ─── Feed state — delegated to useFeed hook ──────────────────────────
+  const feed = useFeed({ userId, isAuth });
+
+  // ─── Profile state ───────────────────────────────────────────────────
+  const initialProfile = useMemo(() => buildProfile(authState), [authState.userData, authState.profile]);
+  const [profile, setProfile] = useState(initialProfile);
+
+  useEffect(() => {
+    if (authState.profile) setProfile(buildProfile(authState));
+  }, [authState.profile]);
+
+  // ─── Status bar ──────────────────────────────────────────────────────
+  useEffect(() => {
+    if (Platform.OS === 'android') {
+      StatusBar.setBackgroundColor(Colors.surface);
+      StatusBar.setBarStyle('dark-content');
+    }
+  }, []);
+
+  // ─── Navigation helpers ──────────────────────────────────────────────
+  const openProfile = useCallback((uid: string) => {
+    if (uid === authState.user?.id || uid === profile.id) { setTab(4); return; }
+    setSelectedUserId(uid);
+    setUserProfileOpen(true);
+  }, [authState.user?.id, profile.id]);
+
+  const closeProfile = useCallback(() => {
+    setUserProfileOpen(false);
+    setSelectedUserId(null);
+  }, []);
+
+  const handleHomePress = useCallback(() => {
+    if (tab === 0 && !userProfileOpen) {
+      feed.fetchVideos(0);
+      setHomeRefreshKey(k => k + 1);
+    } else {
+      setTab(0);
+    }
+  }, [tab, userProfileOpen, feed.fetchVideos]);
 
   const requireAuthTab = useCallback((
     action: 'like' | 'comment' | 'save' | 'follow' | 'create' | 'general',
@@ -108,68 +171,8 @@ export default function MainLayout() {
     onAuth();
   }, [isAuth]);
 
-  const handleHomePress = useCallback(() => {
-    if (tab === 0 && !userProfileOpen) {
-      setVideos(prev => [...prev].sort(() => Math.random() - 0.5));
-      setHomeRefreshKey(k => k + 1);
-    } else {
-      setTab(0);
-    }
-  }, [tab, userProfileOpen]);
-
-  // Realtime Stats Sync
-  useEffect(() => {
-    const channel = supabase.channel('global-sync')
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'videos' }, (payload: any) => {
-        // Only update if the change didn't come from us (optional heuristic, here we filter for different count)
-        setVideos(prev => prev.map(v => {
-          if (v.id === payload.new.id) {
-            // Only update if external counter is significantly different or we aren't in high-frequency mode
-            return {
-              ...v,
-              likes: payload.new.likes_count,
-              comments: payload.new.comments_count,
-              shares: payload.new.shares_count
-            };
-          }
-          return v;
-        }));
-      })
-      .subscribe();
-
-    return () => { supabase.removeChannel(channel); };
-  }, []);
-
-  const loadMoreVideos = useCallback(() => {
-    setVideos(prev => [...prev, ...INITIAL_VIDEOS.sort(() => Math.random() - 0.5)]);
-  }, []);
-
-  const initialProfile = useMemo(() => {
-    const talentIds = authState.userData?.talents || [];
-    const skills = talentIds.map((id: string) => getTalentById(id)?.name || '').filter(Boolean);
-    return {
-      id: 'current',
-      username: authState.userData?.username || 'kullanici',
-      fullName: authState.userData?.fullName || 'Kullanıcı',
-      bio: 'Merhaba! 👋',
-      avatarUri: 'https://i.pravatar.cc/300?img=1',
-      avatars: ['https://i.pravatar.cc/300?img=1', 'https://i.pravatar.cc/300?img=11'],
-      skills: skills.length > 0 ? skills : [],
-      talents: talentIds,
-      following: 0, followers: 0, videos: 0,
-      user_type: authState.profile?.user_type,
-      tax_office: authState.profile?.tax_office,
-      tax_number: authState.profile?.tax_number,
-      radarsCount: 0
-    };
-  }, [authState.userData, authState.profile]);
-
-  const [profile, setProfile] = useState(initialProfile);
-
-  const openProfile = useCallback((userId: string) => { setSelectedUserId(userId); setUserProfileOpen(true); }, []);
-  const closeProfile = useCallback(() => { setUserProfileOpen(false); setSelectedUserId(null); }, []);
-
-  const onVideoPublished = useCallback((videoUri: string, description?: string, topic?: string) => {
+  // ─── Video publish ───────────────────────────────────────────────────
+  const onVideoPublished = useCallback((videoUrl: string, description?: string, topic?: string) => {
     setUploadProgress(0);
     let p = 0;
     const interval = setInterval(() => {
@@ -177,165 +180,133 @@ export default function MainLayout() {
       if (p >= 100) {
         p = 100;
         clearInterval(interval);
-        setVideos(prev => [{
-          id: `vid-${Date.now()}`, uri: videoUri,
-          user: { id: 'current', username: profile.username, avatar: profile.avatarUri },
-          description: description || '🎬', topic: topic ?? '',
-          likes: 0, comments: 0, shares: 0, isLiked: false, isSaved: false,
-        }, ...prev]);
+        feed.prependVideo({
+          id: `vid-${Date.now()}`,
+          uri: videoUrl,
+          user: { id: profile.id, username: profile.username, avatar: profile.avatarUri },
+          description: description || '',
+          topic: topic ?? undefined,
+          likes: 0, comments: 0, shares: 0,
+          isLiked: false, isSaved: false, isFollowing: false,
+        });
         setProfile(prev => ({ ...prev, videos: prev.videos + 1 }));
-        setHomeRefreshKey(k => k + 1);
         setTab(0);
-        setTimeout(() => setUploadProgress(null), 800);
+        setTimeout(() => {
+          setUploadProgress(null);
+          feed.fetchVideos(0);
+          setHomeRefreshKey(k => k + 1);
+        }, 4000);
       }
       setUploadProgress(Math.min(p, 100));
     }, 200);
-  }, [profile.username, profile.avatarUri]);
+  }, [profile.id, profile.username, profile.avatarUri, feed.prependVideo, feed.fetchVideos]);
 
-  const onVideoDelete = useCallback((videoId: string) => {
-    setVideos(prev => {
-      const del = prev.find(v => v.id === videoId);
-      if (del && (del.user.id === 'current' || del.user.username === profile.username))
-        setProfile(p => ({ ...p, videos: Math.max(0, p.videos - 1) }));
-      return prev.filter(v => v.id !== videoId);
-    });
-  }, [profile.username]);
-
-  const onVideoSaved = useCallback((id: string, isSaved: boolean) => {
-    // 1. Instant local update
-    setVideos(prev => prev.map(v => v.id === id ? { ...v, isSaved } : v));
-
-    // 2. Background DB sync
-    if (isAuth && authState.user?.id) {
-      const userId = authState.user.id;
-      (async () => {
-        try {
-          if (isSaved) {
-            await supabase.from('saves').insert({ user_id: userId, video_id: id } as any);
-          } else {
-            await supabase.from('saves').delete().eq('user_id', userId).eq('video_id', id);
-          }
-        } catch (e) { console.error('Save sync error:', e); }
-      })();
-    }
-  }, [isAuth, authState.user]);
-
-  const onVideoLiked = useCallback((id: string, isLiked: boolean, likes: number) => {
-    // 1. Instant local update
-    setVideos(prev => prev.map(v => v.id === id ? { ...v, isLiked, likes } : v));
-
-    // 2. Background DB sync
-    if (isAuth && authState.user?.id) {
-      const userId = authState.user.id;
-      (async () => {
-        try {
-          if (isLiked) {
-            await supabase.from('likes').insert({ user_id: userId, video_id: id } as any);
-          } else {
-            await supabase.from('likes').delete().eq('user_id', userId).eq('video_id', id);
-          }
-
-          // Trigger server-side increment (trigger handles likes_count usually, or we do manual)
-          await supabase.from('videos').update({
-            likes_count: likes
-          } as any).eq('id', id);
-        } catch (e) {
-          console.log('Like sync background task'); // Usually suppressed
-        }
-      })();
-    }
-  }, [isAuth, authState.user]);
-
-  const onVideoCommented = useCallback((id: string, comments: number) => {
-    setVideos(prev => prev.map(v => v.id === id ? { ...v, comments } : v));
-  }, []);
+  const onVideoDelete = useCallback(async (videoId: string) => {
+    await feed.deleteVideo(videoId);
+    setProfile(prev => ({ ...prev, videos: Math.max(0, prev.videos - 1) }));
+  }, [feed.deleteVideo]);
 
   const onProfileUpdate = useCallback((data: any) =>
     setProfile(prev => ({ ...prev, ...data })), []);
+
+  const onGuestModalClose = useCallback(() =>
+    setGuestModal(p => ({ ...p, visible: false })), []);
 
   const isFullscreen = tab === 2 || userProfileOpen;
 
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
       <View style={styles.content}>
-        <TabScreen visible={tab === 0 && !isFullscreen}>
+        {/* Feed */}
+        <LazyTabScreen visible={tab === 0 && !isFullscreen}>
           <HomeScreen
             isActive={tab === 0 && !isFullscreen}
             isAuthenticated={isAuth}
-            videos={videos}
+            videos={feed.videos}
+            videosLoading={!feed.initialLoaded}
             onUserPress={openProfile}
-            onVideoSaved={onVideoSaved}
-            onVideoLiked={onVideoLiked}
-            onVideoCommented={onVideoCommented}
-            onRefresh={() => setVideos(prev => [...prev].sort(() => Math.random() - 0.5))}
-            onEndReached={loadMoreVideos}
+            onVideoSaved={feed.updateVideoSave}
+            onVideoLiked={feed.updateVideoLike}
+            onVideoCommented={feed.updateVideoComment}
+            onUserFollowed={feed.updateUserFollow}
+            onRefresh={() => feed.fetchVideos(0)}
+            onEndReached={feed.loadMore}
             refreshKey={homeRefreshKey}
+            onAuthRequired={action => setGuestModal({ visible: true, action })}
           />
-        </TabScreen>
+        </LazyTabScreen>
 
-        <TabScreen visible={tab === 1 && !isFullscreen}>
+        {/* Explore */}
+        <LazyTabScreen visible={tab === 1 && !isFullscreen}>
           <InspirationScreen
             isActive={tab === 1}
-            videos={videos}
-            onVideoSaved={onVideoSaved}
-            onVideoLiked={onVideoLiked}
-            onVideoCommented={onVideoCommented}
+            videos={feed.videos}
+            onVideoSaved={feed.updateVideoSave}
+            onVideoLiked={feed.updateVideoLike}
+            onVideoCommented={feed.updateVideoComment}
           />
-        </TabScreen>
+        </LazyTabScreen>
 
-        <TabScreen visible={tab === 3 && !isFullscreen}>
+        {/* Notifications */}
+        <LazyTabScreen visible={tab === 3 && !isFullscreen}>
           <NotificationsScreen isActive={tab === 3} onUserPress={openProfile} />
-        </TabScreen>
+        </LazyTabScreen>
 
-        <TabScreen visible={tab === 4 && !isFullscreen}>
+        {/* Profile */}
+        <LazyTabScreen visible={tab === 4 && !isFullscreen}>
           <MeScreen
             isActive={tab === 4}
-            userProfile={{ ...profile, videos: videos.filter(v => v.user.id === 'current' || v.user.username === profile.username).length }}
-            allVideos={videos}
+            userProfile={profile}
+            allVideos={feed.videos}
             onProfileUpdate={onProfileUpdate}
             onVideoDelete={onVideoDelete}
-            onVideoSaved={onVideoSaved}
-            onVideoLiked={onVideoLiked}
-            onVideoCommented={onVideoCommented}
+            onVideoSaved={feed.updateVideoSave}
+            onVideoLiked={feed.updateVideoLike}
+            onVideoCommented={feed.updateVideoComment}
           />
-        </TabScreen>
+        </LazyTabScreen>
 
+        {/* Create — fullscreen overlay */}
         {tab === 2 && (
           <View style={styles.fullscreen}>
             <CreateScreen isActive onClose={() => setTab(0)} onVideoPublished={onVideoPublished} />
           </View>
         )}
 
+        {/* User Profile — fullscreen overlay */}
         {userProfileOpen && (
           <View style={styles.fullscreen}>
             <UserProfileScreen
               isActive
               onBackPress={closeProfile}
               userId={selectedUserId || undefined}
-              allVideos={videos}
-              onVideoSaved={onVideoSaved}
-              onVideoLiked={onVideoLiked}
-              onVideoCommented={onVideoCommented}
+              allVideos={feed.videos}
+              onVideoSaved={feed.updateVideoSave}
+              onVideoLiked={feed.updateVideoLike}
+              onVideoCommented={feed.updateVideoComment}
+              onUserFollowed={feed.updateUserFollow}
             />
           </View>
         )}
       </View>
 
+      {/* Bottom tab bar */}
       {!isFullscreen && (
         <View style={[styles.navbar, { height: navbarHeight, paddingBottom: insets.bottom }]}>
           <TabBtn icon={tab === 0 ? 'home' : 'home-outline'} active={tab === 0} onPress={handleHomePress} />
           <TabBtn icon={tab === 1 ? 'compass' : 'compass-outline'} active={tab === 1} onPress={() => setTab(1)} />
           <TabBtn icon="add" active={false} isCreate onPress={() => requireAuthTab('create', () => setTab(2))} />
           <TabBtn icon={tab === 3 ? 'notifications' : 'notifications-outline'} active={tab === 3} onPress={() => requireAuthTab('general', () => setTab(3))} />
-          <TabBtn icon={tab === 4 ? 'person' : 'person-outline'} active={tab === 4} onPress={() => requireAuthTab('general', () => setTab(4))} />
+          <TabBtn
+            icon={tab === 4 ? 'person' : 'person-outline'}
+            active={tab === 4}
+            avatar={profile?.avatarUri || null}
+            onPress={() => requireAuthTab('general', () => setTab(4))}
+          />
         </View>
       )}
 
-      <GuestAuthModal
-        visible={guestModal.visible}
-        action={guestModal.action}
-        onClose={() => setGuestModal(p => ({ ...p, visible: false }))}
-      />
+      <GuestAuthModal visible={guestModal.visible} action={guestModal.action} onClose={onGuestModalClose} />
 
       {uploadProgress !== null && (
         <View style={styles.uploadBar}>
@@ -370,6 +341,8 @@ const styles = StyleSheet.create({
   },
   tabBtn: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 8 },
   tabIconWrap: { position: 'relative', alignItems: 'center', justifyContent: 'center' },
+  tabAvatar: { width: 26, height: 26, borderRadius: 13 },
+  tabAvatarActive: { borderWidth: 2, borderRadius: 15, borderColor: Colors.primary },
   createBtn: {
     width: 44, height: 30, borderRadius: 10,
     backgroundColor: ACCENT,
@@ -384,8 +357,10 @@ const styles = StyleSheet.create({
   badgeText: { color: '#fff', fontSize: 9, fontWeight: '700' },
   uploadBar: {
     position: 'absolute', top: 0, left: 0, right: 0, zIndex: 999,
-    backgroundColor: Colors.surface, paddingHorizontal: 20, paddingVertical: 10, gap: 6,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 8, elevation: 10,
+    backgroundColor: Colors.surface,
+    paddingHorizontal: 20, paddingVertical: 10, gap: 6,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08, shadowRadius: 8, elevation: 10,
   },
   uploadBg: { height: 4, borderRadius: 2, backgroundColor: Colors.surfaceAlt, overflow: 'hidden' },
   uploadFill: { height: 4, borderRadius: 2, backgroundColor: Colors.primary },

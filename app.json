@@ -28,16 +28,9 @@
       "backgroundColor": "#0A0505",
       "windowSoftInputMode": "adjustResize",
       "permissions": [
-        "CAMERA",
-        "RECORD_AUDIO",
-        "WAKE_LOCK",
         "android.permission.CAMERA",
         "android.permission.RECORD_AUDIO",
-        "CAMERA",
-        "RECORD_AUDIO",
-        "WAKE_LOCK",
-        "android.permission.CAMERA",
-        "android.permission.RECORD_AUDIO"
+        "android.permission.WAKE_LOCK"
       ],
       "package": "com.anonymous.motionapp"
     },
@@ -67,7 +60,16 @@
           "recordAudioAndroid": true
         }
       ],
-      "expo-web-browser"
+      [
+        "react-native-vision-camera",
+        {
+          "cameraPermissionText": "motionApp video çekmek için kamera erişimi gerektirir.",
+          "microphonePermissionText": "motionApp video kaydı için mikrofon erişimi gerektirir.",
+          "enableCodeScanner": false
+        }
+      ],
+      "expo-web-browser",
+      "expo-video"
     ],
     "experiments": {
       "typedRoutes": true,

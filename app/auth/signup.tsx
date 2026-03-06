@@ -1,8 +1,9 @@
 import Colors from '@/constants/Colors';
 import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/lib/supabase';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -19,6 +20,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 export default function SignupScreen() {
   const insets = useSafeAreaInsets();
   const { signup, signInWithGoogle, checkUsernameAvailable } = useAuth();
+  const otpInputRef = useRef<TextInput>(null);
 
   const [step, setStep] = useState<'form' | 'verify'>('form');
   const [fullName, setFullName] = useState('');
@@ -26,8 +28,10 @@ export default function SignupScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPass, setConfirmPass] = useState('');
+  const [verificationCode, setVerificationCode] = useState('');
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [verifyLoading, setVerifyLoading] = useState(false);
   const [gLoading, setGLoading] = useState(false);
   const [error, setError] = useState('');
   const [usernameState, setUsernameState] = useState<'idle' | 'checking' | 'ok' | 'taken' | 'invalid'>('idle');
@@ -76,6 +80,29 @@ export default function SignupScreen() {
     setGLoading(false);
   };
 
+  const handleVerify = async () => {
+    if (verificationCode.length !== 6) {
+      setError('6 haneli kodu giriniz');
+      return;
+    }
+    setVerifyLoading(true);
+    setError('');
+
+    const { data, error } = await supabase.auth.verifyOtp({
+      email: email.trim().toLowerCase(),
+      token: verificationCode,
+      type: 'signup'
+    });
+
+    setVerifyLoading(false);
+
+    if (error) {
+      setError(error.message || 'Kod hatalı veya süresi dolmuş');
+    } else {
+      router.replace('/');
+    }
+  };
+
   // ── Email Verify Step ──────────────────────────────────────────────
   if (step === 'verify') {
     return (
@@ -86,14 +113,46 @@ export default function SignupScreen() {
           </View>
           <Text style={s.verifyTitle}>E-postanı Doğrula</Text>
           <Text style={s.verifyBody}>
-            <Text style={{ fontWeight: '600' }}>{email}</Text> adresine bir doğrulama bağlantısı gönderdik.{'\n\n'}
-            Bağlantıya tıkladıktan sonra giriş yapabilirsin.
+            <Text style={{ fontWeight: '600' }}>{email}</Text> adresine 6 haneli bir doğrulama kodu gönderdik.{'\n\n'}
+            Lütfen kodu aşağıya girin.
           </Text>
-          <TouchableOpacity style={[s.primaryBtn, { marginTop: 28 }]} onPress={() => router.replace('/auth/login')}>
-            <Text style={s.primaryBtnText}>Giriş Yap</Text>
+
+          <TouchableOpacity activeOpacity={1} onPress={() => otpInputRef.current?.focus()} style={s.otpContainer}>
+            {Array.from({ length: 6 }).map((_, idx) => (
+              <View key={idx} style={[s.otpBox, verificationCode.length === idx && s.otpBoxActive]}>
+                <Text style={s.otpText}>{verificationCode[idx] || ''}</Text>
+              </View>
+            ))}
+            <TextInput
+              ref={otpInputRef}
+              style={s.hiddenOtpInput}
+              value={verificationCode}
+              onChangeText={t => { setVerificationCode(t.replace(/[^0-9]/g, '')); setError(''); }}
+              keyboardType="number-pad"
+              maxLength={6}
+              autoFocus
+            />
           </TouchableOpacity>
-          <TouchableOpacity style={s.guestBtn} onPress={() => setStep('form')}>
-            <Text style={s.guestText}>Geri dön</Text>
+
+          {!!error && (
+            <View style={[s.errorBox, { marginTop: 12, alignSelf: 'stretch' }]}>
+              <Ionicons name="alert-circle-outline" size={14} color={Colors.error} />
+              <Text style={s.errorText}>{error}</Text>
+            </View>
+          )}
+
+          <TouchableOpacity
+            style={[s.primaryBtn, { marginTop: 24, alignSelf: 'stretch' }, verifyLoading && s.btnDisabled]}
+            onPress={handleVerify}
+            disabled={verifyLoading}
+          >
+            {verifyLoading
+              ? <ActivityIndicator color="#fff" size="small" />
+              : <Text style={s.primaryBtnText}>Doğrula</Text>
+            }
+          </TouchableOpacity>
+          <TouchableOpacity style={[s.guestBtn, { marginTop: 16 }]} onPress={() => setStep('form')}>
+            <Text style={s.guestText}>Geri dön ve bilgileri düzelt</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -274,6 +333,23 @@ const s = StyleSheet.create({
   verifyCard: { alignItems: 'center', maxWidth: 340 },
   verifyTitle: { fontSize: 22, fontWeight: '700', color: Colors.text, textAlign: 'center', marginBottom: 12 },
   verifyBody: { fontSize: 14, color: Colors.textSecondary, textAlign: 'center', lineHeight: 22 },
+
+  // OTP
+  otpContainer: { flexDirection: 'row', justifyContent: 'center', gap: 10, marginTop: 24, position: 'relative' },
+  otpBox: {
+    width: 44, height: 52,
+    borderRadius: 12,
+    borderWidth: 1.5, borderColor: Colors.border,
+    backgroundColor: Colors.surface,
+    alignItems: 'center', justifyContent: 'center'
+  },
+  otpBoxActive: { borderColor: Colors.primary },
+  otpText: { fontSize: 20, fontWeight: '700', color: Colors.text },
+  hiddenOtpInput: {
+    ...StyleSheet.absoluteFillObject,
+    opacity: 0,
+    fontSize: 1 // For android compat
+  },
 
   // Header
   header: { alignItems: 'center', paddingTop: 40, paddingBottom: 36 },

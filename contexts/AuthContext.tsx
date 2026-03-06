@@ -1,3 +1,4 @@
+import { queryCache } from '@/lib/queryCache';
 import { supabase } from '@/lib/supabase';
 import { Profile } from '@/types/database';
 import { Session, User } from '@supabase/supabase-js';
@@ -63,7 +64,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Initialize auth state from Supabase session
   useEffect(() => {
-    // Get initial session
+    // ── CRITICAL FIX: Ungate rendering from profile fetch ──
+    // Step 1: read session (AsyncStorage, fast)
+    // Step 2: immediately unlock app with session data
+    // Step 3: fetch full profile in background (non-blocking)
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session) {
         handleSession(session);
@@ -74,11 +78,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('Auth event:', event);
+      if (__DEV__) console.log('[Auth] event:', event);
 
       if (event === 'SIGNED_IN' && session) {
         await handleSession(session);
       } else if (event === 'SIGNED_OUT') {
+        // FIX 2.3: Clear in-memory query cache on logout.
+        // Prevents next user on this device from seeing stale cached data.
+        queryCache.clear();
         setAuthState({
           isAuthenticated: false,
           isLoading: false,
@@ -90,6 +97,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           userData: null,
         });
       } else if (event === 'TOKEN_REFRESHED' && session) {
+        // Only update session reference, do NOT re-fetch profile
         setAuthState(prev => ({ ...prev, session }));
       }
     });
@@ -97,55 +105,79 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Handle session and fetch profile
+  // Handle session — UNGATED from profile fetch
   const handleSession = async (session: Session) => {
     const user = session.user;
 
-    // Fetch profile from database
-    const { data: profile, error } = await (supabase as any)
-      .from('profiles')
-      .select('*')
-      .eq('id', user.id)
-      .single();
-
-    if (error && error.code !== 'PGRST116') {
-      console.error('Error fetching profile:', error);
-    }
-
-    setAuthState({
+    // ── PHASE 1: Immediately unlock app. No DB wait. ──
+    setAuthState(prev => ({
+      ...prev,
       isAuthenticated: true,
-      isLoading: false,
+      isLoading: false,  // ← splash hides HERE, not after DB
       user,
       session,
-      profile: profile || null,
-      userType: profile?.user_type || null,
       userEmail: user.email || null,
-      userData: profile ? {
-        username: profile.username,
-        fullName: profile.full_name,
-        talents: profile.talents,
-      } : null,
-    });
+      // Keep any previously cached profile if available
+      profile: prev.profile,
+      userType: prev.userType,
+      userData: prev.userData,
+    }));
+
+    // ── PHASE 2: Fetch profile in background (non-blocking) ──
+    // Using only the columns we actually need (not SELECT *)
+    try {
+      const { data: profile, error } = await (supabase as any)
+        .from('profiles')
+        .select('id, username, full_name, avatar_url, avatars, user_type, talents, is_banned, tax_office, tax_number, bio, created_at, followers_count, following_count, videos_count, radars_count')
+        .eq('id', user.id)
+        .single();
+
+      if (error && error.code !== 'PGRST116') {
+        if (__DEV__) console.error('[Auth] Profile fetch error:', error);
+      }
+
+      if (profile) {
+        setAuthState(prev => ({
+          ...prev,
+          profile,
+          userType: profile.user_type || null,
+          userData: {
+            username: profile.username,
+            fullName: profile.full_name,
+            talents: profile.talents,
+          },
+        }));
+        // ✅ DÜZELDİ: last_seen_at doğrudan güncelle (bio hack'i kaldırıldı)
+        (supabase as any).from('profiles')
+          .update({ last_seen_at: new Date().toISOString() })
+          .eq('id', user.id)
+          .then(() => { }); // fire-and-forget
+      }
+    } catch (e) {
+      if (__DEV__) console.error('[Auth] Background profile fetch failed:', e);
+    }
   };
 
-  // Refresh profile from database
-  const refreshProfile = async () => {
+  // ─── refreshProfile — throttle: 30 saniyede bir çalışır (focus event’de gereksiz DB sorgusu önler)
+  const lastRefreshRef = React.useRef<number>(0);
+  const refreshProfile = async (force = false) => {
     if (!authState.user) return;
-    console.log('Refreshing profile for user:', authState.user.id);
+    const now = Date.now();
+    if (!force && now - lastRefreshRef.current < 30_000) return; // 30sn cooldown
+    lastRefreshRef.current = now;
 
     const { data: profile, error } = await (supabase as any)
       .from('profiles')
-      .select('*')
+      .select('id, username, full_name, avatar_url, avatars, user_type, talents, is_banned, tax_office, tax_number, bio, created_at, followers_count, following_count, videos_count, radars_count')
       .eq('id', authState.user.id)
       .single();
 
     if (error) {
-      console.error('Refresh profile error:', error);
+      if (__DEV__) console.error('[Auth] Refresh profile error:', error);
       return;
     }
 
     if (profile) {
-      console.log('Profile refreshed, new type:', profile.user_type);
       setAuthState(prev => ({
         ...prev,
         profile,
@@ -174,8 +206,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { error: error.message };
       }
 
-      // Session will be handled by onAuthStateChange
-      setTimeout(() => router.replace('/'), 100);
+      // Session will be handled by onAuthStateChange → no setTimeout race condition
       return { error: null };
     } catch (err: any) {
       return { error: err.message || 'Giriş yapılırken bir hata oluştu' };
@@ -211,9 +242,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       // If email confirmation is disabled, user is signed in immediately
-      if (data.session) {
-        setTimeout(() => router.replace('/'), 100);
-      }
+      // onAuthStateChange will fire SIGNED_IN and handle navigation via _layout.tsx
+      // No setTimeout needed — router navigation happens in the layout effect
 
       return { error: null };
     } catch (err: any) {
@@ -338,13 +368,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { error: 'Başvuru kaydedilirken bir hata oluştu: ' + dbError.message };
       }
 
-      // Send notification email via Supabase Edge Function or SMTP
-      // For now, we log — in production integrate with an email service
-      console.log('Corporate application submitted:', {
-        ...data,
-        userEmail: authState.userEmail,
-        userId: authState.user.id,
-      });
+      // Corporate application submitted — in production add email notification
 
       return { error: null };
     } catch (err: any) {
@@ -365,7 +389,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       ...prev,
       isAuthenticated: true,
     }));
-    setTimeout(() => router.replace('/'), 50);
+    // Navigation handled by _layout.tsx useEffect watching authState.isAuthenticated
+    router.replace('/');
   };
 
   return (
