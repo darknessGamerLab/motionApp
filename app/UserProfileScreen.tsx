@@ -1,6 +1,7 @@
-import CommentsModal from '@/components/CommentsModal';
+import { CustomAlert as Alert } from '@/components/GlobalAlert';
 import ProfilePhotoCarousel from '@/components/ProfilePhotoCarousel';
 import { SkeletonLoader } from '@/components/SkeletonLoader';
+import VideoPlayerModal from '@/components/VideoPlayerModal';
 import Colors from '@/constants/Colors';
 import { getTalentById, getTalentByName } from '@/constants/Talents';
 import { useAuth } from '@/contexts/AuthContext';
@@ -9,13 +10,13 @@ import { useVideoActions } from '@/hooks/useVideoActions';
 import { VideoItem } from '@/types/video';
 import { formatNumber } from '@/utils/format';
 import { animateTabSwitch } from '@/utils/transitions';
+import { isValidUUID } from '@/utils/validate';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActionSheetIOS,
-  Alert,
   Animated,
   Dimensions,
   FlatList,
@@ -25,12 +26,9 @@ import {
   Share,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
-  View,
-  ViewToken
+  View
 } from 'react-native';
-import { VideoCard } from './HomeScreen';
 
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -49,6 +47,7 @@ interface UserProfileScreenProps {
   onVideoLiked?: (videoId: string, isLiked: boolean, newLikeCount: number) => void;
   onVideoCommented?: (videoId: string, newCommentCount: number) => void;
   onUserFollowed?: (userId: string, isFollowing: boolean) => void;
+  onUserPress?: (userId: string) => void;
 }
 
 export default function UserProfileScreen({
@@ -60,6 +59,7 @@ export default function UserProfileScreen({
   onVideoLiked,
   onVideoCommented,
   onUserFollowed,
+  onUserPress,
 }: UserProfileScreenProps) {
   const { authState } = useAuth();
   const [activeTab, setActiveTab] = useState<'videos' | 'private'>('videos');
@@ -410,15 +410,17 @@ export default function UserProfileScreen({
         </Animated.View>
       </ScrollView>
 
-      {/* Video Player Modal */}
-      <UserVideoPlayerModal
+      {/* Shared Video Player Modal */}
+      <VideoPlayerModal
         visible={videoPlayerVisible}
         videos={videoPlayerVideos}
         startIndex={videoPlayerStartIndex}
         onClose={() => setVideoPlayerVisible(false)}
+        mode="profile"
         onVideoSaved={onVideoSaved}
         onVideoLiked={onVideoLiked}
         onVideoCommented={onVideoCommented}
+        onUserPress={onUserPress}
       />
 
       {/* Şikayet Menüsü */}
@@ -436,138 +438,7 @@ export default function UserProfileScreen({
   );
 }
 
-// ─── Video Player Modal ─────────────────────────────────────────────────────
-const COMMENT_INPUT_HEIGHT = 70;
 
-function UserVideoPlayerModal({
-  visible, videos, startIndex, onClose, onVideoSaved, onVideoLiked, onVideoCommented,
-}: {
-  visible: boolean; videos: VideoItem[]; startIndex: number; onClose: () => void;
-  onVideoSaved?: (videoId: string, isSaved: boolean) => void;
-  onVideoLiked?: (videoId: string, isLiked: boolean, newLikeCount: number) => void;
-  onVideoCommented?: (videoId: string, newCommentCount: number) => void;
-}) {
-  const { authState } = useAuth();
-  const [idx, setIdx] = useState(startIndex);
-  const [showComments, setShowComments] = useState(false);
-  const videoHeight = SCREEN_HEIGHT - COMMENT_INPUT_HEIGHT;
-
-  useEffect(() => { setIdx(startIndex); }, [startIndex]);
-
-  const onViewChange = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
-    if (viewableItems[0]?.index != null) setIdx(viewableItems[0].index);
-  }).current;
-
-  const viewConfig = useRef({ itemVisiblePercentThreshold: 60 }).current;
-  const getLayout = useCallback((_: any, i: number) => ({ length: videoHeight, offset: videoHeight * i, index: i }), [videoHeight]);
-  const keyExt = useCallback((item: VideoItem) => item.id, []);
-  const currentVideo = videos[idx];
-
-  // ✅ DÜZELDİ: isAuthenticated ve onAuthRequired geçildi
-  const renderItem = useCallback(({ item, index }: { item: VideoItem; index: number }) => (
-    <View style={{ height: videoHeight }}>
-      <VideoCard
-        data={item}
-        active={index === idx}
-        height={videoHeight}
-        isAuthenticated={!!authState.user}       // ✅ FIX
-        onVideoSaved={onVideoSaved}
-        onVideoLiked={onVideoLiked}
-        onVideoCommented={onVideoCommented}
-        onAuthRequired={() => Alert.alert('Giriş Gerekli', 'Bu işlem için giriş yapmalısınız.')}
-      />
-    </View>
-  ), [idx, videoHeight, authState.user, onVideoSaved, onVideoLiked, onVideoCommented]);
-
-  if (!visible || !videos.length) return null;
-
-  return (
-    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <View style={playerStyles.container}>
-        <TouchableOpacity style={playerStyles.backBtn} onPress={onClose}>
-          <View style={playerStyles.backBg}>
-            <Ionicons name="arrow-back" size={22} color="#fff" />
-          </View>
-        </TouchableOpacity>
-
-        <View style={{ height: videoHeight }}>
-          <FlatList
-            data={videos}
-            renderItem={renderItem}
-            keyExtractor={keyExt}
-            pagingEnabled
-            showsVerticalScrollIndicator={false}
-            snapToInterval={videoHeight}
-            snapToAlignment="start"
-            decelerationRate="fast"
-            disableIntervalMomentum
-            onViewableItemsChanged={onViewChange}
-            viewabilityConfig={viewConfig}
-            getItemLayout={getLayout}
-            removeClippedSubviews
-            initialScrollIndex={startIndex}
-            onScrollToIndexFailed={() => { }}
-            bounces={false}
-            overScrollMode="never"
-            initialNumToRender={1}
-            maxToRenderPerBatch={2}
-            windowSize={3}
-          />
-        </View>
-
-        <TouchableOpacity
-          style={playerStyles.commentContainer}
-          activeOpacity={0.9}
-          onPress={() => setShowComments(true)}
-        >
-          <View style={playerStyles.commentWrap}>
-            <TextInput
-              style={playerStyles.commentInput}
-              placeholder="Yorum yaz..."
-              placeholderTextColor={Colors.textMuted}
-              editable={false}
-              pointerEvents="none"
-            />
-            <Ionicons name="chatbubble-outline" size={18} color={Colors.textMuted} />
-          </View>
-        </TouchableOpacity>
-
-        {currentVideo && (
-          <CommentsModal
-            visible={showComments}
-            onClose={() => setShowComments(false)}
-            videoId={currentVideo.id}
-            commentCount={currentVideo.comments}
-            onCommentAdded={(newCount) => onVideoCommented?.(currentVideo.id, newCount)}
-          />
-        )}
-      </View>
-    </Modal>
-  );
-}
-
-const playerStyles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#000' },
-  backBtn: { position: 'absolute', top: 52, left: 14, zIndex: 100 },
-  backBg: {
-    width: 38, height: 38, borderRadius: 19,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    alignItems: 'center', justifyContent: 'center',
-  },
-  commentContainer: {
-    height: COMMENT_INPUT_HEIGHT,
-    backgroundColor: Colors.surface,
-    paddingHorizontal: 14, justifyContent: 'center',
-    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: Colors.border,
-  },
-  commentWrap: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: Colors.surfaceAlt,
-    borderRadius: 24, paddingHorizontal: 16, paddingVertical: 10,
-    borderWidth: 1, borderColor: Colors.border,
-  },
-  commentInput: { flex: 1, fontSize: 14, color: Colors.text },
-});
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },

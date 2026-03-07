@@ -1,11 +1,12 @@
+import { CustomAlert as Alert } from '@/components/GlobalAlert';
 import Colors from '@/constants/Colors';
 import { useAuth } from '@/contexts/AuthContext';
 import { Ionicons } from '@expo/vector-icons';
+import Constants from 'expo-constants';
 import { useFocusEffect } from 'expo-router';
 import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -296,8 +297,14 @@ export default function SettingsScreen({ onBackPress, onEditProfile }: SettingsS
             icon="notifications-outline"
             iconBg="#F59E0B"
             title="Bildirimler"
-            subtitle="Bildirim tercihlerini yönet"
-            onPress={() => Alert.alert('Bildirimler', 'Yakında eklenecek')}
+            subtitle="Sistem bildirim ayarları"
+            onPress={() => {
+              // Opens device notification settings (iOS & Android)
+              const { Linking } = require('react-native');
+              Linking.openSettings().catch(() => {
+                Alert.alert('Bildirimler', 'Ayarlar açılamadı. Lütfen cihaz ayarlarınızdan bildirimleri yönetin.');
+              });
+            }}
           />
           <Separator />
           <SettingItem
@@ -305,7 +312,11 @@ export default function SettingsScreen({ onBackPress, onEditProfile }: SettingsS
             iconBg="#10B981"
             title="Gizlilik"
             subtitle="Hesap gizliliği ayarları"
-            onPress={() => Alert.alert('Gizlilik', 'Yakında eklenecek')}
+            onPress={() => Alert.alert(
+              'Gizlilik',
+              'Hesabınız varsayılan olarak herkese açıktır.\n\nVerileriniz hakkında daha fazla bilgi için motionapp.com/privacy adresini ziyaret edebilirsiniz.\n\nHesabınızı ve tüm verilerinizi silmek için destek@motionapp.com ile iletişime geçin.',
+              [{ text: 'Tamam' }]
+            )}
           />
         </View>
 
@@ -320,7 +331,7 @@ export default function SettingsScreen({ onBackPress, onEditProfile }: SettingsS
           />
         </View>
 
-        <Text style={styles.versionText}>Versiyon 2.0.3</Text>
+        <Text style={styles.versionText}>Versiyon {Constants.expoConfig?.version ?? '—'}</Text>
       </ScrollView>
 
       <CorporateUpgradeModal

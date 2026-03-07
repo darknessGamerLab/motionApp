@@ -1,3 +1,4 @@
+import EmptyState from '@/components/EmptyState';
 import { SkeletonLoader } from '@/components/SkeletonLoader';
 import Colors from '@/constants/Colors';
 import { useAuth } from '@/contexts/AuthContext';
@@ -23,6 +24,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 interface Props {
   isActive?: boolean;
   onUserPress?: (userId: string) => void;
+  /** If provided, called when guest presses "Giriş Yap" */
+  onLoginRequired?: () => void;
 }
 
 type NotifType = 'like' | 'comment' | 'follow' | 'radar' | 'system';
@@ -182,7 +185,7 @@ const TABS: { key: TabType; label: string; icon: any }[] = [
   { key: 'radar', label: 'Radar', icon: 'scan-outline' },
 ];
 
-export default function NotificationsScreen({ isActive = true, onUserPress }: Props) {
+export default function NotificationsScreen({ isActive = true, onUserPress, onLoginRequired }: Props) {
   const insets = useSafeAreaInsets();
   const { authState, refreshProfile } = useAuth();
   const [tab, setTab] = useState<TabType>('all');
@@ -270,15 +273,52 @@ export default function NotificationsScreen({ isActive = true, onUserPress }: Pr
     fetchNotifs(true); // force=true on mount (first visit)
 
     if (!authState.user) return;
+
     const channel = supabase.channel(`notifs-${authState.user.id}`)
       .on('postgres_changes', {
         event: 'INSERT',
         schema: 'public',
         table: 'notifications',
         filter: `user_id=eq.${authState.user.id}`
-      }, () => {
+      }, async (payload: any) => {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        fetchNotifs(true); // force on realtime push
+
+        // Immediately fetch just this notification row (with profile join)
+        // so the user sees it instantly without a full list reload.
+        // Full re-fetch is still triggered after 800ms as a safety net.
+        try {
+          const { data } = await (supabase as any)
+            .from('notifications')
+            .select(`
+              id, type, message, created_at, is_read, from_user_id, video_id,
+              profiles!notifications_from_user_id_fkey ( username, avatar_url )
+            `)
+            .eq('id', payload.new.id)
+            .single();
+
+          if (data) {
+            const notif: Notif = {
+              id: data.id,
+              type: data.type as NotifType,
+              user: {
+                id: data.from_user_id,
+                username: data.profiles?.username || 'Kullanıcı',
+                avatar: data.profiles?.avatar_url || 'https://i.pravatar.cc/100',
+              },
+              content: data.message || '',
+              time: 'şimdi',
+              isRead: false,
+              thumbnail: undefined,
+            };
+            // Prepend — deduplicate by id to prevent double-add
+            setNotifs(prev =>
+              prev.some(n => n.id === notif.id) ? prev : [notif, ...prev]
+            );
+          }
+        } catch {
+          // Fallback: full re-fetch if single-row fetch fails
+          fetchNotifs(true);
+        }
       })
       .subscribe();
 
@@ -391,11 +431,22 @@ export default function NotificationsScreen({ isActive = true, onUserPress }: Pr
 
       {/* List */}
       {loading && notifs.length === 0 ? (
-        // ✅ DÜZELDİ: Spinner yerine skeleton loader — daha pres geliyor
+        // Skeleton while loading
         <View style={{ paddingTop: 8 }}>
           {Array.from({ length: 7 }).map((_, i) => (
             <SkeletonLoader.NotifRow key={i} />
           ))}
+        </View>
+      ) : !authState.user ? (
+        // Guest user — dedicated CTA
+        <View style={{ flex: 1 }}>
+          <EmptyState
+            icon="notifications-off-outline"
+            title="Bildirimlerini görmek için giriş yap"
+            subtitle="Takipçilerinden ve yeni eğleşimlerinden anında haberdar ol"
+            ctaLabel="Giriş Yap"
+            onCtaPress={onLoginRequired}
+          />
         </View>
       ) : (
         <FlatList

@@ -1,3 +1,4 @@
+import { CustomAlert } from '@/components/GlobalAlert';
 import { TALENTS, getTalentById } from '@/constants/Talents';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
@@ -7,7 +8,6 @@ import * as VideoThumbnails from 'expo-video-thumbnails';
 import React, { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -54,11 +54,11 @@ export default function AddVideoDetailsScreen({
   const handlePublish = async () => {
     // Topic zorunlu kontrolü
     if (!selectedTopic) {
-      Alert.alert('Konu Seçimi Zorunlu', 'Lütfen videonuz için bir konu seçin.');
+      CustomAlert.alert('Konu Seçimi Zorunlu', 'Lütfen videonuz için bir konu seçin.');
       return;
     }
     if (!authState.user) {
-      Alert.alert('Giriş Gerekli', 'Video yayınlamak için oturum açmalısınız.');
+      CustomAlert.alert('Giriş Gerekli', 'Video yayınlamak için oturum açmalısınız.');
       return;
     }
 
@@ -156,7 +156,7 @@ export default function AddVideoDetailsScreen({
 
     } catch (err: any) {
       console.error('[Publish Error]', err);
-      Alert.alert('Hata', 'Video yüklenirken sorun oluştu: ' + (err.message || 'Bilinmeyen hata'));
+      CustomAlert.alert('Hata', 'Video yüklenirken sorun oluştu: ' + (err.message || 'Bilinmeyen hata'));
     } finally {
       setIsPublishing(false);
     }

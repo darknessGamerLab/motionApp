@@ -21,6 +21,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Animated,
+  Modal,
   Platform,
   StatusBar,
   StyleSheet,
@@ -72,9 +74,36 @@ const TabBtn = memo(({ icon, active, onPress, isCreate, badge, avatar }: {
 // Renders nothing until first visited, then keeps alive hidden
 const LazyTabScreen = memo(({ visible, children }: { visible: boolean; children: React.ReactNode }) => {
   const hasBeenVisible = useRef(false);
+  const anim = useRef(new Animated.Value(visible ? 1 : 0)).current;
+
   if (visible) hasBeenVisible.current = true;
+
+  useEffect(() => {
+    Animated.timing(anim, {
+      toValue: visible ? 1 : 0,
+      duration: 200,
+      useNativeDriver: true,
+    }).start();
+  }, [visible]);
+
   if (!hasBeenVisible.current) return null;
-  return <View style={[styles.screen, !visible && styles.hidden]}>{children}</View>;
+
+  const translateY = anim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [15, 0], // Hafif bir aşağıdan gelme hissi
+  });
+
+  return (
+    <Animated.View
+      style={[
+        styles.screen,
+        { opacity: anim, transform: [{ translateY }] }
+      ]}
+      pointerEvents={visible ? 'auto' : 'none'}
+    >
+      {children}
+    </Animated.View>
+  );
 });
 
 // ─── Profile builder helper ───────────────────────────────────────────
@@ -156,12 +185,12 @@ export default function MainLayout() {
 
   const handleHomePress = useCallback(() => {
     if (tab === 0 && !userProfileOpen) {
-      feed.fetchVideos(0);
+      feed.refresh();
       setHomeRefreshKey(k => k + 1);
     } else {
       setTab(0);
     }
-  }, [tab, userProfileOpen, feed.fetchVideos]);
+  }, [tab, userProfileOpen, feed.refresh]);
 
   const requireAuthTab = useCallback((
     action: 'like' | 'comment' | 'save' | 'follow' | 'create' | 'general',
@@ -193,21 +222,26 @@ export default function MainLayout() {
         setTab(0);
         setTimeout(() => {
           setUploadProgress(null);
-          feed.fetchVideos(0);
+          feed.refresh();
           setHomeRefreshKey(k => k + 1);
         }, 4000);
       }
       setUploadProgress(Math.min(p, 100));
     }, 200);
-  }, [profile.id, profile.username, profile.avatarUri, feed.prependVideo, feed.fetchVideos]);
+  }, [profile.id, profile.username, profile.avatarUri, feed.prependVideo, feed.refresh]);
 
   const onVideoDelete = useCallback(async (videoId: string) => {
     await feed.deleteVideo(videoId);
     setProfile(prev => ({ ...prev, videos: Math.max(0, prev.videos - 1) }));
   }, [feed.deleteVideo]);
 
-  const onProfileUpdate = useCallback((data: any) =>
-    setProfile(prev => ({ ...prev, ...data })), []);
+  const onProfileUpdate = useCallback((data: any) => {
+    if (data?._navigateTo === 'create') {
+      requireAuthTab('create', () => setTab(2));
+      return;
+    }
+    setProfile(prev => ({ ...prev, ...data }));
+  }, [requireAuthTab]);
 
   const onGuestModalClose = useCallback(() =>
     setGuestModal(p => ({ ...p, visible: false })), []);
@@ -224,12 +258,13 @@ export default function MainLayout() {
             isAuthenticated={isAuth}
             videos={feed.videos}
             videosLoading={!feed.initialLoaded}
+            fetchError={feed.fetchError}
             onUserPress={openProfile}
             onVideoSaved={feed.updateVideoSave}
             onVideoLiked={feed.updateVideoLike}
             onVideoCommented={feed.updateVideoComment}
             onUserFollowed={feed.updateUserFollow}
-            onRefresh={() => feed.fetchVideos(0)}
+            onRefresh={feed.refresh}
             onEndReached={feed.loadMore}
             refreshKey={homeRefreshKey}
             onAuthRequired={action => setGuestModal({ visible: true, action })}
@@ -241,15 +276,21 @@ export default function MainLayout() {
           <InspirationScreen
             isActive={tab === 1}
             videos={feed.videos}
+            videosLoading={!feed.initialLoaded}
             onVideoSaved={feed.updateVideoSave}
             onVideoLiked={feed.updateVideoLike}
             onVideoCommented={feed.updateVideoComment}
+            onUserPress={openProfile}
           />
         </LazyTabScreen>
 
         {/* Notifications */}
         <LazyTabScreen visible={tab === 3 && !isFullscreen}>
-          <NotificationsScreen isActive={tab === 3} onUserPress={openProfile} />
+          <NotificationsScreen
+            isActive={tab === 3}
+            onUserPress={openProfile}
+            onLoginRequired={() => setGuestModal({ visible: true, action: 'general' })}
+          />
         </LazyTabScreen>
 
         {/* Profile */}
@@ -263,21 +304,22 @@ export default function MainLayout() {
             onVideoSaved={feed.updateVideoSave}
             onVideoLiked={feed.updateVideoLike}
             onVideoCommented={feed.updateVideoComment}
+            onUserPress={openProfile}
           />
         </LazyTabScreen>
 
         {/* Create — fullscreen overlay */}
-        {tab === 2 && (
+        <Modal visible={tab === 2} animationType="slide" transparent={true} onRequestClose={() => setTab(0)}>
           <View style={styles.fullscreen}>
-            <CreateScreen isActive onClose={() => setTab(0)} onVideoPublished={onVideoPublished} />
+            <CreateScreen isActive={tab === 2} onClose={() => setTab(0)} onVideoPublished={onVideoPublished} />
           </View>
-        )}
+        </Modal>
 
         {/* User Profile — fullscreen overlay */}
-        {userProfileOpen && (
+        <Modal visible={userProfileOpen} animationType="slide" transparent={true} onRequestClose={closeProfile}>
           <View style={styles.fullscreen}>
             <UserProfileScreen
-              isActive
+              isActive={userProfileOpen}
               onBackPress={closeProfile}
               userId={selectedUserId || undefined}
               allVideos={feed.videos}
@@ -285,9 +327,10 @@ export default function MainLayout() {
               onVideoLiked={feed.updateVideoLike}
               onVideoCommented={feed.updateVideoComment}
               onUserFollowed={feed.updateUserFollow}
+              onUserPress={openProfile}
             />
           </View>
-        )}
+        </Modal>
       </View>
 
       {/* Bottom tab bar */}

@@ -126,9 +126,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // ── PHASE 2: Fetch profile in background (non-blocking) ──
     // Using only the columns we actually need (not SELECT *)
     try {
-      const { data: profile, error } = await (supabase as any)
+      const { data: profile, error } = await supabase
         .from('profiles')
-        .select('id, username, full_name, avatar_url, avatars, user_type, talents, is_banned, tax_office, tax_number, bio, created_at, followers_count, following_count, videos_count, radars_count')
+        .select('id, username, full_name, avatar_url, avatars, user_type, talents, is_banned, tax_office, tax_number, bio, created_at, updated_at, last_seen_at, followers_count, following_count, videos_count, radars_count')
         .eq('id', user.id)
         .single();
 
@@ -137,6 +137,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       if (profile) {
+        // ─── BAN CHECK ───────────────────────────────────────────────
+        // DB trigger also enforces this on write operations, but checking
+        // here ensures banned users are kicked out immediately on login.
+        if (profile.is_banned) {
+          await supabase.auth.signOut();
+          // Let _layout.tsx/onAuthStateChange handle navigation to login
+          return;
+        }
+
         setAuthState(prev => ({
           ...prev,
           profile,
@@ -158,18 +167,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  // ─── refreshProfile — throttle: 30 saniyede bir çalışır (focus event’de gereksiz DB sorgusu önler)
+  // ─── refreshProfile — throttle: 30 saniyede bir çalışır (focus event'de gereksiz DB sorgusu önler)
   const lastRefreshRef = React.useRef<number>(0);
-  const refreshProfile = async (force = false) => {
-    if (!authState.user) return;
+  // Use a ref for userId so refreshProfile has a stable identity via useCallback
+  const currentUserIdRef = React.useRef<string | null>(authState.user?.id ?? null);
+  React.useEffect(() => {
+    currentUserIdRef.current = authState.user?.id ?? null;
+  }, [authState.user?.id]);
+
+  const refreshProfile = React.useCallback(async (force = false) => {
+    const uid = currentUserIdRef.current;
+    if (!uid) return;
     const now = Date.now();
     if (!force && now - lastRefreshRef.current < 30_000) return; // 30sn cooldown
     lastRefreshRef.current = now;
 
-    const { data: profile, error } = await (supabase as any)
+    const { data: profile, error } = await supabase
       .from('profiles')
-      .select('id, username, full_name, avatar_url, avatars, user_type, talents, is_banned, tax_office, tax_number, bio, created_at, followers_count, following_count, videos_count, radars_count')
-      .eq('id', authState.user.id)
+      .select('id, username, full_name, avatar_url, avatars, user_type, talents, is_banned, tax_office, tax_number, bio, created_at, updated_at, last_seen_at, followers_count, following_count, videos_count, radars_count')
+      .eq('id', uid)
       .single();
 
     if (error) {
@@ -189,7 +205,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         },
       }));
     }
-  };
+  }, []); // stable — reads uid from ref, never stale
 
   // Email/Password Login
   const login = async (email: string, password: string): Promise<{ error: string | null }> => {

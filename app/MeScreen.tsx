@@ -1,7 +1,9 @@
-import CommentsModal from "@/components/CommentsModal";
+import EmptyState from "@/components/EmptyState";
 import FollowListScreen from "@/components/FollowListScreen";
+import { CustomAlert as Alert } from '@/components/GlobalAlert';
 import ProfilePhotoCarousel from "@/components/ProfilePhotoCarousel";
 import { SkeletonLoader } from "@/components/SkeletonLoader";
+import VideoPlayerModal from "@/components/VideoPlayerModal";
 import Colors from "@/constants/Colors";
 import { getTalentById, getTalentByName } from "@/constants/Talents";
 import { useAuth } from "@/contexts/AuthContext";
@@ -12,7 +14,6 @@ import { animateTabSwitch } from "@/utils/transitions";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { Image } from "expo-image";
-import { router } from "expo-router";
 import React, {
   useCallback,
   useEffect,
@@ -21,7 +22,6 @@ import React, {
   useState,
 } from "react";
 import {
-  Alert,
   Animated,
   Dimensions,
   FlatList,
@@ -30,14 +30,11 @@ import {
   Share,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
-  View,
-  ViewToken,
+  View
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import EditProfileScreen from "./EditProfileScreen";
-import { VideoCard } from "./HomeScreen";
 
 import SettingsScreen from "./SettingsScreen";
 
@@ -60,6 +57,7 @@ interface MeScreenProps {
   ) => void;
   onVideoCommented?: (videoId: string, newCommentCount: number) => void;
   onProfileUpdate?: (updatedProfile: any) => void;
+  onUserPress?: (userId: string) => void;
 }
 
 export default function MeScreen({
@@ -71,6 +69,7 @@ export default function MeScreen({
   onVideoCommented,
   onVideoDelete,
   onProfileUpdate,
+  onUserPress,
 }: MeScreenProps) {
   const insets = useSafeAreaInsets();
   const [activeTab, setActiveTab] = useState<"videos" | "saved">("videos");
@@ -79,6 +78,11 @@ export default function MeScreen({
   const [showEditProfile, setShowEditProfile] = useState(false);
   const tabIndicatorPosition = useRef(new Animated.Value(0)).current;
   const contentPosition = useRef(new Animated.Value(0)).current;
+
+  // Video player modal state
+  const [videoPlayerVisible, setVideoPlayerVisible] = useState(false);
+  const [videoPlayerVideos, setVideoPlayerVideos] = useState<VideoItem[]>([]);
+  const [videoPlayerStartIndex, setVideoPlayerStartIndex] = useState(0);
 
   const { authState } = useAuth();
   const userId = authState.user?.id;
@@ -297,11 +301,11 @@ export default function MeScreen({
               },
             ]}
             activeOpacity={0.8}
-            onPress={() =>
-              router.push(
-                (`/video/${item.id}?feedType=${feedType}&userId=${userId || ""}` as any)
-              )
-            }
+            onPress={() => {
+              setVideoPlayerVideos(displayVideos);
+              setVideoPlayerStartIndex(index);
+              setVideoPlayerVisible(true);
+            }}
             onLongPress={() => {
               if (feedType === "profile") handleDeleteVideo(item.id);
             }}
@@ -498,37 +502,68 @@ export default function MeScreen({
           />
         </View>
 
-        {/* Video Grid - Animated */}
+        {/* Video Grid - Animated Area */}
         <Animated.View
           style={[
             styles.gridContainer,
-            {
-              transform: [{ translateX: contentPosition }],
-            },
+            { transform: [{ translateX: contentPosition }] },
           ]}
         >
+          {/* My Videos Grid */}
           <View style={styles.gridPage}>
-            <FlatList
-              data={userVideos}
-              renderItem={renderVideoItem(userVideos.length, "profile")}
-              keyExtractor={(item) => item.id}
-              numColumns={GRID_COLUMNS}
-              scrollEnabled={false}
-              contentContainerStyle={styles.gridContent}
-            />
+            {userVideos.length > 0 ? (
+              <FlatList
+                data={userVideos}
+                renderItem={renderVideoItem(userVideos.length, "profile")}
+                keyExtractor={(item) => item.id}
+                numColumns={GRID_COLUMNS}
+                scrollEnabled={false}
+                contentContainerStyle={styles.gridContent}
+              />
+            ) : (
+              <EmptyState
+                icon="videocam-off-outline"
+                title="Şu an video bulunmuyor"
+                subtitle="Henüz kendi videolarını yüklemedin."
+              />
+            )}
           </View>
+
+          {/* Saved Videos Grid */}
           <View style={styles.gridPage}>
-            <FlatList
-              data={savedVideosList}
-              renderItem={renderVideoItem(savedVideosList.length, "saved")}
-              keyExtractor={(item) => item.id}
-              numColumns={GRID_COLUMNS}
-              scrollEnabled={false}
-              contentContainerStyle={styles.gridContent}
-            />
+            {savedVideosList.length > 0 ? (
+              <FlatList
+                data={savedVideosList}
+                renderItem={renderVideoItem(savedVideosList.length, "saved")}
+                keyExtractor={(item) => item.id}
+                numColumns={GRID_COLUMNS}
+                scrollEnabled={false}
+                contentContainerStyle={styles.gridContent}
+              />
+            ) : (
+              <EmptyState
+                icon="bookmark-outline"
+                title="Kaydedilen video yok"
+                subtitle="Daha sonra izlemek için videoları kaydedebilirsin."
+              />
+            )}
           </View>
         </Animated.View>
       </ScrollView>
+
+      {/* ✅ Shared Video Player Modal - Overlay */}
+      <VideoPlayerModal
+        visible={videoPlayerVisible}
+        videos={videoPlayerVideos}
+        startIndex={videoPlayerStartIndex}
+        onClose={() => setVideoPlayerVisible(false)}
+        mode="own-profile"
+        onVideoSaved={handleVideoSaved}
+        onVideoLiked={onVideoLiked}
+        onVideoCommented={onVideoCommented}
+        onDelete={activeTab === "videos" ? handleDeleteVideo : undefined}
+        onUserPress={onUserPress}
+      />
 
       {/* ✅ Takipçi / Takip Listesi Modal */}
       {showFollowList && (
@@ -581,254 +616,6 @@ export default function MeScreen({
     </View>
   );
 }
-
-// Basit Profile Video Player - HomeScreen gibi
-const COMMENT_INPUT_HEIGHT = 70;
-
-function ProfileVideoPlayer({
-  visible,
-  videos,
-  startIndex,
-  onClose,
-  onVideoSaved,
-  onVideoLiked,
-  onVideoCommented,
-  onDelete,
-}: {
-  visible: boolean;
-  videos: VideoItem[];
-  startIndex: number;
-  onClose: () => void;
-  onVideoSaved?: (videoId: string, isSaved: boolean) => void;
-  onVideoLiked?: (
-    videoId: string,
-    isLiked: boolean,
-    newLikeCount: number,
-  ) => void;
-  onVideoCommented?: (videoId: string, newCommentCount: number) => void;
-  onDelete?: (videoId: string) => void;
-}) {
-  const [idx, setIdx] = useState(startIndex);
-  const screenHeight = Dimensions.get("window").height;
-  const videoHeight = screenHeight - COMMENT_INPUT_HEIGHT;
-  const [showComments, setShowComments] = useState(false);
-
-  useEffect(() => {
-    setIdx(startIndex);
-  }, [startIndex]);
-
-  const onViewChange = useRef(
-    ({ viewableItems }: { viewableItems: ViewToken[] }) => {
-      if (viewableItems[0]?.index != null) setIdx(viewableItems[0].index);
-    },
-  ).current;
-
-  const viewConfig = useRef({ itemVisiblePercentThreshold: 60 }).current;
-  const getLayout = useCallback(
-    (_: any, i: number) => ({
-      length: videoHeight,
-      offset: videoHeight * i,
-      index: i,
-    }),
-    [videoHeight],
-  );
-  const keyExt = useCallback((item: VideoItem) => item.id, []);
-
-  const currentVideo = videos[idx];
-
-  // ✅ DÜZELDİ: isAuthenticated ve onAuthRequired geçildi — butonlar artık çalışıyor
-  const { authState } = useAuth();
-  const renderItem = useCallback(
-    ({ item, index }: { item: VideoItem; index: number }) => (
-      <View style={{ height: videoHeight }}>
-        <VideoCard
-          data={item}
-          active={index === idx}
-          paused={false}
-          height={videoHeight}
-          isAuthenticated={!!authState.user}
-          onVideoSaved={onVideoSaved}
-          onVideoLiked={onVideoLiked}
-          onVideoCommented={onVideoCommented}
-          onAuthRequired={() =>
-            Alert.alert("Giriş Gerekli", "Bu işlem için giriş yapmalısınız.")
-          }
-        />
-      </View>
-    ),
-    [
-      idx,
-      videoHeight,
-      authState.user,
-      onVideoSaved,
-      onVideoLiked,
-      onVideoCommented,
-    ],
-  );
-
-  if (!visible || !videos.length) return null;
-
-  return (
-    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <View style={playerStyles.container}>
-        {/* Header - Absolute */}
-        <View style={playerStyles.header}>
-          <TouchableOpacity style={playerStyles.backBtn} onPress={onClose}>
-            <Ionicons name="arrow-back" size={24} color="#fff" />
-          </TouchableOpacity>
-          {/* Silme butonu — sadece kendi videosu */}
-          {onDelete && currentVideo && (
-            <TouchableOpacity
-              style={playerStyles.deleteBtn}
-              onPress={() => {
-                Haptics.notificationAsync(
-                  Haptics.NotificationFeedbackType.Warning,
-                );
-                Alert.alert(
-                  "Videoyu Sil",
-                  "Bu videoyu kalıcı olarak silmek istediğinizden emin misiniz?",
-                  [
-                    { text: "İptal", style: "cancel" },
-                    {
-                      text: "Sil",
-                      style: "destructive",
-                      onPress: () => {
-                        onDelete(currentVideo.id);
-                        onClose(); // Player'ı kapat
-                      },
-                    },
-                  ],
-                );
-              }}
-            >
-              <Ionicons name="trash-outline" size={22} color="#FF3B5C" />
-            </TouchableOpacity>
-          )}
-        </View>
-
-        {/* Video List */}
-        <View style={{ height: videoHeight }}>
-          <FlatList
-            data={videos}
-            renderItem={renderItem}
-            keyExtractor={keyExt}
-            pagingEnabled
-            showsVerticalScrollIndicator={false}
-            snapToInterval={videoHeight}
-            snapToAlignment="start"
-            decelerationRate="fast"
-            disableIntervalMomentum
-            onViewableItemsChanged={onViewChange}
-            viewabilityConfig={viewConfig}
-            getItemLayout={getLayout}
-            removeClippedSubviews
-            initialNumToRender={1}
-            maxToRenderPerBatch={2}
-            windowSize={3}
-            initialScrollIndex={startIndex}
-            onScrollToIndexFailed={() => { }}
-            bounces={false}
-            overScrollMode="never"
-          />
-        </View>
-
-        {/* Comment Input */}
-        <TouchableOpacity
-          style={playerStyles.commentInputContainer}
-          activeOpacity={0.9}
-          onPress={() => setShowComments(true)}
-        >
-          <View style={playerStyles.commentInputWrap}>
-            <TextInput
-              style={playerStyles.commentInput}
-              placeholder="Yorum yaz..."
-              placeholderTextColor="#666"
-              editable={false}
-              pointerEvents="none"
-            />
-            <View style={playerStyles.commentSendBtn}>
-              <Ionicons name="chatbubble-outline" size={18} color="#888" />
-            </View>
-          </View>
-        </TouchableOpacity>
-
-        {/* Comments Modal */}
-        {currentVideo && (
-          <CommentsModal
-            visible={showComments}
-            onClose={() => setShowComments(false)}
-            videoId={currentVideo.id}
-            commentCount={currentVideo.comments}
-            onCommentAdded={(newCount) =>
-              onVideoCommented?.(currentVideo.id, newCount)
-            }
-          />
-        )}
-      </View>
-    </Modal>
-  );
-}
-
-const playerStyles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#000" },
-  header: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 10,
-    paddingTop: 50,
-    paddingBottom: 15,
-    paddingHorizontal: 15,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  backBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "rgba(0,0,0,0.5)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  deleteBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "rgba(0,0,0,0.5)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  commentInputContainer: {
-    height: COMMENT_INPUT_HEIGHT,
-    backgroundColor: Colors.surface,
-    paddingHorizontal: 12,
-    justifyContent: "center",
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: Colors.border,
-  },
-  commentInputWrap: { flexDirection: "row", alignItems: "flex-end", gap: 8 },
-  commentInput: {
-    flex: 1,
-    backgroundColor: Colors.surfaceAlt,
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    color: Colors.text,
-    maxHeight: 100,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  commentSendBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: Colors.surfaceAlt,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-});
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },

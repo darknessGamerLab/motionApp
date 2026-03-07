@@ -1,4 +1,4 @@
-import CommentsModal from '@/components/CommentsModal';
+import VideoPlayerModal from '@/components/VideoPlayerModal';
 import Colors from '@/constants/Colors';
 import { supabase } from '@/lib/supabase';
 import { VideoItem } from '@/types/video';
@@ -17,7 +17,6 @@ import React, {
 import {
   Dimensions,
   FlatList,
-  Modal,
   ScrollView,
   StyleSheet,
   Text,
@@ -25,7 +24,6 @@ import {
   TouchableOpacity,
   View
 } from 'react-native';
-import { VideoCard } from './HomeScreen';
 
 
 const { width: W, height: H } = Dimensions.get('window');
@@ -61,6 +59,8 @@ type Props = {
   onVideoSaved?: (id: string, isSaved: boolean) => void;
   onVideoLiked?: (id: string, isLiked: boolean, count: number) => void;
   onVideoCommented?: (id: string, count: number) => void;
+  onUserPress?: (userId: string) => void;
+  videosLoading?: boolean;
 };
 
 // ─── Grid Tile ──────────────────────────────────────────────
@@ -240,100 +240,7 @@ const sp = StyleSheet.create({
   },
 });
 
-// ─── Fullscreen Player ──────────────────────────────────────
-const COMMENT_H = 52;
-function FullscreenPlayer({ visible, videos, startIndex, onClose, onVideoSaved, onVideoLiked, onVideoCommented }: {
-  visible: boolean; videos: VideoItem[]; startIndex: number; onClose: () => void;
-  onVideoSaved?: Props['onVideoSaved'];
-  onVideoLiked?: Props['onVideoLiked'];
-  onVideoCommented?: Props['onVideoCommented'];
-}) {
-  const listRef = useRef<FlatList>(null);
-  const [idx, setIdx] = useState(startIndex);
-  const [showComments, setShowComments] = useState(false);
-  const videoH = H - COMMENT_H;
 
-  const onViewChange = useCallback(({ viewableItems }: any) => {
-    if (viewableItems[0]?.index != null) setIdx(viewableItems[0].index);
-  }, []);
-  const viewCfg = useRef({ itemVisiblePercentThreshold: 60 }).current;
-  const getLayout = useCallback((_: any, i: number) => ({ length: videoH, offset: videoH * i, index: i }), [videoH]);
-
-  const renderItem = useCallback(({ item, index }: { item: VideoItem; index: number }) => (
-    <View style={{ height: videoH }}>
-      <VideoCard
-        data={item} active={index === idx} paused={false} height={videoH}
-        onVideoSaved={onVideoSaved} onVideoLiked={onVideoLiked} onVideoCommented={onVideoCommented} isAuthenticated={true}
-      />
-    </View>
-  ), [idx, videoH, onVideoSaved, onVideoLiked, onVideoCommented]);
-
-  const current = videos[idx];
-  if (!visible) return null;
-
-  return (
-    <Modal visible animationType="slide" onRequestClose={onClose}>
-      <View style={{ flex: 1, backgroundColor: '#000' }}>
-        <TouchableOpacity style={fp.closeBtn} onPress={onClose}>
-          <View style={fp.closeBg}><Ionicons name="arrow-back" size={22} color="#fff" /></View>
-        </TouchableOpacity>
-        <View style={{ height: videoH }}>
-          <FlatList
-            ref={listRef}
-            data={videos}
-            renderItem={renderItem}
-            keyExtractor={i => i.id}
-            pagingEnabled
-            showsVerticalScrollIndicator={false}
-            snapToInterval={videoH}
-            decelerationRate="fast"
-            disableIntervalMomentum
-            onViewableItemsChanged={onViewChange}
-            viewabilityConfig={viewCfg}
-            getItemLayout={getLayout}
-            initialScrollIndex={startIndex}
-            removeClippedSubviews={false}
-            bounces={false}
-            overScrollMode="never"
-            onScrollToIndexFailed={() => { }}
-          />
-        </View>
-        <TouchableOpacity style={fp.commentBar} onPress={() => setShowComments(true)}>
-          <Ionicons name="chatbubble-outline" size={16} color={Colors.textMuted} />
-          <Text style={fp.commentPlaceholder}>Yorum yaz...</Text>
-          <Ionicons name="paper-plane-outline" size={16} color={Colors.textMuted} />
-        </TouchableOpacity>
-        {current && (
-          <CommentsModal
-            visible={showComments}
-            onClose={() => setShowComments(false)}
-            videoId={current.id}
-            commentCount={current.comments}
-            onCommentAdded={c => onVideoCommented?.(current.id, c)}
-          />
-        )}
-      </View>
-    </Modal>
-  );
-}
-
-const fp = StyleSheet.create({
-  closeBtn: { position: 'absolute', top: 52, left: 14, zIndex: 100 },
-  closeBg: {
-    width: 38, height: 38, borderRadius: 19,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    alignItems: 'center', justifyContent: 'center',
-  },
-  commentBar: {
-    height: COMMENT_H, backgroundColor: Colors.surface,
-    paddingHorizontal: 16,
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: Colors.border,
-  },
-  commentPlaceholder: {
-    flex: 1, fontSize: 14, color: Colors.textMuted,
-  },
-});
 
 
 // ─── Mock Data ──────────────────────────────────────────────
@@ -363,7 +270,7 @@ const MOCK: VideoItem[] = Array.from({ length: 90 }, (_, i) => {
 
 // ─── Main ───────────────────────────────────────────────────
 export default function InspirationScreen({
-  isActive = false, videos = [], onVideoSaved, onVideoLiked, onVideoCommented,
+  isActive = false, videos = [], videosLoading = false, onVideoSaved, onVideoLiked, onVideoCommented, onUserPress,
 }: Props) {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all');
@@ -481,12 +388,25 @@ export default function InspirationScreen({
 
       {/* ─── Instagram-style 3-col Grid ─── */}
       {allVideos.length === 0 ? (
-        <View style={s.empty}>
-          <Ionicons name="search-outline" size={48} color={Colors.textDim} />
-          <Text style={s.emptyTitle}>
-            {search ? `"${search}" bulunamadı` : 'Henüz içerik yok'}
-          </Text>
-        </View>
+        videosLoading ? (
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 0 }}>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: GRID_GAP }}>
+              {Array.from({ length: 15 }).map((_, i) => (
+                <View key={i} style={{ width: TILE_W, height: TILE_H }}>
+                  {/* We use SkeletonLoader internally if available, otherwise just grey box */}
+                  <View style={{ flex: 1, backgroundColor: 'rgba(150,150,150,0.2)', borderRadius: 3 }} />
+                </View>
+              ))}
+            </View>
+          </ScrollView>
+        ) : (
+          <View style={s.empty}>
+            <Ionicons name="search-outline" size={48} color={Colors.textDim} />
+            <Text style={s.emptyTitle}>
+              {search ? `"${search}" bulunamadı` : 'Henüz içerik yok'}
+            </Text>
+          </View>
+        )
       ) : (
         <ScrollView showsVerticalScrollIndicator={false} bounces={false} overScrollMode="never" contentContainerStyle={{ padding: 0 }}>
           {rows.map((row, ri) => (
@@ -511,18 +431,18 @@ export default function InspirationScreen({
         </ScrollView>
       )}
 
-      {/* ─── Fullscreen Player ─── */}
-      {playerVisible && (
-        <FullscreenPlayer
-          visible={playerVisible}
-          videos={playerVideos}
-          startIndex={playerStart}
-          onClose={() => setPlayerVisible(false)}
-          onVideoSaved={onVideoSaved}
-          onVideoLiked={onVideoLiked}
-          onVideoCommented={onVideoCommented}
-        />
-      )}
+      {/* ─── Shared Video Player Modal ─── */}
+      <VideoPlayerModal
+        visible={playerVisible}
+        videos={playerVideos}
+        startIndex={playerStart}
+        onClose={() => setPlayerVisible(false)}
+        mode="explore"
+        onVideoSaved={onVideoSaved}
+        onVideoLiked={onVideoLiked}
+        onVideoCommented={onVideoCommented}
+        onUserPress={onUserPress}
+      />
     </View>
   );
 }

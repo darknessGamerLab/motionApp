@@ -29,6 +29,7 @@ interface Comment {
   text: string;
   time: string;
   likes: number;
+  isLiked?: boolean;
 }
 
 interface Props {
@@ -42,15 +43,29 @@ interface Props {
 // Removed MOCK_COMMENTS
 
 function CommentRow({ item }: { item: Comment }) {
-  const [liked, setLiked] = useState(false);
+  const { authState } = useAuth();
+  const [liked, setLiked] = useState(!!item.isLiked);
+  const [likes, setLikes] = useState(item.likes || 0);
   const scale = useRef(new Animated.Value(1)).current;
 
-  const handleLike = () => {
-    setLiked(l => !l);
+  const handleLike = async () => {
+    if (!authState.user) return; // Need auth to like
+    const isNowLiked = !liked;
+    setLiked(isNowLiked);
+    setLikes(l => isNowLiked ? l + 1 : l - 1);
+
     Animated.sequence([
       Animated.spring(scale, { toValue: 1.4, useNativeDriver: true, speed: 30 }),
       Animated.spring(scale, { toValue: 1, useNativeDriver: true, speed: 30 }),
     ]).start();
+
+    try {
+      if (isNowLiked) {
+        await supabase.from('comment_likes').insert({ comment_id: item.id, user_id: authState.user.id });
+      } else {
+        await supabase.from('comment_likes').delete().eq('comment_id', item.id).eq('user_id', authState.user.id);
+      }
+    } catch { } // Silent fallback
   };
 
   return (
@@ -67,7 +82,7 @@ function CommentRow({ item }: { item: Comment }) {
         <Animated.View style={{ transform: [{ scale }] }}>
           <Ionicons name={liked ? 'heart' : 'heart-outline'} size={16} color={liked ? Colors.primary : Colors.textMuted} />
         </Animated.View>
-        <Text style={[cs.likeCount, liked && { color: Colors.primary }]}>{liked ? item.likes + 1 : item.likes}</Text>
+        <Text style={[cs.likeCount, liked && { color: Colors.primary }]}>{likes}</Text>
       </TouchableOpacity>
     </View>
   );
@@ -119,17 +134,10 @@ export default function CommentsModal({ visible, onClose, videoId, commentCount,
     if (!videoId) return;
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('comments')
-        .select(`
-          id,
-          text,
-          content,
-          created_at,
-          profiles!inner ( username, avatar_url )
-        `)
-        .eq('video_id', videoId)
-        .order('created_at', { ascending: false });
+      const { data, error } = await supabase.rpc('get_video_comments', {
+        p_video_id: videoId,
+        p_viewer_id: authState.user?.id || null
+      });
 
       if (error) {
         console.error('Fetch comments error:', error);
@@ -140,12 +148,13 @@ export default function CommentsModal({ visible, onClose, videoId, commentCount,
         const formatted = data.map((c: any) => ({
           id: c.id,
           user: {
-            username: c.profiles?.username || 'user',
-            avatar: c.profiles?.avatar_url || `https://ui-avatars.com/api/?name=${c.profiles?.username || 'u'}`
+            username: c.username || 'user',
+            avatar: c.avatar_url || `https://ui-avatars.com/api/?name=${c.username || 'u'}`
           },
-          text: c.content || c.text || '',
+          text: c.text || '',
           time: new Date(c.created_at).toLocaleDateString(),
-          likes: 0
+          likes: c.likes_count || 0,
+          isLiked: c.is_liked || false
         }));
         setComments(formatted);
       }

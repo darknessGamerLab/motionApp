@@ -41,3 +41,8 @@ app-example
 # generated native folders
 /ios
 /android
+
+# logs
+tsc_errors.log
+tsc_final.log
+

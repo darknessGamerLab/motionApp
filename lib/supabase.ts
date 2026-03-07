@@ -1,6 +1,6 @@
+import { Database } from '@/types/database';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
-import { Database } from '@/types/database';
 
 const supabaseUrl = 'https://mhgxrzejobmkuwylyelx.supabase.co';
 const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1oZ3hyemVqb2Jta3V3eWx5ZWx4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njc1ODY0NDksImV4cCI6MjA4MzE2MjQ0OX0.8IDCg303cgOsglyydOPm_-GBQaEJNKBFEZk8NrtSK24';
@@ -18,6 +18,7 @@ export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
 export const STORAGE_URL = `${supabaseUrl}/storage/v1/object/public`;
 export const AVATARS_BUCKET = 'avatars';
 export const VIDEOS_BUCKET = 'videos';
+export const THUMBNAILS_BUCKET = 'thumbnails';
 
 // Helper to get public URL for storage items
 export const getPublicUrl = (bucket: string, path: string) => {

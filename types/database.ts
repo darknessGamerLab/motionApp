@@ -1,336 +1,205 @@
-// Supabase Database Types
-// Bu dosya veritabanı yapısını TypeScript'e tanıtır
+// AUTO-GENERATED — do not edit by hand.
+// Regenerate with: supabase gen types typescript --project-id mhgxrzejobmkuwylyelx
+// Last generated: 2026-03-06
 
-export type UserType = 'individual' | 'corporate';
+export type Json =
+  | string
+  | number
+  | boolean
+  | null
+  | { [key: string]: Json | undefined }
+  | Json[]
 
-export interface Database {
+export type Database = {
+  __InternalSupabase: {
+    PostgrestVersion: "14.1"
+  }
   public: {
     Tables: {
-      profiles: {
-        Row: {
-          id: string;
-          username: string;
-          full_name: string;
-          bio: string | null;
-          avatar_url: string | null;
-          user_type: UserType;
-          talents: string[];
-          tax_office: string | null;
-          tax_number: string | null;
-          created_at: string;
-          updated_at: string;
-        };
-        Insert: {
-          id: string;
-          username: string;
-          full_name: string;
-          bio?: string | null;
-          avatar_url?: string | null;
-          user_type: UserType;
-          talents?: string[];
-          tax_office?: string | null;
-          tax_number?: string | null;
-          created_at?: string;
-          updated_at?: string;
-        };
-        Update: {
-          id?: string;
-          username?: string;
-          full_name?: string;
-          bio?: string | null;
-          avatar_url?: string | null;
-          user_type?: UserType;
-          talents?: string[];
-          tax_office?: string | null;
-          tax_number?: string | null;
-          updated_at?: string;
-        };
-      };
-      videos: {
-        Row: {
-          id: string;
-          user_id: string;
-          video_url: string;
-          thumbnail_url: string | null;
-          description: string;
-          topic: string | null;
-          likes_count: number;
-          comments_count: number;
-          shares_count: number;
-          views_count: number;
-          created_at: string;
-        };
-        Insert: {
-          id?: string;
-          user_id: string;
-          video_url: string;
-          thumbnail_url?: string | null;
-          description?: string;
-          topic?: string | null;
-          likes_count?: number;
-          comments_count?: number;
-          shares_count?: number;
-          views_count?: number;
-          created_at?: string;
-        };
-        Update: {
-          video_url?: string;
-          thumbnail_url?: string | null;
-          description?: string;
-          topic?: string | null;
-          likes_count?: number;
-          comments_count?: number;
-          shares_count?: number;
-          views_count?: number;
-        };
-      };
-      likes: {
-        Row: {
-          id: string;
-          user_id: string;
-          video_id: string;
-          created_at: string;
-        };
-        Insert: {
-          id?: string;
-          user_id: string;
-          video_id: string;
-          created_at?: string;
-        };
-        Update: never;
-      };
-      saves: {
-        Row: {
-          id: string;
-          user_id: string;
-          video_id: string;
-          created_at: string;
-        };
-        Insert: {
-          id?: string;
-          user_id: string;
-          video_id: string;
-          created_at?: string;
-        };
-        Update: never;
-      };
+      activity_log: {
+        Row: { action: string; created_at: string | null; id: string; metadata: Json | null; user_id: string | null }
+        Insert: { action: string; created_at?: string | null; id?: string; metadata?: Json | null; user_id?: string | null }
+        Update: { action?: string; created_at?: string | null; id?: string; metadata?: Json | null; user_id?: string | null }
+        Relationships: [{ foreignKeyName: "activity_log_user_id_fkey"; columns: ["user_id"]; isOneToOne: false; referencedRelation: "profiles"; referencedColumns: ["id"] }]
+      }
+      categories: {
+        Row: { created_at: string | null; description: string | null; icon: string | null; id: string; is_active: boolean | null; name: string; slug: string }
+        Insert: { created_at?: string | null; description?: string | null; icon?: string | null; id?: string; is_active?: boolean | null; name: string; slug: string }
+        Update: { created_at?: string | null; description?: string | null; icon?: string | null; id?: string; is_active?: boolean | null; name?: string; slug?: string }
+        Relationships: []
+      }
       comments: {
-        Row: {
-          id: string;
-          user_id: string;
-          video_id: string;
-          content: string;
-          created_at: string;
-        };
-        Insert: {
-          id?: string;
-          user_id: string;
-          video_id: string;
-          content: string;
-          created_at?: string;
-        };
-        Update: {
-          content?: string;
-        };
-      };
-      follows: {
-        Row: {
-          follower_id: string;
-          following_id: string;
-          created_at: string;
-        };
-        Insert: {
-          follower_id: string;
-          following_id: string;
-          created_at?: string;
-        };
-        Update: never;
-      };
-      notifications: {
-        Row: {
-          id: string;
-          user_id: string;
-          type: 'like' | 'comment' | 'follow' | 'system';
-          actor_id: string | null;
-          video_id: string | null;
-          content: string | null;
-          is_read: boolean;
-          created_at: string;
-        };
-        Insert: {
-          id?: string;
-          user_id: string;
-          type: 'like' | 'comment' | 'follow' | 'system';
-          actor_id?: string | null;
-          video_id?: string | null;
-          content?: string | null;
-          is_read?: boolean;
-          created_at?: string;
-        };
-        Update: {
-          is_read?: boolean;
-        };
-      };
+        Row: { content: string | null; created_at: string | null; id: string; text: string | null; user_id: string; video_id: string }
+        Insert: { content?: string | null; created_at?: string | null; id?: string; text?: string | null; user_id: string; video_id: string }
+        Update: { content?: string | null; created_at?: string | null; id?: string; text?: string | null; user_id?: string; video_id?: string }
+        Relationships: [
+          { foreignKeyName: "comments_user_id_fkey"; columns: ["user_id"]; isOneToOne: false; referencedRelation: "profiles"; referencedColumns: ["id"] },
+          { foreignKeyName: "comments_video_id_fkey"; columns: ["video_id"]; isOneToOne: false; referencedRelation: "videos"; referencedColumns: ["id"] },
+        ]
+      }
       corporate_applications: {
-        Row: {
-          id: string;
-          user_id: string;
-          user_email: string;
-          company_name: string;
-          tax_office: string;
-          tax_number: string;
-          phone: string;
-          status: 'pending' | 'approved' | 'rejected';
-          created_at: string;
-        };
-        Insert: {
-          id?: string;
-          user_id: string;
-          user_email: string;
-          company_name: string;
-          tax_office: string;
-          tax_number: string;
-          phone: string;
-          status?: 'pending' | 'approved' | 'rejected';
-          created_at?: string;
-        };
-        Update: {
-          status?: 'pending' | 'approved' | 'rejected';
-        };
-      };
-      sponsor_banners: {
-        Row: {
-          id: string;
-          title: string;
-          subtitle: string | null;
-          image_url: string;
-          brand: string | null;
-          target_url: string | null;
-          clicks: number;
-          views: number;
-          is_active: boolean;
-          slider_pos: number;
-          created_at: string;
-        };
-        Insert: {
-          id?: string;
-          title: string;
-          subtitle?: string | null;
-          image_url: string;
-          brand?: string | null;
-          target_url?: string | null;
-          clicks?: number;
-          views?: number;
-          is_active?: boolean;
-          slider_pos?: number;
-          created_at?: string;
-        };
-        Update: {
-          title?: string;
-          subtitle?: string | null;
-          image_url?: string;
-          brand?: string | null;
-          target_url?: string | null;
-          clicks?: number;
-          views?: number;
-          is_active?: boolean;
-          slider_pos?: number;
-        };
-      };
+        Row: { admin_note: string | null; company_name: string; created_at: string | null; id: string; phone: string; reviewed_at: string | null; status: string; tax_number: string; tax_office: string; user_email: string; user_id: string }
+        Insert: { admin_note?: string | null; company_name: string; created_at?: string | null; id?: string; phone: string; reviewed_at?: string | null; status?: string; tax_number: string; tax_office: string; user_email: string; user_id: string }
+        Update: { admin_note?: string | null; company_name?: string; created_at?: string | null; id?: string; phone?: string; reviewed_at?: string | null; status?: string; tax_number?: string; tax_office?: string; user_email?: string; user_id?: string }
+        Relationships: [{ foreignKeyName: "corporate_applications_user_id_fkey"; columns: ["user_id"]; isOneToOne: false; referencedRelation: "profiles"; referencedColumns: ["id"] }]
+      }
+      follows: {
+        Row: { created_at: string | null; follower_id: string; following_id: string; id: string }
+        Insert: { created_at?: string | null; follower_id: string; following_id: string; id?: string }
+        Update: { created_at?: string | null; follower_id?: string; following_id?: string; id?: string }
+        Relationships: [
+          { foreignKeyName: "follows_follower_id_fkey"; columns: ["follower_id"]; isOneToOne: false; referencedRelation: "profiles"; referencedColumns: ["id"] },
+          { foreignKeyName: "follows_following_id_fkey"; columns: ["following_id"]; isOneToOne: false; referencedRelation: "profiles"; referencedColumns: ["id"] },
+        ]
+      }
+      likes: {
+        Row: { created_at: string | null; id: string; user_id: string; video_id: string }
+        Insert: { created_at?: string | null; id?: string; user_id: string; video_id: string }
+        Update: { created_at?: string | null; id?: string; user_id?: string; video_id?: string }
+        Relationships: [
+          { foreignKeyName: "likes_user_id_fkey"; columns: ["user_id"]; isOneToOne: false; referencedRelation: "profiles"; referencedColumns: ["id"] },
+          { foreignKeyName: "likes_video_id_fkey"; columns: ["video_id"]; isOneToOne: false; referencedRelation: "videos"; referencedColumns: ["id"] },
+        ]
+      }
+      notifications: {
+        Row: { created_at: string | null; from_user_id: string; id: string; is_read: boolean | null; message: string | null; thumbnail_url: string | null; type: Database["public"]["Enums"]["notification_type"]; user_id: string; video_id: string | null }
+        Insert: { created_at?: string | null; from_user_id: string; id?: string; is_read?: boolean | null; message?: string | null; thumbnail_url?: string | null; type: Database["public"]["Enums"]["notification_type"]; user_id: string; video_id?: string | null }
+        Update: { created_at?: string | null; from_user_id?: string; id?: string; is_read?: boolean | null; message?: string | null; thumbnail_url?: string | null; type?: Database["public"]["Enums"]["notification_type"]; user_id?: string; video_id?: string | null }
+        Relationships: [
+          { foreignKeyName: "notifications_from_user_id_fkey"; columns: ["from_user_id"]; isOneToOne: false; referencedRelation: "profiles"; referencedColumns: ["id"] },
+          { foreignKeyName: "notifications_user_id_fkey"; columns: ["user_id"]; isOneToOne: false; referencedRelation: "profiles"; referencedColumns: ["id"] },
+          { foreignKeyName: "notifications_video_id_fkey"; columns: ["video_id"]; isOneToOne: false; referencedRelation: "videos"; referencedColumns: ["id"] },
+        ]
+      }
+      profiles: {
+        Row: { avatar_url: string | null; avatars: string[] | null; bio: string | null; created_at: string | null; followers_count: number; following_count: number; full_name: string; id: string; is_banned: boolean; last_seen_at: string | null; radars_count: number; talents: string[] | null; tax_number: string | null; tax_office: string | null; updated_at: string | null; user_type: Database["public"]["Enums"]["user_type"]; username: string; videos_count: number }
+        Insert: { avatar_url?: string | null; avatars?: string[] | null; bio?: string | null; created_at?: string | null; followers_count?: number; following_count?: number; full_name: string; id: string; is_banned?: boolean; last_seen_at?: string | null; radars_count?: number; talents?: string[] | null; tax_number?: string | null; tax_office?: string | null; updated_at?: string | null; user_type?: Database["public"]["Enums"]["user_type"]; username: string; videos_count?: number }
+        Update: { avatar_url?: string | null; avatars?: string[] | null; bio?: string | null; created_at?: string | null; followers_count?: number; following_count?: number; full_name?: string; id?: string; is_banned?: boolean; last_seen_at?: string | null; radars_count?: number; talents?: string[] | null; tax_number?: string | null; tax_office?: string | null; updated_at?: string | null; user_type?: Database["public"]["Enums"]["user_type"]; username?: string; videos_count?: number }
+        Relationships: []
+      }
       reports: {
-        Row: {
-          id: string;
-          reporter_id: string;
-          target_type: 'account' | 'content';
-          target_id: string;
-          reason: string | null;
-          details: string | null;
-          status: 'pending' | 'investigating' | 'resolved' | 'dismissed';
-          created_at: string;
-        };
-        Insert: {
-          id?: string;
-          reporter_id: string;
-          target_type: 'account' | 'content';
-          target_id: string;
-          reason?: string | null;
-          details?: string | null;
-          status?: 'pending' | 'investigating' | 'resolved' | 'dismissed';
-          created_at?: string;
-        };
-        Update: {
-          status?: 'pending' | 'investigating' | 'resolved' | 'dismissed';
-        };
-      };
-      radars: {
-        Row: {
-          id: string;
-          corporate_id: string;
-          individual_id: string;
-          created_at: string;
-        };
-        Insert: {
-          id?: string;
-          corporate_id: string;
-          individual_id: string;
-          created_at?: string;
-        };
-        Update: never;
-      };
-      radar: { // Legacy spotlight, can be removed eventually but keeping for now
-        Row: {
-          id: string;
-          user_id: string;
-          title: string;
-          description: string | null;
-          video_url: string | null;
-          image_url: string | null;
-          created_at: string;
-        };
-        Insert: {
-          id?: string;
-          user_id: string;
-          title: string;
-          description?: string | null;
-          video_url?: string | null;
-          image_url?: string | null;
-          created_at?: string;
-        };
-        Update: {
-          title?: string;
-          description?: string | null;
-          video_url?: string | null;
-          image_url?: string | null;
-        };
-      };
-    };
-    Views: {};
-    Functions: {};
+        Row: { created_at: string | null; details: string | null; id: string; reason: string | null; reporter_id: string | null; status: string | null; target_id: string; target_type: string }
+        Insert: { created_at?: string | null; details?: string | null; id?: string; reason?: string | null; reporter_id?: string | null; status?: string | null; target_id: string; target_type: string }
+        Update: { created_at?: string | null; details?: string | null; id?: string; reason?: string | null; reporter_id?: string | null; status?: string | null; target_id?: string; target_type?: string }
+        Relationships: [{ foreignKeyName: "reports_reporter_id_fkey"; columns: ["reporter_id"]; isOneToOne: false; referencedRelation: "profiles"; referencedColumns: ["id"] }]
+      }
+      saves: {
+        Row: { created_at: string | null; id: string; user_id: string; video_id: string }
+        Insert: { created_at?: string | null; id?: string; user_id: string; video_id: string }
+        Update: { created_at?: string | null; id?: string; user_id?: string; video_id?: string }
+        Relationships: [
+          { foreignKeyName: "saves_user_id_fkey"; columns: ["user_id"]; isOneToOne: false; referencedRelation: "profiles"; referencedColumns: ["id"] },
+          { foreignKeyName: "saves_video_id_fkey"; columns: ["video_id"]; isOneToOne: false; referencedRelation: "videos"; referencedColumns: ["id"] },
+        ]
+      }
+      sponsor_banners: {
+        Row: { brand: string | null; budget: number | null; clicks: number | null; created_at: string | null; cta_text: string | null; display_order: number | null; ends_at: string | null; id: string; image_url: string; impressions: number; index_views: number | null; is_active: boolean | null; starts_at: string | null; subtitle: string | null; target_url: string | null; title: string; updated_at: string | null; views: number | null }
+        Insert: { brand?: string | null; budget?: number | null; clicks?: number | null; created_at?: string | null; cta_text?: string | null; display_order?: number | null; ends_at?: string | null; id?: string; image_url: string; impressions?: number; index_views?: number | null; is_active?: boolean | null; starts_at?: string | null; subtitle?: string | null; target_url?: string | null; title: string; updated_at?: string | null; views?: number | null }
+        Update: { brand?: string | null; budget?: number | null; clicks?: number | null; created_at?: string | null; cta_text?: string | null; display_order?: number | null; ends_at?: string | null; id?: string; image_url?: string; impressions?: number; index_views?: number | null; is_active?: boolean | null; starts_at?: string | null; subtitle?: string | null; target_url?: string | null; title?: string; updated_at?: string | null; views?: number | null }
+        Relationships: []
+      }
+      system_config: {
+        Row: { key: string; updated_at: string | null; value: Json }
+        Insert: { key: string; updated_at?: string | null; value: Json }
+        Update: { key?: string; updated_at?: string | null; value?: Json }
+        Relationships: []
+      }
+      talents: {
+        Row: { created_at: string | null; icon: string | null; id: string; is_active: boolean | null; name: string }
+        Insert: { created_at?: string | null; icon?: string | null; id?: string; is_active?: boolean | null; name: string }
+        Update: { created_at?: string | null; icon?: string | null; id?: string; is_active?: boolean | null; name?: string }
+        Relationships: []
+      }
+      videos: {
+        Row: { category: string | null; comments_count: number | null; created_at: string | null; description: string | null; id: string; likes_count: number | null; saves_count: number; shares_count: number | null; storage_path: string | null; thumbnail_path: string | null; thumbnail_url: string | null; topic: string | null; user_id: string; video_url: string; views_count: number | null }
+        Insert: { category?: string | null; comments_count?: number | null; created_at?: string | null; description?: string | null; id?: string; likes_count?: number | null; saves_count?: number; shares_count?: number | null; storage_path?: string | null; thumbnail_path?: string | null; thumbnail_url?: string | null; topic?: string | null; user_id: string; video_url: string; views_count?: number | null }
+        Update: { category?: string | null; comments_count?: number | null; created_at?: string | null; description?: string | null; id?: string; likes_count?: number | null; saves_count?: number; shares_count?: number | null; storage_path?: string | null; thumbnail_path?: string | null; thumbnail_url?: string | null; topic?: string | null; user_id?: string; video_url?: string; views_count?: number | null }
+        Relationships: [{ foreignKeyName: "videos_user_id_fkey"; columns: ["user_id"]; isOneToOne: false; referencedRelation: "profiles"; referencedColumns: ["id"] }]
+      }
+    }
+    Views: {
+      video_feed: {
+        Row: { avatar_url: string | null; comments_count: number | null; created_at: string | null; description: string | null; full_name: string | null; id: string | null; likes_count: number | null; shares_count: number | null; thumbnail_url: string | null; topic: string | null; user_id: string | null; user_type: Database["public"]["Enums"]["user_type"] | null; username: string | null; video_url: string | null; views_count: number | null }
+        Relationships: []
+      }
+    }
+    Functions: {
+      increment_video_view: { Args: { p_video_id: string }; Returns: undefined }
+      increment_view_count: { Args: { vid: string }; Returns: undefined }
+    }
     Enums: {
-      user_type: UserType;
-    };
-  };
+      notification_type: "like" | "comment" | "follow" | "radar" | "system"
+      user_type: "individual" | "corporate"
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
 }
 
-export type Profile = Database['public']['Tables']['profiles']['Row'];
-export type Video = Database['public']['Tables']['videos']['Row'];
-export type Like = Database['public']['Tables']['likes']['Row'];
-export type Save = Database['public']['Tables']['saves']['Row'];
-export type Comment = Database['public']['Tables']['comments']['Row'];
-export type Follow = Database['public']['Tables']['follows']['Row'];
-export type Notification = Database['public']['Tables']['notifications']['Row'];
-export type Radar = Database['public']['Tables']['radars']['Row'];
-export type CorporateApplication = Database['public']['Tables']['corporate_applications']['Row'];
-export type SponsorBanner = Database['public']['Tables']['sponsor_banners']['Row'];
-export type Report = Database['public']['Tables']['reports']['Row'];
+type DatabaseWithoutInternals = Omit<Database, "__InternalSupabase">
+type DefaultSchema = DatabaseWithoutInternals[Extract<keyof Database, "public">]
 
-// Extended types with relations
-export interface VideoWithUser extends Video {
-  user: {
-    username: string;
-    avatar_url: string | null;
-    full_name: string;
-  };
-  is_liked?: boolean;
-  is_saved?: boolean;
-}
+export type Tables<
+  DefaultSchemaTableNameOrOptions extends keyof (DefaultSchema["Tables"] & DefaultSchema["Views"]) | { schema: keyof DatabaseWithoutInternals },
+  TableName extends DefaultSchemaTableNameOrOptions extends { schema: keyof DatabaseWithoutInternals }
+  ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] & DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
+  : never = never,
+> = DefaultSchemaTableNameOrOptions extends { schema: keyof DatabaseWithoutInternals }
+  ? (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] & DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])[TableName] extends { Row: infer R } ? R : never
+  : DefaultSchemaTableNameOrOptions extends keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
+  ? (DefaultSchema["Tables"] & DefaultSchema["Views"])[DefaultSchemaTableNameOrOptions] extends { Row: infer R } ? R : never
+  : never
+
+export type TablesInsert<
+  DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"] | { schema: keyof DatabaseWithoutInternals },
+  TableName extends DefaultSchemaTableNameOrOptions extends { schema: keyof DatabaseWithoutInternals }
+  ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
+  : never = never,
+> = DefaultSchemaTableNameOrOptions extends { schema: keyof DatabaseWithoutInternals }
+  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends { Insert: infer I } ? I : never
+  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
+  ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends { Insert: infer I } ? I : never
+  : never
+
+export type TablesUpdate<
+  DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"] | { schema: keyof DatabaseWithoutInternals },
+  TableName extends DefaultSchemaTableNameOrOptions extends { schema: keyof DatabaseWithoutInternals }
+  ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
+  : never = never,
+> = DefaultSchemaTableNameOrOptions extends { schema: keyof DatabaseWithoutInternals }
+  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends { Update: infer U } ? U : never
+  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
+  ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends { Update: infer U } ? U : never
+  : never
+
+export type Enums<
+  DefaultSchemaEnumNameOrOptions extends keyof DefaultSchema["Enums"] | { schema: keyof DatabaseWithoutInternals },
+  EnumName extends DefaultSchemaEnumNameOrOptions extends { schema: keyof DatabaseWithoutInternals }
+  ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
+  : never = never,
+> = DefaultSchemaEnumNameOrOptions extends { schema: keyof DatabaseWithoutInternals }
+  ? DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"][EnumName]
+  : DefaultSchemaEnumNameOrOptions extends keyof DefaultSchema["Enums"]
+  ? DefaultSchema["Enums"][DefaultSchemaEnumNameOrOptions]
+  : never
+
+// Convenience type aliases
+export type Profile = Tables<"profiles">
+export type Video = Tables<"videos">
+export type Like = Tables<"likes">
+export type Save = Tables<"saves">
+export type Comment = Tables<"comments">
+export type Follow = Tables<"follows">
+export type Notification = Tables<"notifications">
+export type Report = Tables<"reports">
+export type CorporateApplication = Tables<"corporate_applications">
+
+export const Constants = {
+  public: {
+    Enums: {
+      notification_type: ["like", "comment", "follow", "radar", "system"],
+      user_type: ["individual", "corporate"],
+    },
+  },
+} as const

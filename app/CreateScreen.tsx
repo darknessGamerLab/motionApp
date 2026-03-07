@@ -1,9 +1,9 @@
+import { CustomAlert as Alert } from '@/components/GlobalAlert';
 import Colors from '@/constants/Colors';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  Alert,
   Animated,
   Dimensions,
   Easing,

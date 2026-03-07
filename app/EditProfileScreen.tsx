@@ -1,4 +1,5 @@
 import CustomCropper from '@/components/CustomCropper';
+import { CustomAlert as Alert } from '@/components/GlobalAlert';
 import Colors from '@/constants/Colors';
 import { TALENTS, getTalentById } from '@/constants/Talents';
 import { useAuth } from '@/contexts/AuthContext';
@@ -10,7 +11,6 @@ import * as ImagePicker from 'expo-image-picker';
 import React, { useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   KeyboardAvoidingView,
   Platform,
   ScrollView,

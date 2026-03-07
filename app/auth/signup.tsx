@@ -36,6 +36,18 @@ export default function SignupScreen() {
   const [error, setError] = useState('');
   const [usernameState, setUsernameState] = useState<'idle' | 'checking' | 'ok' | 'taken' | 'invalid'>('idle');
 
+  // Password strength: 0=none, 1=weak, 2=medium, 3=strong
+  const passwordStrength = (() => {
+    if (!password) return 0;
+    let score = 0;
+    if (password.length >= 8) score++;
+    if (/[A-Z]/.test(password) || /[0-9]/.test(password)) score++;
+    if (/[^A-Za-z0-9]/.test(password) || password.length >= 12) score++;
+    return score;
+  })();
+  const strengthLabel = ['', 'Zayıf', 'Orta', 'Güçlü'][passwordStrength];
+  const strengthColor = ['', Colors.error, '#F5A623', Colors.success][passwordStrength];
+
   const checkUsername = async (val: string) => {
     const v = val.replace(/\s/g, '').toLowerCase();
     setUsername(v);
@@ -246,6 +258,24 @@ export default function SignupScreen() {
             </TouchableOpacity>
           </View>
 
+          {/* Password strength indicator */}
+          {password.length > 0 && (
+            <View style={s.strengthWrap}>
+              <View style={s.strengthBars}>
+                {[1, 2, 3].map(i => (
+                  <View
+                    key={i}
+                    style={[
+                      s.strengthBar,
+                      { backgroundColor: i <= passwordStrength ? strengthColor : Colors.border }
+                    ]}
+                  />
+                ))}
+              </View>
+              <Text style={[s.strengthLabel, { color: strengthColor }]}>{strengthLabel}</Text>
+            </View>
+          )}
+
           {/* Confirm password */}
           <View style={[s.inputWrap, confirmPass && password !== confirmPass ? { borderColor: Colors.error } : {}]}>
             <Ionicons name="lock-closed-outline" size={18} color={Colors.textMuted} style={s.inputIcon} />
@@ -375,6 +405,11 @@ const s = StyleSheet.create({
   input: { flex: 1, fontSize: 15, color: Colors.text },
   eyeBtn: { padding: 4 },
   fieldError: { color: Colors.error, fontSize: 12, marginTop: -6, marginLeft: 4 },
+
+  strengthWrap: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: -4 },
+  strengthBars: { flexDirection: 'row', gap: 4, flex: 1 },
+  strengthBar: { flex: 1, height: 3, borderRadius: 2 },
+  strengthLabel: { fontSize: 11, fontWeight: '600', minWidth: 36, textAlign: 'right' },
 
   errorBox: {
     flexDirection: 'row', alignItems: 'center', gap: 6,

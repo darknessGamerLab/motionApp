@@ -1,6 +1,8 @@
+import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { GlobalAlert } from '@/components/GlobalAlert';
 import Colors from '@/constants/Colors';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
-import { router, Slot, useSegments } from 'expo-router';
+import { router, Stack, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
 import { ActivityIndicator, Platform, StatusBar, View } from 'react-native';
@@ -46,15 +48,18 @@ function RootLayoutNav() {
     );
   }
 
-  return <Slot />;
+  return <Stack screenOptions={{ headerShown: false, animation: 'slide_from_right' }} />;
 }
 
 export default function RootLayout() {
   return (
-    <SafeAreaProvider>
-      <AuthProvider>
-        <RootLayoutNav />
-      </AuthProvider>
-    </SafeAreaProvider>
+    <ErrorBoundary>
+      <SafeAreaProvider>
+        <AuthProvider>
+          <RootLayoutNav />
+          <GlobalAlert />
+        </AuthProvider>
+      </SafeAreaProvider>
+    </ErrorBoundary>
   );
 }

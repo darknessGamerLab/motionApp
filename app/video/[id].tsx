@@ -1,5 +1,6 @@
 import { VideoCard } from "@/app/HomeScreen";
 import CommentsModal from "@/components/CommentsModal";
+import { CustomAlert } from '@/components/GlobalAlert';
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/lib/supabase";
 import { VideoItem } from "@/types/video";
@@ -8,7 +9,6 @@ import { FlashList } from "@shopify/flash-list";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-    Alert,
     Dimensions,
     StyleSheet,
     TouchableOpacity,
@@ -179,7 +179,7 @@ export default function VideoScreen() {
                 onVideoLiked={handleLike}
                 onVideoSaved={handleSave}
                 onAuthRequired={() =>
-                    Alert.alert("Giriş Yap", "Devam etmek için giriş yapmalısınız.")
+                    CustomAlert.alert("Giriş Yap", "Devam etmek için giriş yapmalısınız.")
                 }
                 onVideoCommented={(vid, count) => {
                     setCommentVideoId(vid);

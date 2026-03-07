@@ -1,20 +1,34 @@
 /**
  * hooks/useFeed.ts — Merkezi video feed yönetimi
  *
- * index.tsx'ten çıkarıldı. Tüm feed mantığı (fetch, pagination,
- * realtime subscriptions, optimistic updates) burada yaşar.
+ * TikTok mimarisine uygun güncellemeler (MVP):
  *
- * Kullanım:
- *   const feed = useFeed({ userId, isAuth });
- *   // feed.videos, feed.loading, feed.fetchVideos, feed.loadMore, ...
+ * 1. CURSOR-BASED PAGINATION (was: offset/range)
+ *    - Son görülen video'nun `created_at` değeri cursor olarak tutulur
+ *    - `.lt('created_at', cursor)` ile devam edilir
+ *    - Yeni video eklenince sayfa kaymaz, tekrar gösterilmez
+ *
+ * 2. FEED CACHE (was: no cache)
+ *    - queryCache ile ilk sayfa 30 saniye cache'lenir
+ *    - Sekme değiştirme / remount'ta DB isteği yaratmaz
+ *    - Cache key: feed:anon | feed:<userId>
+ *
+ * 3. HASMORE DETECTION (was: hardcoded true)
+ *    - data.length < PAGE_SIZE → daha fazla yok
+ *
+ * 4. NETWORK ERROR TRACKING (new)
+ *    - fetchError state ile ağ hatası vs gerçek boş feed ayrışır
+ *    - HomeScreen buna göre farklı mesaj gösterebilir
  */
 
-import { supabase } from '@/lib/supabase';
-import { VideoItem, toVideoItem } from '@/types/video';
+import { CustomAlert } from '@/components/GlobalAlert';
+import { queryCache } from '@/lib/queryCache';
+import { supabase, THUMBNAILS_BUCKET, VIDEOS_BUCKET } from '@/lib/supabase';
+import { toVideoItem, VideoItem } from '@/types/video';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert } from 'react-native';
 
 const PAGE_SIZE = 15;
+const FEED_CACHE_TTL = 30_000; // 30 seconds — first page only
 
 interface UseFeedOptions {
     userId?: string;
@@ -27,6 +41,8 @@ export interface FeedState {
     initialLoaded: boolean;
     lastTimestamp: string | null;
     hasMore: boolean;
+    /** true if last fetch failed (network error, not empty feed) */
+    fetchError: boolean;
 }
 
 export interface UseFeedReturn extends FeedState {
@@ -40,91 +56,154 @@ export interface UseFeedReturn extends FeedState {
     deleteVideo: (videoId: string) => Promise<void>;
     prependVideo: (item: VideoItem) => void;
     setVideos: React.Dispatch<React.SetStateAction<VideoItem[]>>;
+    /** Hard refresh — bypasses cache */
+    refresh: () => Promise<void>;
 }
 
 export function useFeed({ userId, isAuth }: UseFeedOptions): UseFeedReturn {
     const [videos, setVideos] = useState<VideoItem[]>([]);
     const [loading, setLoading] = useState(false);
     const [initialLoaded, setInitialLoaded] = useState(false);
-    const [page, setPage] = useState(0);
+    const [lastTimestamp, setLastTimestamp] = useState<string | null>(null);
+    const [hasMore, setHasMore] = useState(true);
+    const [fetchError, setFetchError] = useState(false);
 
     const isLoadingRef = useRef(false);
     const hasInitiallyLoaded = useRef(false);
 
+    /**
+     * Annotate rows with like/save/follow state for authenticated users.
+     * All three queries run in parallel.
+     */
+    const annotateInteractions = useCallback(async (rows: VideoItem[]) => {
+        if (!userId || rows.length === 0) return rows;
+
+        const ids = rows.map(v => v.id).filter(id => id && id.length > 5);
+        const userIds = Array.from(new Set(rows.map(v => v.user.id))).filter(id => id && id.length > 5);
+
+        const [{ data: likedData }, { data: savedData }, { data: followsData }] =
+            await Promise.all([
+                ids.length > 0
+                    ? (supabase as any).from('likes').select('video_id').eq('user_id', userId).in('video_id', ids)
+                    : Promise.resolve({ data: [] }),
+                ids.length > 0
+                    ? (supabase as any).from('saves').select('video_id').eq('user_id', userId).in('video_id', ids)
+                    : Promise.resolve({ data: [] }),
+                userIds.length > 0
+                    ? (supabase as any).from('follows').select('following_id').eq('follower_id', userId).in('following_id', userIds)
+                    : Promise.resolve({ data: [] }),
+            ]);
+
+        const likedSet = new Set((likedData || []).map((r: any) => r.video_id));
+        const savedSet = new Set((savedData || []).map((r: any) => r.video_id));
+        const followSet = new Set((followsData || []).map((r: any) => r.following_id));
+
+        return rows.map(v => ({
+            ...v,
+            isLiked: likedSet.has(v.id),
+            isSaved: savedSet.has(v.id),
+            isFollowing: followSet.has(v.user.id),
+        }));
+    }, [userId]);
+
     // ─── Video Fetch ──────────────────────────────────────────────────────
-    const fetchVideos = useCallback(async (pg = 0, append = false) => {
+    /**
+     * fetchVideos:
+     *   - cursor=null → first page (cacheable)
+     *   - cursor=<timestamp> → next page (never cached, append to list)
+     *   - force=true → bypass cache even for first page
+     */
+    const fetchVideos = useCallback(async (cursor: string | null = null, append = false, force = false) => {
         if (isLoadingRef.current) return;
         isLoadingRef.current = true;
         setLoading(true);
+        setFetchError(false);
+
         try {
-            const { data, error } = await (supabase as any)
-                .from('videos')
-                .select(
-                    'id, video_url, user_id, description, topic, likes_count, comments_count, shares_count, thumbnail_url, created_at, profiles(id, username, avatar_url)'
-                )
-                .order('created_at', { ascending: false })
-                .range(pg * PAGE_SIZE, (pg + 1) * PAGE_SIZE - 1);
+            const isFirstPage = cursor === null;
+            const cacheKey = `feed:${userId ?? 'anon'}`;
 
-            if (error) {
-                if (__DEV__) console.warn('[useFeed] fetch error:', error.message);
-                return;
+            /**
+             * TikTok pattern:
+             * - First page: queryCache (30s TTL, skip on force/pull-to-refresh)
+             *   → only one DB round-trip even if multiple components mount
+             * - Subsequent pages: always fresh, cursor-based
+             */
+            let rows: VideoItem[];
+
+            if (isFirstPage) {
+                rows = await queryCache.get(
+                    cacheKey,
+                    async () => {
+                        const { data, error } = await (supabase as any)
+                            .from('videos')
+                            .select(
+                                'id, video_url, user_id, description, topic, likes_count, comments_count, shares_count, thumbnail_url, created_at, profiles(id, username, avatar_url)'
+                            )
+                            .order('created_at', { ascending: false })
+                            .limit(PAGE_SIZE);
+
+                        if (error) throw error;
+                        return (data || []).map(toVideoItem);
+                    },
+                    FEED_CACHE_TTL,
+                    force
+                );
+            } else {
+                // Cursor-based next page: only get videos older than last seen
+                const { data, error } = await (supabase as any)
+                    .from('videos')
+                    .select(
+                        'id, video_url, user_id, description, topic, likes_count, comments_count, shares_count, thumbnail_url, created_at, profiles(id, username, avatar_url)'
+                    )
+                    .order('created_at', { ascending: false })
+                    .lt('created_at', cursor)           // ← cursor magic: only older
+                    .limit(PAGE_SIZE);
+
+                if (error) throw error;
+                rows = (data || []).map(toVideoItem);
             }
 
-            const rows: VideoItem[] = (data || []).map(toVideoItem);
+            // Annotate liked/saved/followed for auth users
+            const annotated = await annotateInteractions(rows);
 
-            // Mark liked/saved/followed for authenticated users
-            if (userId && rows.length > 0) {
-                const ids = rows.map(v => v.id).filter(id => id && id.length > 5);
-                const userIds = Array.from(new Set(rows.map(v => v.user.id))).filter(id => id && id.length > 5);
+            // hasMore: if we got fewer than PAGE_SIZE items, we've hit the end
+            const more = rows.length === PAGE_SIZE;
+            setHasMore(more);
 
-                const [{ data: likedData }, { data: savedData }, { data: followsData }] =
-                    await Promise.all([
-                        ids.length > 0
-                            ? (supabase as any).from('likes').select('video_id').eq('user_id', userId).in('video_id', ids)
-                            : Promise.resolve({ data: [] }),
-                        ids.length > 0
-                            ? (supabase as any).from('saves').select('video_id').eq('user_id', userId).in('video_id', ids)
-                            : Promise.resolve({ data: [] }),
-                        userIds.length > 0
-                            ? (supabase as any).from('follows').select('following_id').eq('follower_id', userId).in('following_id', userIds)
-                            : Promise.resolve({ data: [] }),
-                    ]);
-
-                const likedSet = new Set((likedData || []).map((r: any) => r.video_id));
-                const savedSet = new Set((savedData || []).map((r: any) => r.video_id));
-                const followSet = new Set((followsData || []).map((r: any) => r.following_id));
-
-                rows.forEach(v => {
-                    v.isLiked = likedSet.has(v.id);
-                    v.isSaved = savedSet.has(v.id);
-                    v.isFollowing = followSet.has(v.user.id);
-                });
+            // Track cursor for next loadMore call
+            if (annotated.length > 0) {
+                const lastItem = annotated[annotated.length - 1];
+                // We need created_at from the raw row. Attach it as a temporary field.
+                setLastTimestamp((lastItem as any).created_at ?? null);
             }
 
-            setVideos(prev => (append ? [...prev, ...rows] : rows));
-            setPage(pg);
+            setVideos(prev => (append ? [...prev, ...annotated] : annotated));
         } catch (e) {
-            if (__DEV__) console.warn('[useFeed] fetch exception:', e);
+            if (__DEV__) console.warn('[useFeed] fetch error:', e);
+            setFetchError(true);  // ← network error, not empty feed
         } finally {
             isLoadingRef.current = false;
             setLoading(false);
-            setInitialLoaded(true); // Always set to true regardless of success to hide loaders
+            setInitialLoaded(true);
         }
-    }, [userId]);
+    }, [userId, annotateInteractions]);
 
     // ─── Initial load + re-fetch when userId changes ─────────────────────
     useEffect(() => {
         if (!hasInitiallyLoaded.current) {
-            fetchVideos(0);
+            fetchVideos(null, false, false);
             hasInitiallyLoaded.current = true;
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     useEffect(() => {
-        // Re-fetch when user identity changes (to update liked/saved states)
+        // Re-fetch when user identity changes (update liked/saved states)
         if (hasInitiallyLoaded.current) {
-            fetchVideos(0);
+            // Invalidate cache on auth change so new user sees correct interaction states
+            queryCache.invalidate(`feed:${userId ?? 'anon'}`);
+            fetchVideos(null, false, true);
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [userId]);
@@ -156,7 +235,10 @@ export function useFeed({ userId, isAuth }: UseFeedOptions): UseFeedReturn {
             .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'videos' },
                 (payload: any) => {
                     // Only prepend videos from OTHER users (own video prepended optimistically)
+                    // NOTE: payload.new lacks `profiles` join — we prepend a placeholder
+                    // and invalidate cache so next refresh has the full data.
                     if (payload.new?.user_id && payload.new.user_id !== userId) {
+                        queryCache.invalidate(`feed:${userId ?? 'anon'}`);
                         setVideos(prev => [toVideoItem(payload.new), ...prev]);
                     }
                 }
@@ -166,10 +248,21 @@ export function useFeed({ userId, isAuth }: UseFeedOptions): UseFeedReturn {
         return () => { (supabase as any).removeChannel(channel); };
     }, [userId]);
 
-    // ─── Pagination ───────────────────────────────────────────────────────
+    // ─── Pagination — cursor-based loadMore ───────────────────────────────
     const loadMore = useCallback(() => {
-        fetchVideos(page + 1, true);
-    }, [fetchVideos, page]);
+        if (!hasMore || isLoadingRef.current) return;
+        fetchVideos(lastTimestamp, true, false);
+    }, [fetchVideos, lastTimestamp, hasMore]);
+
+    // ─── Hard refresh (pull-to-refresh) ──────────────────────────────────
+    const refresh = useCallback(async () => {
+        setVideos([]);
+        setLastTimestamp(null);
+        setHasMore(true);
+        setFetchError(false);
+        queryCache.invalidate(`feed:${userId ?? 'anon'}`);
+        await fetchVideos(null, false, true);
+    }, [fetchVideos, userId]);
 
     // ─── Optimistic State Updaters ────────────────────────────────────────
 
@@ -234,7 +327,15 @@ export function useFeed({ userId, isAuth }: UseFeedOptions): UseFeedReturn {
         });
 
         try {
-            const { error } = await (supabase as any)
+            // Fetch storage paths BEFORE deleting so we can clean up storage too
+            const { data: videoRow } = await supabase
+                .from('videos')
+                .select('storage_path, thumbnail_path')
+                .eq('id', videoId)
+                .eq('user_id', userId)
+                .single();
+
+            const { error } = await supabase
                 .from('videos')
                 .delete()
                 .eq('id', videoId)
@@ -242,23 +343,28 @@ export function useFeed({ userId, isAuth }: UseFeedOptions): UseFeedReturn {
 
             if (error) {
                 if (deletedVideo) setVideos(prev => [deletedVideo!, ...prev]);
-                Alert.alert('Hata', 'Video silinemedi: ' + error.message);
+                CustomAlert.alert('Hata', 'Video silinemedi: ' + error.message);
                 return;
             }
 
-            // Storage cleanup (best effort)
-            if (deletedVideo?.uri) {
-                const videoPath = deletedVideo.uri.split('/videos/')[1];
-                if (videoPath) {
-                    try { await (supabase as any).storage.from('videos').remove([videoPath]); } catch { }
-                }
+            // Storage cleanup using stable paths from DB (not fragile URL split)
+            if (videoRow?.storage_path) {
+                try { await supabase.storage.from(VIDEOS_BUCKET).remove([videoRow.storage_path]); } catch { }
+            } else if (deletedVideo?.uri) {
+                // Fallback: legacy URL split for videos without storage_path
+                const p = deletedVideo.uri.split('/videos/')[1];
+                if (p) try { await supabase.storage.from(VIDEOS_BUCKET).remove([p]); } catch { }
             }
-            if (deletedVideo?.thumbnail_url) {
-                const thumbPath = deletedVideo.thumbnail_url.split('/thumbnails/')[1];
-                if (thumbPath) {
-                    try { await (supabase as any).storage.from('thumbnails').remove([thumbPath]); } catch { }
-                }
+
+            if (videoRow?.thumbnail_path) {
+                try { await supabase.storage.from(THUMBNAILS_BUCKET).remove([videoRow.thumbnail_path]); } catch { }
+            } else if (deletedVideo?.thumbnail_url) {
+                // Fallback: legacy URL split
+                const p = deletedVideo.thumbnail_url.split('/thumbnails/')[1];
+                if (p) try { await supabase.storage.from(THUMBNAILS_BUCKET).remove([p]); } catch { }
             }
+
+            queryCache.invalidate(`feed:${userId ?? 'anon'}`);
         } catch (e) {
             if (deletedVideo) setVideos(prev => [deletedVideo!, ...prev]);
             if (__DEV__) console.warn('[useFeed] deleteVideo exception:', e);
@@ -267,16 +373,20 @@ export function useFeed({ userId, isAuth }: UseFeedOptions): UseFeedReturn {
 
     const prependVideo = useCallback((item: VideoItem) => {
         setVideos(prev => [item, ...prev]);
-    }, []);
+        // Invalidate so next full refresh includes this video from DB
+        queryCache.invalidate(`feed:${userId ?? 'anon'}`);
+    }, [userId]);
 
     return {
         videos,
         loading,
         initialLoaded,
-        lastTimestamp: null,
-        hasMore: true,
-        fetchVideos: (pg?: number) => fetchVideos(pg),
+        lastTimestamp,
+        hasMore,
+        fetchError,
+        fetchVideos: (pg?: number) => fetchVideos(null),  // legacy compat — ignored page arg
         loadMore,
+        refresh,
         updateVideoLike,
         updateVideoSave,
         updateVideoComment,

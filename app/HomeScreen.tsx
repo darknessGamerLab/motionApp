@@ -30,6 +30,7 @@
  */
 
 import CommentsModal from '@/components/CommentsModal';
+import EmptyState from '@/components/EmptyState';
 import GuestAuthModal from '@/components/GuestAuthModal';
 import { SkeletonLoader } from '@/components/SkeletonLoader';
 import Colors from '@/constants/Colors';
@@ -39,6 +40,7 @@ import { VideoItem } from '@/types/video';
 import { formatNumber } from '@/utils/format';
 import { isValidUUID } from '@/utils/validate';
 
+import { CustomAlert as Alert } from '@/components/GlobalAlert';
 import { Ionicons } from '@expo/vector-icons';
 import { FlashList } from '@shopify/flash-list';
 import * as Haptics from 'expo-haptics';
@@ -54,7 +56,6 @@ import React, {
 } from 'react';
 import {
   ActionSheetIOS,
-  Alert,
   Animated,
   Dimensions,
   Platform,
@@ -64,7 +65,7 @@ import {
   TouchableOpacity,
   TouchableWithoutFeedback,
   View,
-  ViewToken,
+  ViewToken
 } from 'react-native';
 
 const { width: W, height: FULL_H } = Dimensions.get('window');
@@ -76,6 +77,8 @@ interface HomeScreenProps {
   isAuthenticated?: boolean;
   videos?: VideoItem[];
   videosLoading?: boolean;
+  /** true when last fetch failed (network error) — show retry instead of empty */
+  fetchError?: boolean;
   onUserPress?: (id: string) => void;
   onUserFollowed?: (id: string, isFollowing: boolean) => void;
   onVideoSaved?: (id: string, isSaved: boolean) => void;
@@ -85,6 +88,11 @@ interface HomeScreenProps {
   onEndReached?: () => void;
   refreshKey?: number;
   onAuthRequired?: (action: 'like' | 'comment' | 'save' | 'follow' | 'create' | 'general') => void;
+  startIndex?: number;
+  /** When true, the report (flag) button is hidden for all cards — used in own-profile mode */
+  hideReport?: boolean;
+  /** Called whenever the visible video index changes — used by VideoPlayerModal to open correct CommentsModal */
+  onActiveIndexChange?: (index: number) => void;
 }
 
 
@@ -102,17 +110,26 @@ const ActionBtn = memo(({
   const scale = useRef(new Animated.Value(1)).current;
   const prevActive = useRef(active);
 
+  const bounce = useCallback(() => {
+    Animated.sequence([
+      Animated.spring(scale, { toValue: 1.4, useNativeDriver: true, speed: 30 }),
+      Animated.spring(scale, { toValue: 1, useNativeDriver: true, speed: 30 }),
+    ]).start();
+  }, [scale]);
+
   useEffect(() => {
     if (prevActive.current === active) return;
     prevActive.current = active;
-    Animated.sequence([
-      Animated.timing(scale, { toValue: 0.6, duration: 80, useNativeDriver: true }),
-      Animated.spring(scale, { toValue: 1, tension: 240, friction: 7, useNativeDriver: true }),
-    ]).start();
-  }, [active]);
+    bounce();
+  }, [active, bounce]);
+
+  const handlePress = useCallback(() => {
+    bounce();
+    onPress?.();
+  }, [bounce, onPress]);
 
   return (
-    <TouchableOpacity style={s.actionBtn} onPress={onPress} activeOpacity={0.75}>
+    <TouchableOpacity style={s.actionBtn} onPress={handlePress} activeOpacity={0.75}>
       <Animated.View style={{ transform: [{ scale }] }}>
         <Ionicons name={(active && filledIcon ? filledIcon : icon) as any} size={30} color={color || '#fff'} />
       </Animated.View>
@@ -137,6 +154,7 @@ export const VideoCard = memo(({
   paused,
   height,
   isAuthenticated = false,
+  hideReport = false,
   onUserPress,
   onUserFollowed,
   onVideoSaved,
@@ -150,6 +168,7 @@ export const VideoCard = memo(({
   paused: boolean;
   height: number;
   isAuthenticated?: boolean;
+  hideReport?: boolean;
   onUserPress?: (id: string) => void;
   onUserFollowed?: (userId: string, isFollowing: boolean) => void;
   onVideoSaved?: (id: string, isSaved: boolean) => void;
@@ -174,14 +193,17 @@ export const VideoCard = memo(({
   const lastTap = useRef(0);
   const tapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Track previous URI so we only replaceAsync when URI actually changes
+  // Track previous URI so we only replace when URI actually changes
   // (FlashList can recycle this cell for a different video)
   const prevUriRef = useRef(data.uri);
 
   // ─── expo-video player ──────────────────────────────────────────────
-  // Always initialized with the real URI → ExoPlayer starts buffering
-  // immediately even for off-screen cards (next/prev).
-  const player = useVideoPlayer(data.uri, p => {
+  // HACK: FlashList recycles components. If we pass `data.uri` directly,
+  // useVideoPlayer destroys the player and re-allocates a new one, causing
+  // "Cannot set prop player on view: already released" Android native crashes.
+  // Instead, we pass an unchanging `initialUri` and manually call `.replace(uri)`!
+  const [initialUri] = useState(data.uri);
+  const player = useVideoPlayer(initialUri, p => {
     p.loop = true;
     p.muted = true;   // unmuted only when active
     // Don't play on init — Effect 1 controls playback
@@ -196,16 +218,33 @@ export const VideoCard = memo(({
     }).start();
   }, [thumbnailOpacity]);
 
-  // ─── Effect: URI change (FlashList cell recycled for different video) ─
+  // ─── Effect: URI change via recycling ───────────────────────────────
   useEffect(() => {
-    if (prevUriRef.current === data.uri) return; // same video — skip
+    if (prevUriRef.current === data.uri) return;
     prevUriRef.current = data.uri;
-    thumbnailOpacity.setValue(1); // show thumbnail while new source loads
-    player.replaceAsync(data.uri)
-      .then(() => { if (active && !paused) fadeOutThumbnail(); })
-      .catch(() => { }); // stale — scrolled away before completion
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data.uri]); // only URI, not active/paused
+    thumbnailOpacity.setValue(1);
+    try {
+      player.replace(data.uri);
+      if (active && !paused) {
+        player.play();
+        fadeOutThumbnail();
+      }
+    } catch (e) {
+      // safe fallback if replacement race condition occurs
+    }
+  }, [data.uri, player, active, paused, fadeOutThumbnail]);
+
+  // ─── Video progress bar ─────────────────────────────────────────────
+  const [progress, setProgress] = useState(0); // 0–1
+  useEffect(() => {
+    if (!active) { setProgress(0); return; }
+    // Poll via player status — expo-video fires timeUpdate events
+    const sub = player.addListener('timeUpdate', (e: any) => {
+      const dur = player.duration;
+      if (dur && dur > 0) setProgress(e.currentTime / dur);
+    });
+    return () => sub?.remove?.();
+  }, [active, player]);
 
   // ─── Effect: active state (visibility) ─────────────────────────────
   // Controls whether this card plays or pauses.
@@ -305,9 +344,8 @@ export const VideoCard = memo(({
       const n = isNowLiked ? likes + 1 : likes - 1;
       setLiked(isNowLiked); setLikes(n);
       onVideoLiked?.(data.id, isNowLiked, n);
-      if (isNowLiked) triggerLikeAnim();
     });
-  }, [liked, likes, data.id, guard, onVideoLiked, triggerLikeAnim]);
+  }, [liked, likes, data.id, guard, onVideoLiked]);
 
   const toggleSave = useCallback(() => {
     guard('save', () => {
@@ -369,43 +407,46 @@ export const VideoCard = memo(({
   // ─── Render ─────────────────────────────────────────────────────────
   return (
     <View style={[s.card, { height }]}>
-      <TouchableWithoutFeedback onPress={onTap}>
-        <View style={StyleSheet.absoluteFill}>
-          {/* VideoView: always rendered, ExoPlayer stays alive for buffering */}
-          <VideoView
-            player={player}
-            style={StyleSheet.absoluteFill}
-            contentFit="cover"
-            nativeControls={false}
+      <View style={StyleSheet.absoluteFill}>
+        {/* VideoView: always rendered, ExoPlayer stays alive for buffering */}
+        <VideoView
+          player={player}
+          style={StyleSheet.absoluteFill}
+          contentFit="cover"
+          nativeControls={false}
+        />
+
+        {/* Thumbnail: renders on top, crossfades out when video ready */}
+        {data.thumbnail_url ? (
+          <Animated.Image
+            source={{ uri: data.thumbnail_url }}
+            style={[StyleSheet.absoluteFill, { opacity: thumbnailOpacity }]}
+            resizeMode="cover"
           />
+        ) : null}
 
-          {/* Thumbnail: renders on top, crossfades out when video ready */}
-          {data.thumbnail_url ? (
-            <Animated.Image
-              source={{ uri: data.thumbnail_url }}
-              style={[StyleSheet.absoluteFill, { opacity: thumbnailOpacity }]}
-              resizeMode="cover"
-            />
-          ) : null}
+        {/* Transparent Overlay for Touch Events (Android VideoView bug fix) */}
+        <TouchableWithoutFeedback onPress={onTap}>
+          <View style={StyleSheet.absoluteFill} />
+        </TouchableWithoutFeedback>
 
-          {/* Pause indicator */}
-          {paused && active && (
-            <View style={s.pauseOverlay}>
-              <View style={s.pauseCircle}>
-                <Ionicons name="play" size={36} color="#fff" />
-              </View>
+        {/* Pause indicator */}
+        {paused && active && (
+          <View style={s.pauseOverlay} pointerEvents="none">
+            <View style={s.pauseCircle}>
+              <Ionicons name="play" size={36} color="#fff" />
             </View>
-          )}
+          </View>
+        )}
 
-          {/* Double-tap like heart */}
-          <Animated.View
-            style={[s.likeAnim, { transform: [{ scale: likeAnim }], opacity: likeOpacity }]}
-            pointerEvents="none"
-          >
-            <Ionicons name="heart" size={100} color="rgba(255,255,255,0.95)" />
-          </Animated.View>
-        </View>
-      </TouchableWithoutFeedback>
+        {/* Double-tap like heart */}
+        <Animated.View
+          style={[s.likeAnim, { transform: [{ scale: likeAnim }], opacity: likeOpacity }]}
+          pointerEvents="none"
+        >
+          <Ionicons name="heart" size={100} color="rgba(255,255,255,0.95)" />
+        </Animated.View>
+      </View>
 
       {/* Gradient scrim */}
       <LinearGradient
@@ -473,7 +514,9 @@ export const VideoCard = memo(({
               try { await Share.share({ message: `${data.user.username}'in videosuna göz at! 🎬\n${data.description}` }); } catch { }
             }}
           />
-          <ActionBtn icon="flag-outline" color="rgba(255,255,255,0.6)" onPress={onReportPress} />
+          {!isOwnVideo && !hideReport && (
+            <ActionBtn icon="flag-outline" color="rgba(255,255,255,0.6)" onPress={onReportPress} />
+          )}
         </View>
       </View>
 
@@ -484,6 +527,13 @@ export const VideoCard = memo(({
         commentCount={data.comments}
         onCommentAdded={count => onVideoCommented?.(data.id, count)}
       />
+
+      {/* Video progress bar — thin TikTok-style bar at bottom */}
+      {active && (
+        <View style={s.progressTrack} pointerEvents="none">
+          <View style={[s.progressFill, { width: `${Math.min(progress * 100, 100)}%` as any }]} />
+        </View>
+      )}
     </View>
   );
 }, (prev, next) =>
@@ -506,6 +556,7 @@ export default function HomeScreen({
   isAuthenticated = false,
   videos = [],
   videosLoading = false,
+  fetchError = false,
   onUserPress,
   onUserFollowed,
   onVideoSaved,
@@ -515,16 +566,22 @@ export default function HomeScreen({
   onEndReached,
   refreshKey = 0,
   onAuthRequired,
+  startIndex = 0,
+  hideReport = false,
+  onActiveIndexChange,
 }: HomeScreenProps) {
+  // Stable ref so onViewChange (which is itself a ref) always calls the latest callback
+  const onActiveIndexChangeRef = useRef(onActiveIndexChange);
+  useEffect(() => { onActiveIndexChangeRef.current = onActiveIndexChange; }, [onActiveIndexChange]);
   const listRef = useRef<any>(null);
-  const [h, setH] = useState(FULL_H);
+  const [h, setH] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
 
   // ─── Active index (source of truth for which video plays) ────────────
   // Using a ref + state: ref for immediate read inside callbacks,
   // state for triggering re-renders when the active card changes.
-  const activeIdxRef = useRef(0);
-  const [activeIdx, setActiveIdx] = useState(0);
+  const activeIdxRef = useRef(startIndex);
+  const [activeIdx, setActiveIdx] = useState(startIndex);
 
   // ─── Paused state (tap to pause/resume) ─────────────────────────────
   const [paused, setPaused] = useState(false);
@@ -568,6 +625,7 @@ export default function HomeScreen({
     activeIdxRef.current = newIdx;
     setActiveIdx(newIdx);
     setPaused(false); // always resume when a new video scrolls in
+    onActiveIndexChangeRef.current?.(newIdx); // notify VideoPlayerModal
   }).current;
 
   // ─── Modals ──────────────────────────────────────────────────────────
@@ -591,6 +649,7 @@ export default function HomeScreen({
       paused={paused && index === activeIdx}
       height={h}
       isAuthenticated={isAuthenticated}
+      hideReport={hideReport}
       onUserPress={onUserPress}
       onUserFollowed={onUserFollowed}
       onVideoSaved={onVideoSaved}
@@ -599,10 +658,10 @@ export default function HomeScreen({
       onAuthRequired={showGuestModal}
       onTogglePause={togglePause}
     />
-  ), [isActive, activeIdx, h, isAuthenticated, paused, onUserPress, onUserFollowed, onVideoSaved, onVideoLiked, onVideoCommented, showGuestModal, togglePause]);
+  ), [isActive, activeIdx, h, isAuthenticated, paused, hideReport, onUserPress, onUserFollowed, onVideoSaved, onVideoLiked, onVideoCommented, showGuestModal, togglePause]);
 
-  // ─── Loading / Empty states ──────────────────────────────────────────
-  if (videosLoading && !videos.length) {
+  // ─── Loading / Empty states / Layout Buffer ────────────────────────
+  if (h === 0 || (videosLoading && !videos.length)) {
     return (
       <View style={s.container} onLayout={e => setH(e.nativeEvent.layout.height)}>
         <SkeletonLoader.VideoCard height={h || FULL_H} />
@@ -610,11 +669,30 @@ export default function HomeScreen({
     );
   }
 
-  if (!videos.length) {
+  if (fetchError && !videos.length) {
+    // Network / server error — show retry action
     return (
       <View style={[s.container, s.empty]} onLayout={e => setH(e.nativeEvent.layout.height)}>
-        <Ionicons name="film-outline" size={48} color={Colors.textDim} />
-        <Text style={s.emptyText}>Henüz video yok</Text>
+        <EmptyState
+          icon="cloud-offline-outline"
+          title="İçerikler yüklenemedi"
+          subtitle="İnternet bağlantını kontrol et ve tekrar dene"
+          ctaLabel="Yeniden Dene"
+          onCtaPress={onRefresh}
+        />
+      </View>
+    );
+  }
+
+  if (!videos.length) {
+    // Genuinely empty feed (no error, no content yet)
+    return (
+      <View style={[s.container, s.empty]} onLayout={e => setH(e.nativeEvent.layout.height)}>
+        <EmptyState
+          icon="film-outline"
+          title="Henüz video yok"
+          subtitle="Topluluk büyüyor — yakında içerikler burada olacak"
+        />
       </View>
     );
   }
@@ -633,6 +711,7 @@ export default function HomeScreen({
         snapToAlignment="start"
         decelerationRate="fast"
         disableIntervalMomentum
+        initialScrollIndex={startIndex}
 
         // ── Viewability ─────────────────────────────────────────────
         onViewableItemsChanged={onViewChange}
@@ -688,6 +767,14 @@ const s = StyleSheet.create({
 
   likeAnim: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
   gradient: { ...StyleSheet.absoluteFillObject },
+  progressTrack: {
+    position: 'absolute', bottom: 0, left: 0, right: 0, height: 2,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+  },
+  progressFill: {
+    height: 2,
+    backgroundColor: '#fff',
+  },
 
   // Overlay: plain View, not Animated — syncs with FlashList scroll naturally
   overlay: {
