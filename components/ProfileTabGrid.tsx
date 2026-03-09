@@ -239,7 +239,7 @@ function TabBar({
         { key: 'saved', icon: 'bookmark-outline', label: 'Kaydedilen' },
     ];
 
-    const indicatorLeft = indicator.interpolate({
+    const indicatorTranslateX = indicator.interpolate({
         inputRange: [0, 1, 2],
         outputRange: [0, SCREEN_WIDTH / 3, (SCREEN_WIDTH / 3) * 2],
     });
@@ -263,7 +263,7 @@ function TabBar({
                     </Text>
                 </TouchableOpacity>
             ))}
-            <Animated.View style={[tb.indicator, { left: indicatorLeft }]} />
+            <Animated.View style={[tb.indicator, { transform: [{ translateX: indicatorTranslateX }] }]} />
         </View>
     );
 }
