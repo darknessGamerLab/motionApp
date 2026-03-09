@@ -15,7 +15,9 @@
 
 import { useAuth } from '@/contexts/AuthContext';
 import { queryCache } from '@/lib/queryCache';
-import { supabase } from '@/lib/supabase';
+import { fetchProfile as fetchProfileData } from '@/services/profileService';
+import { fetchUserLikedVideos, fetchUserSavedVideos, fetchUserVideos } from '@/services/videoService';
+import { annotateInteractions } from '@/utils/videoInteractions';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 const PROFILE_TTL = 60_000;  // 60 seconds
@@ -55,6 +57,11 @@ export function useProfile(userId?: string) {
 
     const [profile, setProfile] = useState<ProfileData | null>(null);
     const [videos, setVideos] = useState<VideoData[]>([]);
+    const [likedVideos, setLikedVideos] = useState<VideoData[]>([]);
+    const [savedVideos, setSavedVideos] = useState<VideoData[]>([]);
+    const [videosNextCursor, setVideosNextCursor] = useState<string | null>(null);
+    const [likedNextCursor, setLikedNextCursor] = useState<string | null>(null);
+    const [savedNextCursor, setSavedNextCursor] = useState<string | null>(null);
     const [isFollowing, setIsFollowing] = useState(false);
     const [loading, setLoading] = useState(!!userId);
     const mounted = useRef(true);
@@ -69,49 +76,33 @@ export function useProfile(userId?: string) {
 
         setLoading(true);
         try {
-            // All three fetches are independently cached and deduplicated.
-            // If two components mount at the same time asking for the same userId,
-            // queryCache.get() returns the same in-flight promise — ONE request only.
-            const [profileData, videoList, followingResult] = await Promise.all([
+            // All fetches are independently cached and deduplicated.
+            const [profileData, videosResult, likedResult, savedResult, followingResult] = await Promise.all([
 
                 queryCache.get(
                     `profile:${userId}`,
-                    async () => {
-                        const { data, error } = await (supabase as any)
-                            .from('profiles')
-                            .select('id, username, full_name, bio, avatar_url, avatars, user_type, talents, followers_count, following_count, videos_count')
-                            .eq('id', userId)
-                            .single();
-                        if (error) throw error;
-                        return data;
-                    },
+                    () => fetchProfileData(userId),
                     PROFILE_TTL,
                     force
                 ),
 
                 queryCache.get(
                     `profile-videos:${userId}`,
-                    async () => {
-                        const { data, error } = await (supabase as any)
-                            .from('videos')
-                            .select('id, video_url, user_id, description, topic, category, likes_count, comments_count, shares_count, thumbnail_url, profiles(id, username, avatar_url)')
-                            .eq('user_id', userId)
-                            .order('created_at', { ascending: false });
-                        if (error) throw error;
-                        return (data || []).map((row: any): VideoData => ({
-                            id: row.id,
-                            uri: row.video_url || '',
-                            thumbnail_url: row.thumbnail_url,
-                            user: { id: row.user_id, username: row.profiles?.username || '', avatar: row.profiles?.avatar_url },
-                            description: row.description || '',
-                            topic: row.topic || row.category || '',
-                            likes: row.likes_count || 0,
-                            comments: row.comments_count || 0,
-                            shares: row.shares_count || 0,
-                            isLiked: false,
-                            isSaved: false,
-                        }));
-                    },
+                    () => fetchUserVideos({ userId }),
+                    VIDEOS_TTL,
+                    force
+                ),
+
+                queryCache.get(
+                    `profile-liked-videos:${userId}`,
+                    () => fetchUserLikedVideos({ userId }),
+                    VIDEOS_TTL,
+                    force
+                ),
+
+                queryCache.get(
+                    `profile-saved-videos:${userId}`,
+                    () => fetchUserSavedVideos({ userId }),
                     VIDEOS_TTL,
                     force
                 ),
@@ -120,7 +111,7 @@ export function useProfile(userId?: string) {
                     ? queryCache.get(
                         `follow-status:${meId}:${userId}`,
                         async () => {
-                            const { data } = await (supabase as any)
+                            const { data } = await (await import('@/lib/supabase')).supabase
                                 .from('follows')
                                 .select('id')
                                 .eq('follower_id', meId)
@@ -136,8 +127,45 @@ export function useProfile(userId?: string) {
 
             if (!mounted.current) return;
 
-            setProfile(profileData);
-            setVideos(videoList);
+            // Map service results to hook VideoData shape for the UI
+            const mapToVideoData = (items: any[]): VideoData[] => items.map((v: any) => ({
+                id: v.id,
+                uri: v.uri ?? v.video_url ?? '',
+                thumbnail_url: v.thumbnail_url,
+                user: v.user ?? { id: v.user_id, username: '', avatar: undefined },
+                description: v.description ?? '',
+                topic: v.topic ?? '',
+                likes: v.likes ?? v.likes_count ?? 0,
+                comments: v.comments ?? v.comments_count ?? 0,
+                shares: v.shares ?? v.shares_count ?? 0,
+                isLiked: false,
+                isSaved: false,
+            }));
+
+            const annotatedVideos = await annotateInteractions(mapToVideoData(videosResult.items), meId);
+            const annotatedLiked = await annotateInteractions(mapToVideoData(likedResult.items), meId);
+            const annotatedSaved = await annotateInteractions(mapToVideoData(savedResult.items), meId);
+
+            const profileRow = profileData as any;
+            setProfile({
+                id: profileRow.id,
+                username: profileRow.username,
+                full_name: profileRow.full_name,
+                bio: profileRow.bio ?? '',
+                avatar_url: profileRow.avatar_url ?? '',
+                avatars: profileRow.avatars ?? [],
+                user_type: profileRow.user_type,
+                talents: profileRow.talents ?? [],
+                followers_count: profileRow.followers_count ?? 0,
+                following_count: profileRow.following_count ?? 0,
+                videos_count: profileRow.videos_count ?? 0,
+            });
+            setVideos(annotatedVideos as any);
+            setLikedVideos(annotatedLiked as any);
+            setSavedVideos(annotatedSaved as any);
+            setVideosNextCursor(videosResult.nextCursor);
+            setLikedNextCursor(likedResult.nextCursor);
+            setSavedNextCursor(savedResult.nextCursor);
             setIsFollowing(followingResult);
         } catch (e) {
             if (__DEV__) console.warn('[useProfile] error:', e);
@@ -155,6 +183,8 @@ export function useProfile(userId?: string) {
         if (userId) {
             queryCache.invalidate(`profile:${userId}`);
             queryCache.invalidate(`profile-videos:${userId}`);
+            queryCache.invalidate(`profile-liked-videos:${userId}`);
+            queryCache.invalidate(`profile-saved-videos:${userId}`);
             if (meId) queryCache.invalidate(`follow-status:${meId}:${userId}`);
         }
     }, [userId, meId]);
@@ -173,6 +203,11 @@ export function useProfile(userId?: string) {
     return {
         profile,
         videos,
+        likedVideos,
+        savedVideos,
+        videosNextCursor,
+        likedNextCursor,
+        savedNextCursor,
         loading,
         isFollowing,
         hasRadar: isFollowing,

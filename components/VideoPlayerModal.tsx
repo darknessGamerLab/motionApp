@@ -82,6 +82,12 @@ export default function VideoPlayerModal({
     const [activeIdx, setActiveIdx] = useState(startIndex);
     const [showComments, setShowComments] = useState(false);
 
+    useEffect(() => {
+        if (visible) {
+            setActiveIdx(startIndex);
+        }
+    }, [visible, startIndex]);
+
     // ─── Delayed Unmount (For smooth Native Slide-Out) ─────────────
     const [activeState, setActiveState] = useState(visible);
     useEffect(() => {
@@ -121,7 +127,7 @@ export default function VideoPlayerModal({
                 <View style={{ flex: 1, backgroundColor: "#000", overflow: "hidden" }}>
                     <HomeScreen
                         videos={videos}
-                        isActive={activeState}
+                        isActive={activeState && !showSkeleton}
                         isAuthenticated={!!authState.user}
                         startIndex={startIndex}
                         hideReport={hideReport}
@@ -274,6 +280,7 @@ const s = StyleSheet.create({
         color: "rgba(150,150,150,0.8)",
         fontSize: 14,
         paddingVertical: 0,
+        fontFamily: 'Poppins_400Regular',
     },
     sendBtn: {
         width: 36,
@@ -288,6 +295,6 @@ const s = StyleSheet.create({
     },
     sendingText: {
         color: Colors.primary,
-        fontWeight: "700",
+        fontFamily: 'Poppins_700Bold',
     },
 });

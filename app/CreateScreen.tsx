@@ -62,10 +62,7 @@ export default function CreateScreen({
   const recDotOpacity = useRef(new Animated.Value(0)).current;
   const recDotAnim = useRef<Animated.CompositeAnimation | null>(null);
 
-  // ─── Camera device ─────────────────────────────────────────────────────
-  const device = useCameraDevice(facing, {
-    physicalDevices: ['wide-angle-camera', 'ultra-wide-angle-camera', 'telephoto-camera'],
-  });
+  const device = useCameraDevice(facing);
 
   // ─── Permission request on mount ───────────────────────────────────────
   useEffect(() => {
@@ -424,15 +421,15 @@ const s = StyleSheet.create({
     backgroundColor: 'rgba(255,48,64,0.12)',
     alignItems: 'center', justifyContent: 'center', marginBottom: 24,
   },
-  permTitle: { fontSize: 22, fontWeight: '700', color: '#fff', marginBottom: 10 },
-  permDesc: { fontSize: 14, color: '#888', textAlign: 'center', marginBottom: 32, lineHeight: 20 },
+  permTitle: { fontSize: 22, fontFamily: 'Poppins_700Bold', color: '#fff', marginBottom: 10 },
+  permDesc: { fontSize: 14, color: '#888', textAlign: 'center', marginBottom: 32, lineHeight: 20, fontFamily: 'Poppins_400Regular' },
   permBtn: {
     backgroundColor: '#FF3040', paddingHorizontal: 48, paddingVertical: 14,
     borderRadius: 14, marginBottom: 12,
   },
-  permBtnTxt: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  permBtnTxt: { color: '#fff', fontSize: 15, fontFamily: 'Poppins_700Bold' },
   permCancelBtn: { paddingVertical: 10 },
-  permCancelTxt: { color: '#666', fontSize: 14 },
+  permCancelTxt: { color: '#666', fontSize: 14, fontFamily: 'Poppins_400Regular' },
 
   // top bar
   topBar: {
@@ -445,14 +442,14 @@ const s = StyleSheet.create({
     zIndex: 20,
   },
   topCenter: { flex: 1, alignItems: 'center', marginHorizontal: 8 },
-  topTitle: { color: 'rgba(255,255,255,0.85)', fontSize: 15, fontWeight: '600', letterSpacing: 0.4 },
+  topTitle: { color: 'rgba(255,255,255,0.85)', fontSize: 15, fontFamily: 'Poppins_600SemiBold', letterSpacing: 0.4 },
   recBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     backgroundColor: 'rgba(255,48,64,0.90)',
     paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20,
   },
   recDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#fff' },
-  recText: { color: '#fff', fontSize: 14, fontWeight: '700', letterSpacing: 1 },
+  recText: { color: '#fff', fontSize: 14, fontFamily: 'Poppins_700Bold', letterSpacing: 1 },
 
   // glassmorphism button
   glassBtn: {
@@ -477,7 +474,7 @@ const s = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
     borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)',
   },
-  sidePanelLabel: { color: '#fff', fontSize: 11, fontWeight: '600', textShadowColor: '#000', textShadowRadius: 2 },
+  sidePanelLabel: { color: '#fff', fontSize: 11, fontFamily: 'Poppins_600SemiBold', textShadowColor: '#000', textShadowRadius: 2 },
 
   // progress bar (top edge)
   progressBarWrap: {
@@ -497,7 +494,7 @@ const s = StyleSheet.create({
     paddingHorizontal: 20, zIndex: 20,
   },
   bottomSideBtn: { alignItems: 'center', gap: 6 },
-  bottomSideTxt: { color: '#fff', fontSize: 11, fontWeight: '600' },
+  bottomSideTxt: { color: '#fff', fontSize: 11, fontFamily: 'Poppins_600SemiBold' },
 
   // capture button anatomy
   captureWrap: {
@@ -536,11 +533,11 @@ const s = StyleSheet.create({
     alignItems: 'center', zIndex: 20,
   },
   hintText: {
-    color: 'rgba(255,255,255,0.7)', fontSize: 12, fontWeight: '500',
+    color: 'rgba(255,255,255,0.7)', fontSize: 12, fontFamily: 'Poppins_500Medium',
     backgroundColor: 'rgba(0,0,0,0.25)', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 12,
   },
 
   // inactive
   inactiveView: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 14 },
-  inactiveTxt: { color: '#444', fontSize: 15 },
+  inactiveTxt: { color: '#444', fontSize: 15, fontFamily: 'Poppins_400Regular' },
 });

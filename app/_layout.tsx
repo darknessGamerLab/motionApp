@@ -2,6 +2,7 @@ import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { GlobalAlert } from '@/components/GlobalAlert';
 import Colors from '@/constants/Colors';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
+import { Poppins_400Regular, Poppins_500Medium, Poppins_600SemiBold, Poppins_700Bold, Poppins_800ExtraBold, useFonts } from '@expo-google-fonts/poppins';
 import { router, Stack, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
@@ -22,20 +23,28 @@ function RootLayoutNav() {
   const segments = useSegments();
   const isAuthRoute = segments[0] === 'auth';
 
-  useEffect(() => {
-    if (!authState.isLoading) {
-      SplashScreen.hideAsync();
-    }
-  }, [authState.isLoading]);
+  const [fontsLoaded] = useFonts({
+    Poppins_400Regular,
+    Poppins_500Medium,
+    Poppins_600SemiBold,
+    Poppins_700Bold,
+    Poppins_800ExtraBold,
+  });
 
   useEffect(() => {
-    if (authState.isLoading) return;
+    if (!authState.isLoading && fontsLoaded) {
+      SplashScreen.hideAsync();
+    }
+  }, [authState.isLoading, fontsLoaded]);
+
+  useEffect(() => {
+    if (authState.isLoading || !fontsLoaded) return;
     if (authState.isAuthenticated && isAuthRoute) {
       router.replace('/');
     }
-  }, [authState.isAuthenticated, authState.isLoading, isAuthRoute]);
+  }, [authState.isAuthenticated, authState.isLoading, isAuthRoute, fontsLoaded]);
 
-  if (authState.isLoading) {
+  if (authState.isLoading || !fontsLoaded) {
     return (
       <View style={{
         flex: 1,

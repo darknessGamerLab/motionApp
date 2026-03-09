@@ -36,6 +36,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import EditProfileScreen from "./EditProfileScreen";
 
+import { annotateInteractions } from '@/utils/videoInteractions';
 import SettingsScreen from "./SettingsScreen";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
@@ -72,7 +73,7 @@ export default function MeScreen({
   onUserPress,
 }: MeScreenProps) {
   const insets = useSafeAreaInsets();
-  const [activeTab, setActiveTab] = useState<"videos" | "saved">("videos");
+  const [activeTab, setActiveTab] = useState<"videos" | "liked" | "saved">("videos");
   const [activeProfileIndex, setActiveProfileIndex] = useState(1);
   const [showSettings, setShowSettings] = useState(false);
   const [showEditProfile, setShowEditProfile] = useState(false);
@@ -90,6 +91,7 @@ export default function MeScreen({
   // DB'den kullanıcının kendi videoları
   const [dbUserVideos, setDbUserVideos] = useState<VideoItem[]>([]);
   const [dbSavedVideos, setDbSavedVideos] = useState<VideoItem[]>([]);
+  const [dbLikedVideos, setDbLikedVideos] = useState<VideoItem[]>([]);
   const [dbLoading, setDbLoading] = useState(false);
   const [showFollowList, setShowFollowList] = useState(false);
   const [followListTab, setFollowListTab] = useState<"following" | "followers">(
@@ -122,25 +124,25 @@ export default function MeScreen({
           .order("created_at", { ascending: false });
 
         if (vids) {
-          setDbUserVideos(
-            vids.map((row: any) => ({
-              id: row.id,
-              uri: row.video_url || "",
-              thumbnail_url: row.thumbnail_url,
-              user: {
-                id: row.user_id,
-                username: row.profiles?.username || "",
-                avatar: row.profiles?.avatar_url,
-              },
-              description: row.description || "",
-              topic: row.topic || "",
-              likes: row.likes_count || 0,
-              comments: row.comments_count || 0,
-              shares: row.shares_count || 0,
-              isLiked: false,
-              isSaved: false,
-            })),
-          );
+          const rawVids = vids.map((row: any) => ({
+            id: row.id,
+            uri: row.video_url || "",
+            thumbnail_url: row.thumbnail_url,
+            user: {
+              id: row.user_id,
+              username: row.profiles?.username || "",
+              avatar: row.profiles?.avatar_url,
+            },
+            description: row.description || "",
+            topic: row.topic || "",
+            likes: row.likes_count || 0,
+            comments: row.comments_count || 0,
+            shares: row.shares_count || 0,
+            isLiked: false,
+            isSaved: false,
+          }));
+          const annotatedVids = await annotateInteractions(rawVids as any, userId);
+          setDbUserVideos(annotatedVids as any);
         }
 
         // Kaydettiğim videolar
@@ -153,27 +155,60 @@ export default function MeScreen({
           .order("created_at", { ascending: false });
 
         if (saved) {
-          setDbSavedVideos(
-            saved
-              .filter((s: any) => s.videos)
-              .map((s: any) => ({
-                id: s.videos.id,
-                uri: s.videos.video_url || "",
-                thumbnail_url: s.videos.thumbnail_url,
-                user: {
-                  id: s.videos.user_id,
-                  username: s.videos.profiles?.username || "",
-                  avatar: s.videos.profiles?.avatar_url,
-                },
-                description: s.videos.description || "",
-                topic: s.videos.topic || "",
-                likes: s.videos.likes_count || 0,
-                comments: s.videos.comments_count || 0,
-                shares: s.videos.shares_count || 0,
-                isLiked: false,
-                isSaved: true,
-              })),
-          );
+          const rawSaved = saved
+            .filter((s: any) => s.videos)
+            .map((s: any) => ({
+              id: s.videos.id,
+              uri: s.videos.video_url || "",
+              thumbnail_url: s.videos.thumbnail_url,
+              user: {
+                id: s.videos.user_id,
+                username: s.videos.profiles?.username || "",
+                avatar: s.videos.profiles?.avatar_url,
+              },
+              description: s.videos.description || "",
+              topic: s.videos.topic || "",
+              likes: s.videos.likes_count || 0,
+              comments: s.videos.comments_count || 0,
+              shares: s.videos.shares_count || 0,
+              isLiked: false,
+              isSaved: true,
+            }));
+          const annotatedSaved = await annotateInteractions(rawSaved as any, userId);
+          setDbSavedVideos(annotatedSaved as any);
+        }
+
+        // Beğendiğim videolar
+        const { data: liked } = await (supabase as any)
+          .from("likes")
+          .select(
+            "video_id, videos(id, video_url, user_id, description, topic, likes_count, comments_count, shares_count, thumbnail_url, created_at, profiles(id, username, avatar_url))",
+          )
+          .eq("user_id", userId)
+          .order("created_at", { ascending: false });
+
+        if (liked) {
+          const rawLiked = liked
+            .filter((l: any) => l.videos)
+            .map((l: any) => ({
+              id: l.videos.id,
+              uri: l.videos.video_url || "",
+              thumbnail_url: l.videos.thumbnail_url,
+              user: {
+                id: l.videos.user_id,
+                username: l.videos.profiles?.username || "",
+                avatar: l.videos.profiles?.avatar_url,
+              },
+              description: l.videos.description || "",
+              topic: l.videos.topic || "",
+              likes: l.videos.likes_count || 0,
+              comments: l.videos.comments_count || 0,
+              shares: l.videos.shares_count || 0,
+              isLiked: true,
+              isSaved: false,
+            }));
+          const annotatedLiked = await annotateInteractions(rawLiked as any, userId);
+          setDbLikedVideos(annotatedLiked as any);
         }
       } catch (e) {
         console.warn("[MeScreen] fetchMyData error:", e);
@@ -227,8 +262,8 @@ export default function MeScreen({
 
   // ✅ Merkezi animasyon utility kullanımı — animateTabSwitch
   useEffect(() => {
-    const tabIdx = activeTab === "videos" ? 0 : 1;
-    const contentVal = activeTab === "videos" ? 0 : -SCREEN_WIDTH;
+    const tabIdx = activeTab === "videos" ? 0 : activeTab === "liked" ? 1 : 2;
+    const contentVal = -tabIdx * SCREEN_WIDTH;
     animateTabSwitch(
       tabIndicatorPosition,
       contentPosition,
@@ -238,7 +273,10 @@ export default function MeScreen({
   }, [activeTab]);
 
   // Grid için kullanılacak videolar
-  const displayVideos = activeTab === "videos" ? userVideos : savedVideosList;
+  const displayVideos =
+    activeTab === "videos" ? userVideos
+      : activeTab === "liked" ? dbLikedVideos
+        : savedVideosList;
 
   const changeProfile = (index: number) => {
     setActiveProfileIndex(index);
@@ -366,7 +404,7 @@ export default function MeScreen({
           style={styles.headerButton}
           onPress={() => setShowSettings(true)}
         >
-          <Ionicons name="settings-outline" size={24} color="#fff" />
+          <Ionicons name="settings-outline" size={24} color="#000" />
         </TouchableOpacity>
       </View>
 
@@ -473,6 +511,16 @@ export default function MeScreen({
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.tab}
+            onPress={() => setActiveTab("liked")}
+          >
+            <Ionicons
+              name="heart"
+              size={22}
+              color={activeTab === "liked" ? Colors.primary : Colors.textDim}
+            />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.tab}
             onPress={() => setActiveTab("saved")}
           >
             <Ionicons
@@ -489,10 +537,11 @@ export default function MeScreen({
                 transform: [
                   {
                     translateX: tabIndicatorPosition.interpolate({
-                      inputRange: [0, 1],
+                      inputRange: [0, 1, 2],
                       outputRange: [
-                        SCREEN_WIDTH * 0.25 - 20,
-                        SCREEN_WIDTH * 0.75 - 20,
+                        SCREEN_WIDTH / 6 - 20,
+                        SCREEN_WIDTH / 2 - 20,
+                        SCREEN_WIDTH * 5 / 6 - 20,
                       ],
                     }),
                   },
@@ -524,7 +573,27 @@ export default function MeScreen({
               <EmptyState
                 icon="videocam-off-outline"
                 title="Şu an video bulunmuyor"
-                subtitle="Henüz kendi videolarını yüklemedin."
+                subtitle="Henüz kendi videolarını yüklemedim."
+              />
+            )}
+          </View>
+
+          {/* Liked Videos Grid */}
+          <View style={styles.gridPage}>
+            {dbLikedVideos.length > 0 ? (
+              <FlatList
+                data={dbLikedVideos}
+                renderItem={renderVideoItem(dbLikedVideos.length, "saved")}
+                keyExtractor={(item) => item.id}
+                numColumns={GRID_COLUMNS}
+                scrollEnabled={false}
+                contentContainerStyle={styles.gridContent}
+              />
+            ) : (
+              <EmptyState
+                icon="heart-outline"
+                title="Beğenilen video yok"
+                subtitle="Beğendiğin videolar burada görünür."
               />
             )}
           </View>
@@ -627,7 +696,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   headerButton: { padding: 4 },
-  headerUsername: { fontSize: 16, fontWeight: "700", color: Colors.text },
+  headerUsername: { fontSize: 16, fontFamily: 'Poppins_700Bold', color: Colors.text },
   scrollView: { flex: 1 },
   profileSection: {
     paddingHorizontal: 20,
@@ -636,13 +705,14 @@ const styles = StyleSheet.create({
   },
   fullName: {
     fontSize: 18,
-    fontWeight: "600",
+    fontFamily: 'Poppins_600SemiBold',
     color: Colors.text,
     marginBottom: 4,
     letterSpacing: 0.3,
   },
   bio: {
     fontSize: 13,
+    fontFamily: 'Poppins_400Regular',
     color: Colors.textMuted,
     textAlign: "center",
     lineHeight: 18,
@@ -656,7 +726,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     paddingHorizontal: 20,
   },
-  skillText: { color: Colors.primary, fontSize: 13, fontWeight: "500" },
+  skillText: { color: Colors.primary, fontSize: 13, fontFamily: 'Poppins_500Medium' },
   stats: {
     flexDirection: "row",
     alignItems: "center",
@@ -669,11 +739,11 @@ const styles = StyleSheet.create({
   statItem: { alignItems: "center", flex: 1 },
   statNumber: {
     fontSize: 18,
-    fontWeight: "700",
+    fontFamily: 'Poppins_700Bold',
     color: Colors.text,
     marginBottom: 3,
   },
-  statLabel: { fontSize: 12, color: Colors.textMuted, fontWeight: "500" },
+  statLabel: { fontSize: 12, color: Colors.textMuted, fontFamily: 'Poppins_500Medium' },
   statDivider: { width: 1, height: 32, backgroundColor: Colors.border },
   taxInfoBar: {
     backgroundColor: "rgba(0,0,0,0.04)",
@@ -686,7 +756,7 @@ const styles = StyleSheet.create({
   },
   taxLabel: {
     fontSize: 10,
-    fontWeight: "700",
+    fontFamily: "Poppins_700Bold",
     color: Colors.textSecondary,
     letterSpacing: 0.5,
   },
@@ -702,7 +772,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 6,
   },
-  editProfileButtonText: { fontSize: 13, fontWeight: "700", color: "#fff" },
+  editProfileButtonText: { fontSize: 13, fontFamily: 'Poppins_700Bold', color: "#fff" },
   // Paylaş butonu — nötr
   shareButton: {
     flex: 1,
@@ -716,7 +786,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.border,
   },
-  shareButtonText: { fontSize: 13, fontWeight: "600", color: Colors.text },
+  shareButtonText: { fontSize: 13, fontFamily: 'Poppins_600SemiBold', color: Colors.text },
   // Eski tek tip buton (kültüşme için tutuldu)
   actionButton: {
     flex: 1,
@@ -730,7 +800,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.border,
   },
-  actionButtonText: { fontSize: 13, fontWeight: "600", color: Colors.text },
+  actionButtonText: { fontSize: 13, fontFamily: "Poppins_600SemiBold", color: Colors.text },
   tabs: {
     flexDirection: "row",
     borderBottomWidth: StyleSheet.hairlineWidth,
@@ -753,7 +823,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primary,
     borderRadius: 1.5,
   },
-  gridContainer: { flexDirection: "row", width: SCREEN_WIDTH * 2 },
+  gridContainer: { flexDirection: "row", width: SCREEN_WIDTH * 3 },
   gridPage: { width: SCREEN_WIDTH },
   gridContent: { paddingBottom: 4 },
   videoItem: {
@@ -773,7 +843,7 @@ const styles = StyleSheet.create({
   viewsText: {
     color: "#fff",
     fontSize: 11,
-    fontWeight: "700",
+    fontFamily: "Poppins_700Bold",
     textShadowColor: "rgba(0,0,0,0.75)",
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,
@@ -803,12 +873,13 @@ const styles = StyleSheet.create({
     width: "100%",
     marginBottom: 20,
   },
-  editModalTitle: { fontSize: 18, fontWeight: "700", color: Colors.text },
+  editModalTitle: { fontSize: 18, fontFamily: 'Poppins_700Bold', color: Colors.text },
   editModalPlaceholder: {
     color: Colors.textMuted,
     fontSize: 14,
     marginBottom: 20,
     textAlign: "center",
+    fontFamily: 'Poppins_400Regular',
   },
   editModalButton: {
     backgroundColor: Colors.primary,
@@ -816,5 +887,5 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: 10,
   },
-  editModalButtonText: { color: "#fff", fontSize: 14, fontWeight: "600" },
+  editModalButtonText: { color: "#fff", fontSize: 14, fontFamily: 'Poppins_600SemiBold' },
 });

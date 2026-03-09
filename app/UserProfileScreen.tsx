@@ -62,7 +62,7 @@ export default function UserProfileScreen({
   onUserPress,
 }: UserProfileScreenProps) {
   const { authState } = useAuth();
-  const [activeTab, setActiveTab] = useState<'videos' | 'private'>('videos');
+  const [activeTab, setActiveTab] = useState<'videos' | 'liked' | 'saved'>('videos');
   const [showReportMenu, setShowReportMenu] = useState(false);
   const [videoPlayerVisible, setVideoPlayerVisible] = useState(false);
   const [videoPlayerVideos, setVideoPlayerVideos] = useState<VideoItem[]>([]);
@@ -76,6 +76,8 @@ export default function UserProfileScreen({
   const {
     profile: profileData,
     videos: userDbVideos,
+    likedVideos: userLikedVideos,
+    savedVideos: userSavedVideos,
     loading,
     isFollowing,
     setIsFollowing,
@@ -89,8 +91,8 @@ export default function UserProfileScreen({
 
   // Tab animasyonu — merkezi transitions utility'si
   useEffect(() => {
-    const tabIdx = activeTab === 'videos' ? 0 : 1;
-    const contentVal = activeTab === 'videos' ? 0 : -SCREEN_WIDTH;
+    const tabIdx = activeTab === 'videos' ? 0 : activeTab === 'liked' ? 1 : 2;
+    const contentVal = -tabIdx * SCREEN_WIDTH;
     animateTabSwitch(tabIndicatorPosition, contentPosition, tabIdx, contentVal).start();
   }, [activeTab]);
 
@@ -132,6 +134,12 @@ export default function UserProfileScreen({
     if (userDbVideos.length > 0) return userDbVideos as VideoItem[];
     return allVideos.filter(v => v.user.id === user.id);
   }, [userDbVideos, allVideos, user.id]);
+
+  const currentTabVideos = useMemo(() => {
+    if (activeTab === 'liked') return userLikedVideos as VideoItem[];
+    if (activeTab === 'saved') return userSavedVideos as VideoItem[];
+    return displayVideos;
+  }, [activeTab, displayVideos, userLikedVideos, userSavedVideos]);
 
   // Şikayet
   const handleReport = async (reason: string) => {
@@ -216,7 +224,7 @@ export default function UserProfileScreen({
       <TouchableOpacity
         style={[styles.videoItem, { marginRight: isLastInRow ? 0 : GRID_GAP, marginBottom: isLastRow ? 0 : GRID_GAP }]}
         activeOpacity={0.8}
-        onPress={() => openVideoPlayer(displayVideos, index)}
+        onPress={() => openVideoPlayer(currentTabVideos, index)}
       >
         {/* ✅ DÜZELDİ: expo-image + thumbnail_url kullan */}
         <Image
@@ -365,8 +373,11 @@ export default function UserProfileScreen({
           <TouchableOpacity style={styles.tab} onPress={() => setActiveTab('videos')}>
             <Ionicons name="videocam" size={22} color={activeTab === 'videos' ? Colors.primary : Colors.textMuted} />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.tab} onPress={() => setActiveTab('private')}>
-            <Ionicons name="lock-closed" size={20} color={activeTab === 'private' ? Colors.primary : Colors.textMuted} />
+          <TouchableOpacity style={styles.tab} onPress={() => setActiveTab('liked')}>
+            <Ionicons name="heart" size={21} color={activeTab === 'liked' ? Colors.primary : Colors.textMuted} />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.tab} onPress={() => setActiveTab('saved')}>
+            <Ionicons name="bookmark" size={21} color={activeTab === 'saved' ? Colors.primary : Colors.textMuted} />
           </TouchableOpacity>
           <Animated.View
             style={[
@@ -374,8 +385,12 @@ export default function UserProfileScreen({
               {
                 transform: [{
                   translateX: tabIndicatorPosition.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [SCREEN_WIDTH * 0.25 - 20, SCREEN_WIDTH * 0.75 - 20],
+                    inputRange: [0, 1, 2],
+                    outputRange: [
+                      SCREEN_WIDTH / 6 - 20,
+                      SCREEN_WIDTH / 2 - 20,
+                      SCREEN_WIDTH * 5 / 6 - 20,
+                    ],
                   }),
                 }],
               },
@@ -384,6 +399,7 @@ export default function UserProfileScreen({
         </View>
 
         <Animated.View style={[styles.gridContainer, { transform: [{ translateX: contentPosition }] }]}>
+          {/* Videos Tab */}
           <View style={styles.gridPage}>
             {displayVideos.length > 0 ? (
               <FlatList
@@ -401,11 +417,41 @@ export default function UserProfileScreen({
               </View>
             )}
           </View>
+          {/* Liked Tab */}
           <View style={styles.gridPage}>
-            <View style={styles.emptyContainer}>
-              <Ionicons name="lock-closed-outline" size={44} color={Colors.textDim} />
-              <Text style={styles.emptyText}>Gizli videolar</Text>
-            </View>
+            {(userLikedVideos as VideoItem[]).length > 0 ? (
+              <FlatList
+                data={userLikedVideos as VideoItem[]}
+                renderItem={renderVideoItem((userLikedVideos as VideoItem[]).length)}
+                keyExtractor={(item) => item.id}
+                numColumns={GRID_COLUMNS}
+                scrollEnabled={false}
+                contentContainerStyle={styles.gridContent}
+              />
+            ) : (
+              <View style={styles.emptyContainer}>
+                <Ionicons name="heart-outline" size={44} color={Colors.textDim} />
+                <Text style={styles.emptyText}>Beğenilen video yok</Text>
+              </View>
+            )}
+          </View>
+          {/* Saved Tab */}
+          <View style={styles.gridPage}>
+            {(userSavedVideos as VideoItem[]).length > 0 ? (
+              <FlatList
+                data={userSavedVideos as VideoItem[]}
+                renderItem={renderVideoItem((userSavedVideos as VideoItem[]).length)}
+                keyExtractor={(item) => item.id}
+                numColumns={GRID_COLUMNS}
+                scrollEnabled={false}
+                contentContainerStyle={styles.gridContent}
+              />
+            ) : (
+              <View style={styles.emptyContainer}>
+                <Ionicons name="bookmark-outline" size={44} color={Colors.textDim} />
+                <Text style={styles.emptyText}>Kaydedilen video yok</Text>
+              </View>
+            )}
           </View>
         </Animated.View>
       </ScrollView>
@@ -451,20 +497,20 @@ const styles = StyleSheet.create({
   },
   headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   headerButton: { padding: 4 },
-  headerUsername: { fontSize: 16, fontWeight: '700', color: Colors.text },
+  headerUsername: { fontSize: 16, fontFamily: 'Poppins_700Bold', color: Colors.text },
   scrollView: { flex: 1 },
   profileSection: { paddingHorizontal: 20, paddingTop: 10, alignItems: 'center' },
-  fullName: { fontSize: 17, fontWeight: '600', color: Colors.text, marginBottom: 4 },
-  bio: { fontSize: 13, color: Colors.textSecondary, textAlign: 'center', marginBottom: 10, maxWidth: '80%' },
+  fullName: { fontSize: 17, fontFamily: 'Poppins_600SemiBold', color: Colors.text, marginBottom: 4 },
+  bio: { fontSize: 13, fontFamily: 'Poppins_400Regular', color: Colors.textSecondary, textAlign: 'center', marginBottom: 10, maxWidth: '80%' },
   skillsContainer: { flexDirection: 'row', gap: 16, marginBottom: 16, justifyContent: 'center' },
-  skillText: { color: Colors.primary, fontSize: 12, fontWeight: '500' },
+  skillText: { color: Colors.primary, fontSize: 12, fontFamily: 'Poppins_500Medium' },
   stats: {
     flexDirection: 'row', alignItems: 'center',
     justifyContent: 'center', gap: 16, width: '100%',
   },
   statItem: { alignItems: 'center', flex: 1 },
-  statNumber: { fontSize: 17, fontWeight: '700', color: Colors.text, marginBottom: 2 },
-  statLabel: { fontSize: 11, color: Colors.textMuted },
+  statNumber: { fontSize: 17, fontFamily: 'Poppins_700Bold', color: Colors.text, marginBottom: 2 },
+  statLabel: { fontSize: 11, color: Colors.textMuted, fontFamily: 'Poppins_500Medium' },
   statDivider: { width: 1, height: 28, backgroundColor: Colors.border },
   actionButtons: { flexDirection: 'row', gap: 8, width: '100%', marginTop: 12 },
   actionButton: {
@@ -475,7 +521,7 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: Colors.border,
     minHeight: 38,
   },
-  actionButtonText: { fontSize: 13, fontWeight: '600', color: Colors.text },
+  actionButtonText: { fontSize: 13, fontFamily: 'Poppins_600SemiBold', color: Colors.text },
   followButtonActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
   followButtonInactive: { borderColor: Colors.primary, backgroundColor: 'transparent' },
   followButtonTextActive: { color: '#fff' },
@@ -501,15 +547,15 @@ const styles = StyleSheet.create({
     position: 'absolute', bottom: -1, width: 40, height: 2,
     backgroundColor: Colors.primary, borderRadius: 1,
   },
-  gridContainer: { flexDirection: 'row', width: SCREEN_WIDTH * 2 },
+  gridContainer: { flexDirection: 'row', width: SCREEN_WIDTH * 3 },
   gridPage: { width: SCREEN_WIDTH },
   gridContent: { paddingBottom: 24 },
   videoItem: { width: GRID_ITEM_WIDTH, height: GRID_ITEM_WIDTH * 1.3, backgroundColor: Colors.surfaceAlt },
   videoThumbnail: { width: '100%', height: '100%' },
   viewsOverlay: { position: 'absolute', bottom: 4, left: 4, flexDirection: 'row', alignItems: 'center', gap: 3 },
-  viewsText: { color: '#fff', fontSize: 10, fontWeight: '600' },
+  viewsText: { color: '#fff', fontSize: 10, fontFamily: 'Poppins_600SemiBold' },
   emptyContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 60 },
-  emptyText: { color: Colors.textMuted, fontSize: 14, marginTop: 10 },
+  emptyText: { color: Colors.textMuted, fontSize: 14, fontFamily: 'Poppins_400Regular', marginTop: 10 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
   reportMenu: {
     backgroundColor: Colors.surface,
@@ -518,5 +564,5 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: Colors.border,
   },
   reportItem: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 20, paddingVertical: 16 },
-  reportText: { fontSize: 16, fontWeight: '600', color: Colors.error },
+  reportText: { fontSize: 16, fontFamily: 'Poppins_600SemiBold', color: Colors.error },
 });

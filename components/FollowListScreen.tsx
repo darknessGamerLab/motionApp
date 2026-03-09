@@ -317,7 +317,7 @@ const s = StyleSheet.create({
         alignItems: 'center', justifyContent: 'center',
         borderRadius: 20,
     },
-    title: { fontSize: 17, fontWeight: '700', color: Colors.text },
+    title: { fontSize: 17, fontFamily: 'Poppins_700Bold', color: Colors.text },
 
     tabBar: {
         flexDirection: 'row',
@@ -333,12 +333,12 @@ const s = StyleSheet.create({
     },
     tabText: {
         fontSize: 14,
-        fontWeight: '500',
+        fontFamily: 'Poppins_500Medium',
         color: Colors.textMuted,
     },
     tabTextActive: {
         color: Colors.text,
-        fontWeight: '700',
+        fontFamily: 'Poppins_700Bold',
     },
     tabIndicator: {
         position: 'absolute',
@@ -365,8 +365,8 @@ const s = StyleSheet.create({
     },
     info: { flex: 1, minWidth: 0 },
     nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 3 },
-    username: { fontSize: 14, fontWeight: '600', color: Colors.text },
-    fullName: { fontSize: 12, color: Colors.textMuted },
+    username: { fontSize: 14, fontFamily: 'Poppins_600SemiBold', color: Colors.text },
+    fullName: { fontSize: 12, color: Colors.textMuted, fontFamily: 'Poppins_400Regular' },
     badge: {
         backgroundColor: Colors.primary + '18',
         paddingHorizontal: 6, paddingVertical: 2,
@@ -374,7 +374,7 @@ const s = StyleSheet.create({
         borderWidth: 1,
         borderColor: Colors.primary + '30',
     },
-    badgeText: { fontSize: 10, fontWeight: '600', color: Colors.primary },
+    badgeText: { fontSize: 10, fontFamily: 'Poppins_600SemiBold', color: Colors.primary },
 
     followBtn: {
         paddingHorizontal: 16,
@@ -389,12 +389,12 @@ const s = StyleSheet.create({
         borderWidth: 1.5,
         borderColor: Colors.border,
     },
-    followBtnText: { fontSize: 13, fontWeight: '600', color: '#fff' },
+    followBtnText: { fontSize: 13, fontFamily: 'Poppins_600SemiBold', color: '#fff' },
     followBtnTextActive: { color: Colors.textMuted },
 
     emptyContainer: { flex: 1 },
     empty: { alignItems: 'center', paddingTop: 80, gap: 12 },
-    emptyText: { fontSize: 15, color: Colors.textMuted, textAlign: 'center' },
+    emptyText: { fontSize: 15, color: Colors.textMuted, textAlign: 'center', fontFamily: 'Poppins_400Regular' },
 
     skeletonRow: {
         flexDirection: 'row',

@@ -1,6 +1,6 @@
-import { useAuth } from '@/contexts/AuthContext';
 import Colors from '@/constants/Colors';
 import { TALENTS } from '@/constants/Talents';
+import { useAuth } from '@/contexts/AuthContext';
 import { Ionicons } from '@expo/vector-icons';
 import React, { useState } from 'react';
 import {
@@ -18,7 +18,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 export default function SelectTalentScreen() {
   const insets = useSafeAreaInsets();
   const { setUserData, completeAuth } = useAuth();
-  
+
   const [selectedTalents, setSelectedTalents] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -46,7 +46,7 @@ export default function SelectTalentScreen() {
     setLoading(true);
 
     setUserData({ talents: selectedTalents });
-    
+
     setTimeout(() => {
       completeAuth();
       setLoading(false);
@@ -97,8 +97,8 @@ export default function SelectTalentScreen() {
         {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
         {/* Talents Grid */}
-        <ScrollView 
-          style={styles.scrollView} 
+        <ScrollView
+          style={styles.scrollView}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.scrollContent}
         >
@@ -113,10 +113,10 @@ export default function SelectTalentScreen() {
                   activeOpacity={0.7}
                 >
                   <View style={[styles.iconContainer, isSelected && styles.iconContainerSelected]}>
-                    <Ionicons 
-                      name={talent.icon as any} 
-                      size={24} 
-                      color={isSelected ? '#fff' : Colors.textSecondary} 
+                    <Ionicons
+                      name={talent.icon as any}
+                      size={24}
+                      color={isSelected ? '#fff' : Colors.textSecondary}
                     />
                   </View>
                   <Text style={[styles.talentName, isSelected && styles.talentNameSelected]}>
@@ -137,7 +137,7 @@ export default function SelectTalentScreen() {
         <View style={[styles.footer, { paddingBottom: insets.bottom + 16 }]}>
           <TouchableOpacity
             style={[
-              styles.button, 
+              styles.button,
               loading && styles.buttonDisabled,
               selectedTalents.length === 0 && styles.buttonInactive
             ]}
@@ -187,13 +187,14 @@ const styles = StyleSheet.create({
   progressText: {
     color: Colors.textSecondary,
     fontSize: 12,
+    fontFamily: 'Poppins_500Medium',
   },
   header: {
     marginBottom: 20,
   },
   title: {
     fontSize: 28,
-    fontWeight: 'bold',
+    fontFamily: 'Poppins_700Bold',
     color: Colors.text,
     marginBottom: 8,
   },
@@ -201,10 +202,11 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: Colors.textSecondary,
     lineHeight: 22,
+    fontFamily: 'Poppins_400Regular',
   },
   highlight: {
     color: Colors.primary,
-    fontWeight: '600',
+    fontFamily: 'Poppins_600SemiBold',
   },
   counterContainer: {
     flexDirection: 'row',
@@ -216,7 +218,7 @@ const styles = StyleSheet.create({
   counterText: {
     color: Colors.primary,
     fontSize: 14,
-    fontWeight: '600',
+    fontFamily: 'Poppins_600SemiBold',
   },
   selectedText: {
     color: Colors.textMuted,
@@ -224,12 +226,14 @@ const styles = StyleSheet.create({
     flex: 1,
     textAlign: 'right',
     marginLeft: 12,
+    fontFamily: 'Poppins_400Regular',
   },
   errorText: {
     color: Colors.error,
     fontSize: 14,
     marginBottom: 12,
     textAlign: 'center',
+    fontFamily: 'Poppins_500Medium',
   },
   scrollView: {
     flex: 1,
@@ -272,12 +276,12 @@ const styles = StyleSheet.create({
   talentName: {
     color: Colors.textSecondary,
     fontSize: 12,
-    fontWeight: '500',
+    fontFamily: 'Poppins_500Medium',
     textAlign: 'center',
   },
   talentNameSelected: {
     color: Colors.text,
-    fontWeight: '600',
+    fontFamily: 'Poppins_600SemiBold',
   },
   checkmark: {
     position: 'absolute',
@@ -311,6 +315,6 @@ const styles = StyleSheet.create({
   buttonText: {
     color: '#fff',
     fontSize: 17,
-    fontWeight: '700',
+    fontFamily: 'Poppins_700Bold',
   },
 });

@@ -8,7 +8,7 @@ import { isValidUUID } from '@/utils/validate';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
-import { useFocusEffect } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
@@ -29,7 +29,7 @@ interface Props {
 }
 
 type NotifType = 'like' | 'comment' | 'follow' | 'radar' | 'system';
-type TabType = 'all' | 'likes' | 'follows' | 'radar' | 'system';
+type TabType = 'all' | 'likes' | 'comments' | 'follows' | 'radar' | 'system';
 
 interface Notif {
   id: string;
@@ -39,6 +39,7 @@ interface Notif {
   time: string;
   isRead: boolean;
   thumbnail?: string;
+  videoId?: string;
 }
 
 const timeAgo = (date: string) => {
@@ -99,7 +100,11 @@ const NotifRow = memo(function NotifRow({
       Animated.spring(scale, { toValue: 1, useNativeDriver: true, speed: 50 }),
     ]).start();
     onMarkRead(item.id);
-    onUserPress?.(item.user.id);
+    if (item.videoId && (item.type === 'like' || item.type === 'comment')) {
+      router.push(`/video/${item.videoId}`);
+    } else {
+      onUserPress?.(item.user.id);
+    }
   };
 
   const handleFollow = async () => {
@@ -181,6 +186,7 @@ const NotifRow = memo(function NotifRow({
 const TABS: { key: TabType; label: string; icon: any }[] = [
   { key: 'all', label: 'Tümü', icon: 'apps-outline' },
   { key: 'likes', label: 'Beğeniler', icon: 'heart-outline' },
+  { key: 'comments', label: 'Yorumlar', icon: 'chatbubble-ellipses-outline' },
   { key: 'follows', label: 'Takipler', icon: 'person-add-outline' },
   { key: 'radar', label: 'Radar', icon: 'scan-outline' },
 ];
@@ -240,6 +246,7 @@ export default function NotificationsScreen({ isActive = true, onUserPress, onLo
         time: timeAgo(d.created_at),
         isRead: d.is_read,
         thumbnail: d.thumbnail_url || undefined,
+        videoId: d.video_id || undefined,
       }));
 
       setNotifs(formatted);
@@ -309,6 +316,7 @@ export default function NotificationsScreen({ isActive = true, onUserPress, onLo
               time: 'şimdi',
               isRead: false,
               thumbnail: undefined,
+              videoId: data.video_id || undefined,
             };
             // Prepend — deduplicate by id to prevent double-add
             setNotifs(prev =>
@@ -343,10 +351,11 @@ export default function NotificationsScreen({ isActive = true, onUserPress, onLo
   // useMemo: re-filter only when tab or notifs change, not on every render
   const filtered = useMemo(() => notifs.filter(n =>
     tab === 'all' ? true :
-      tab === 'likes' ? n.type === 'like' || n.type === 'comment' :
-        tab === 'follows' ? n.type === 'follow' :
-          tab === 'radar' ? n.type === 'radar' :
-            false
+      tab === 'likes' ? n.type === 'like' :
+        tab === 'comments' ? n.type === 'comment' :
+          tab === 'follows' ? n.type === 'follow' :
+            tab === 'radar' ? n.type === 'radar' :
+              false
   ), [tab, notifs]);
 
   const unread = notifs.filter(n => !n.isRead).length;
@@ -480,9 +489,9 @@ const s = StyleSheet.create({
     backgroundColor: Colors.surface,
     borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: Colors.border,
   },
-  headerTitle: { fontSize: 17, fontWeight: '700', color: Colors.text, letterSpacing: -0.4 },
+  headerTitle: { fontSize: 17, fontFamily: 'Poppins_700Bold', color: Colors.text, letterSpacing: -0.4 },
   markAllBtn: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  markAllText: { color: Colors.primary, fontSize: 13, fontWeight: '500' },
+  markAllText: { color: Colors.primary, fontSize: 13, fontFamily: 'Poppins_500Medium' },
 
   unreadBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
@@ -494,8 +503,8 @@ const s = StyleSheet.create({
     backgroundColor: Colors.primary,
     borderRadius: 10, paddingHorizontal: 7, paddingVertical: 2,
   },
-  unreadBadgeText: { color: '#fff', fontSize: 11, fontWeight: '700' },
-  unreadBannerText: { color: Colors.primary, fontSize: 13, fontWeight: '500' },
+  unreadBadgeText: { color: '#fff', fontSize: 11, fontFamily: 'Poppins_700Bold' },
+  unreadBannerText: { color: Colors.primary, fontSize: 13, fontFamily: 'Poppins_500Medium' },
 
   tabs: {
     flexDirection: 'row',
@@ -508,8 +517,8 @@ const s = StyleSheet.create({
     borderBottomWidth: 2, borderBottomColor: 'transparent',
   },
   tabItemActive: { borderBottomColor: Colors.primary },
-  tabText: { color: Colors.textMuted, fontSize: 10, fontWeight: '500' },
-  tabTextActive: { color: Colors.primary, fontWeight: '700' },
+  tabText: { color: Colors.textMuted, fontSize: 10, fontFamily: 'Poppins_500Medium' },
+  tabTextActive: { color: Colors.primary, fontFamily: 'Poppins_700Bold' },
 
   row: {
     flexDirection: 'row', alignItems: 'center',
@@ -533,9 +542,9 @@ const s = StyleSheet.create({
     borderWidth: 2, borderColor: Colors.surface,
   },
   textCol: { flex: 1 },
-  rowText: { fontSize: 13, color: Colors.textSecondary, lineHeight: 18 },
-  boldText: { color: Colors.text, fontWeight: '600' },
-  timeText: { color: Colors.textMuted, fontSize: 11, marginTop: 3 },
+  rowText: { fontSize: 13, color: Colors.textSecondary, lineHeight: 18, fontFamily: 'Poppins_400Regular' },
+  boldText: { color: Colors.text, fontFamily: 'Poppins_600SemiBold' },
+  timeText: { color: Colors.textMuted, fontSize: 11, marginTop: 3, fontFamily: 'Poppins_400Regular' },
 
   thumb: { width: 42, height: 56, borderRadius: 6, backgroundColor: Colors.surfaceAlt },
 
@@ -547,12 +556,12 @@ const s = StyleSheet.create({
     backgroundColor: 'transparent',
     borderWidth: 1.5, borderColor: Colors.border,
   },
-  followTxt: { color: '#fff', fontSize: 12, fontWeight: '600' },
+  followTxt: { color: '#fff', fontSize: 12, fontFamily: 'Poppins_600SemiBold' },
   followTxtOut: { color: Colors.textSecondary },
 
   empty: { alignItems: 'center', paddingTop: 80, gap: 10, paddingHorizontal: 40 },
-  emptyTitle: { fontSize: 17, fontWeight: '700', color: Colors.text },
-  emptySubtext: { fontSize: 13, color: Colors.textMuted, textAlign: 'center', lineHeight: 19 },
+  emptyTitle: { fontSize: 17, fontFamily: 'Poppins_700Bold', color: Colors.text },
+  emptySubtext: { fontSize: 13, color: Colors.textMuted, textAlign: 'center', lineHeight: 19, fontFamily: 'Poppins_400Regular' },
 
   systemAvatar: {
     backgroundColor: Colors.primary + '15',
@@ -563,6 +572,6 @@ const s = StyleSheet.create({
   },
   systemText: {
     color: Colors.text,
-    fontWeight: '500',
+    fontFamily: 'Poppins_500Medium',
   },
 });

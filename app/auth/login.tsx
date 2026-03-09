@@ -177,9 +177,9 @@ const s = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
     marginBottom: 14,
   },
-  logoText: { color: '#fff', fontSize: 32, fontWeight: '800', letterSpacing: -1 },
-  appName: { fontSize: 26, fontWeight: '700', color: Colors.text, letterSpacing: -0.5 },
-  tagline: { fontSize: 14, color: Colors.textMuted, marginTop: 4 },
+  logoText: { color: '#fff', fontSize: 32, fontFamily: 'Poppins_800ExtraBold', letterSpacing: -1 },
+  appName: { fontSize: 26, fontFamily: 'Poppins_700Bold', color: Colors.text, letterSpacing: -0.5 },
+  tagline: { fontSize: 14, color: Colors.textMuted, marginTop: 4, fontFamily: 'Poppins_400Regular' },
 
   // Form
   form: { gap: 12 },
@@ -191,7 +191,7 @@ const s = StyleSheet.create({
     paddingHorizontal: 14, height: 52,
   },
   inputIcon: { marginRight: 10 },
-  input: { flex: 1, fontSize: 15, color: Colors.text },
+  input: { flex: 1, fontSize: 15, color: Colors.text, fontFamily: 'Poppins_400Regular' },
   eyeBtn: { padding: 4 },
 
   errorBox: {
@@ -199,10 +199,10 @@ const s = StyleSheet.create({
     backgroundColor: Colors.error + '12',
     borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8,
   },
-  errorText: { color: Colors.error, fontSize: 13, flex: 1 },
+  errorText: { color: Colors.error, fontSize: 13, flex: 1, fontFamily: 'Poppins_500Medium' },
 
   forgotBtn: { alignSelf: 'flex-end' },
-  forgotText: { color: Colors.primary, fontSize: 13, fontWeight: '500' },
+  forgotText: { color: Colors.primary, fontSize: 13, fontFamily: 'Poppins_500Medium' },
 
   primaryBtn: {
     height: 52, borderRadius: 12,
@@ -211,11 +211,11 @@ const s = StyleSheet.create({
     marginTop: 4,
   },
   btnDisabled: { opacity: 0.6 },
-  primaryBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  primaryBtnText: { color: '#fff', fontSize: 16, fontFamily: 'Poppins_700Bold' },
 
   divider: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   dividerLine: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: Colors.border },
-  dividerText: { color: Colors.textMuted, fontSize: 13 },
+  dividerText: { color: Colors.textMuted, fontSize: 13, fontFamily: 'Poppins_400Regular' },
 
   googleBtn: {
     height: 52, borderRadius: 12,
@@ -223,17 +223,17 @@ const s = StyleSheet.create({
     borderWidth: 1, borderColor: Colors.border,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
   },
-  googleIcon: { fontSize: 18, fontWeight: '800', color: '#4285F4' },
-  googleText: { fontSize: 15, fontWeight: '600', color: Colors.text },
+  googleIcon: { fontSize: 18, fontFamily: 'Poppins_800ExtraBold', color: '#4285F4' },
+  googleText: { fontSize: 15, fontFamily: 'Poppins_600SemiBold', color: Colors.text },
 
   // Footer
   footer: { flexDirection: 'row', justifyContent: 'center', marginTop: 32 },
-  footerText: { color: Colors.textSecondary, fontSize: 14 },
-  footerLink: { color: Colors.primary, fontSize: 14, fontWeight: '600' },
+  footerText: { color: Colors.textSecondary, fontSize: 14, fontFamily: 'Poppins_400Regular' },
+  footerLink: { color: Colors.primary, fontSize: 14, fontFamily: 'Poppins_600SemiBold' },
 
   guestBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     gap: 4, marginTop: 16,
   },
-  guestText: { color: Colors.textMuted, fontSize: 13 },
+  guestText: { color: Colors.textMuted, fontSize: 13, fontFamily: 'Poppins_400Regular' },
 });

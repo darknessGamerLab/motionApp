@@ -25,6 +25,7 @@ import { CustomAlert } from '@/components/GlobalAlert';
 import { queryCache } from '@/lib/queryCache';
 import { supabase, THUMBNAILS_BUCKET, VIDEOS_BUCKET } from '@/lib/supabase';
 import { toVideoItem, VideoItem } from '@/types/video';
+import { annotateInteractions } from '@/utils/videoInteractions';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 const PAGE_SIZE = 15;
@@ -71,40 +72,7 @@ export function useFeed({ userId, isAuth }: UseFeedOptions): UseFeedReturn {
     const isLoadingRef = useRef(false);
     const hasInitiallyLoaded = useRef(false);
 
-    /**
-     * Annotate rows with like/save/follow state for authenticated users.
-     * All three queries run in parallel.
-     */
-    const annotateInteractions = useCallback(async (rows: VideoItem[]) => {
-        if (!userId || rows.length === 0) return rows;
-
-        const ids = rows.map(v => v.id).filter(id => id && id.length > 5);
-        const userIds = Array.from(new Set(rows.map(v => v.user.id))).filter(id => id && id.length > 5);
-
-        const [{ data: likedData }, { data: savedData }, { data: followsData }] =
-            await Promise.all([
-                ids.length > 0
-                    ? (supabase as any).from('likes').select('video_id').eq('user_id', userId).in('video_id', ids)
-                    : Promise.resolve({ data: [] }),
-                ids.length > 0
-                    ? (supabase as any).from('saves').select('video_id').eq('user_id', userId).in('video_id', ids)
-                    : Promise.resolve({ data: [] }),
-                userIds.length > 0
-                    ? (supabase as any).from('follows').select('following_id').eq('follower_id', userId).in('following_id', userIds)
-                    : Promise.resolve({ data: [] }),
-            ]);
-
-        const likedSet = new Set((likedData || []).map((r: any) => r.video_id));
-        const savedSet = new Set((savedData || []).map((r: any) => r.video_id));
-        const followSet = new Set((followsData || []).map((r: any) => r.following_id));
-
-        return rows.map(v => ({
-            ...v,
-            isLiked: likedSet.has(v.id),
-            isSaved: savedSet.has(v.id),
-            isFollowing: followSet.has(v.user.id),
-        }));
-    }, [userId]);
+    // Removed local annotateInteractions — now using shared util
 
     // ─── Video Fetch ──────────────────────────────────────────────────────
     /**
@@ -164,8 +132,8 @@ export function useFeed({ userId, isAuth }: UseFeedOptions): UseFeedReturn {
                 rows = (data || []).map(toVideoItem);
             }
 
-            // Annotate liked/saved/followed for auth users
-            const annotated = await annotateInteractions(rows);
+            // Annotate liked/saved/followed for auth users using shared util
+            const annotated = await annotateInteractions(rows, userId);
 
             // hasMore: if we got fewer than PAGE_SIZE items, we've hit the end
             const more = rows.length === PAGE_SIZE;
@@ -187,7 +155,7 @@ export function useFeed({ userId, isAuth }: UseFeedOptions): UseFeedReturn {
             setLoading(false);
             setInitialLoaded(true);
         }
-    }, [userId, annotateInteractions]);
+    }, [userId]);
 
     // ─── Initial load + re-fetch when userId changes ─────────────────────
     useEffect(() => {

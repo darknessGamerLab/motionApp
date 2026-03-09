@@ -199,13 +199,14 @@ const styles = StyleSheet.create({
     },
     title: {
         fontSize: 20,
-        fontWeight: '700',
+        fontFamily: 'Poppins_700Bold',
         color: Colors.text,
         textAlign: 'center',
         marginBottom: 8,
     },
     subtitle: {
         fontSize: 14,
+        fontFamily: 'Poppins_400Regular',
         color: Colors.textSecondary,
         textAlign: 'center',
         lineHeight: 20,
@@ -229,7 +230,7 @@ const styles = StyleSheet.create({
     loginBtnText: {
         color: '#fff',
         fontSize: 16,
-        fontWeight: '700',
+        fontFamily: 'Poppins_700Bold',
     },
     signupBtn: {
         width: '100%',
@@ -245,7 +246,7 @@ const styles = StyleSheet.create({
     signupBtnText: {
         color: Colors.text,
         fontSize: 16,
-        fontWeight: '600',
+        fontFamily: 'Poppins_600SemiBold',
     },
     cancelBtn: {
         padding: 8,
@@ -253,5 +254,6 @@ const styles = StyleSheet.create({
     cancelText: {
         color: Colors.textMuted,
         fontSize: 14,
+        fontFamily: 'Poppins_400Regular',
     },
 });

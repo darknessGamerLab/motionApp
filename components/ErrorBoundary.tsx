@@ -81,13 +81,14 @@ const s = StyleSheet.create({
     emoji: { fontSize: 48, marginBottom: 16 },
     title: {
         fontSize: 20,
-        fontWeight: '700',
+        fontFamily: 'Poppins_700Bold',
         color: Colors.text,
         textAlign: 'center',
         marginBottom: 8,
     },
     subtitle: {
         fontSize: 14,
+        fontFamily: 'Poppins_400Regular',
         color: Colors.textSecondary,
         textAlign: 'center',
         lineHeight: 20,
@@ -100,7 +101,7 @@ const s = StyleSheet.create({
         borderRadius: 8,
         padding: 12,
         marginBottom: 24,
-        fontFamily: 'monospace',
+        fontFamily: 'Poppins_400Regular', // or keep monospace for coding errors? User asked for *all* text
         width: '100%',
     },
     btn: {
@@ -109,5 +110,5 @@ const s = StyleSheet.create({
         paddingVertical: 14,
         borderRadius: 12,
     },
-    btnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+    btnText: { color: '#fff', fontSize: 16, fontFamily: 'Poppins_700Bold' },
 });

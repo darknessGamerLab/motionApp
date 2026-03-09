@@ -1,22 +1,22 @@
+import Colors from '@/constants/Colors';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import React, { useRef, useState } from 'react';
 import {
-    ActivityIndicator,
-    KeyboardAvoidingView,
-    Platform,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Colors from '@/constants/Colors';
 
 export default function VerifyCodeScreen() {
   const insets = useSafeAreaInsets();
-  
+
   const [code, setCode] = useState(['', '', '', '', '', '']);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -46,7 +46,7 @@ export default function VerifyCodeScreen() {
 
   const handleVerify = () => {
     const codeString = code.join('');
-    
+
     if (codeString.length !== 6) {
       setError('Lütfen 6 haneli kodu girin');
       return;
@@ -63,11 +63,11 @@ export default function VerifyCodeScreen() {
 
   const handleResend = () => {
     if (resendTimer > 0) return;
-    
+
     setError('');
     setCode(['', '', '', '', '', '']);
     inputRefs.current[0]?.focus();
-    
+
     setResendTimer(60);
     const interval = setInterval(() => {
       setResendTimer(prev => {
@@ -115,7 +115,7 @@ export default function VerifyCodeScreen() {
                   inputRefs.current[index] = ref;
                 }}
                 style={[
-                  styles.codeInput, 
+                  styles.codeInput,
                   code[index] && styles.codeInputFilled,
                   error && styles.codeInputError
                 ]}
@@ -144,14 +144,14 @@ export default function VerifyCodeScreen() {
             )}
           </TouchableOpacity>
 
-          <TouchableOpacity 
-            style={styles.resendButton} 
+          <TouchableOpacity
+            style={styles.resendButton}
             onPress={handleResend}
             disabled={resendTimer > 0}
           >
             <Text style={[styles.resendText, resendTimer > 0 && styles.resendTextDisabled]}>
-              {resendTimer > 0 
-                ? `Tekrar gönder (${resendTimer}s)` 
+              {resendTimer > 0
+                ? `Tekrar gönder (${resendTimer}s)`
                 : 'Kodu tekrar gönder'}
             </Text>
           </TouchableOpacity>
@@ -195,7 +195,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 28,
-    fontWeight: 'bold',
+    fontFamily: 'Poppins_700Bold',
     color: Colors.text,
     marginBottom: 12,
   },
@@ -204,6 +204,7 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     textAlign: 'center',
     lineHeight: 22,
+    fontFamily: 'Poppins_400Regular',
   },
   form: {
     width: '100%',
@@ -223,7 +224,7 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
     color: Colors.text,
     fontSize: 24,
-    fontWeight: 'bold',
+    fontFamily: 'Poppins_700Bold',
     textAlign: 'center',
   },
   codeInputFilled: {
@@ -238,6 +239,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginBottom: 16,
     textAlign: 'center',
+    fontFamily: 'Poppins_500Medium',
   },
   button: {
     backgroundColor: Colors.primary,
@@ -252,7 +254,7 @@ const styles = StyleSheet.create({
   buttonText: {
     color: '#fff',
     fontSize: 16,
-    fontWeight: '700',
+    fontFamily: 'Poppins_700Bold',
   },
   resendButton: {
     marginTop: 20,
@@ -262,7 +264,7 @@ const styles = StyleSheet.create({
   resendText: {
     color: Colors.primary,
     fontSize: 14,
-    fontWeight: '600',
+    fontFamily: 'Poppins_600SemiBold',
   },
   resendTextDisabled: {
     color: Colors.textMuted,

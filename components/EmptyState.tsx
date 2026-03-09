@@ -58,12 +58,13 @@ const s = StyleSheet.create({
     },
     title: {
         fontSize: 17,
-        fontWeight: '700',
+        fontFamily: 'Poppins_700Bold',
         color: Colors.text,
         textAlign: 'center',
     },
     subtitle: {
         fontSize: 13,
+        fontFamily: 'Poppins_400Regular',
         color: Colors.textMuted,
         textAlign: 'center',
         lineHeight: 20,
@@ -78,7 +79,7 @@ const s = StyleSheet.create({
     ctaText: {
         color: '#fff',
         fontSize: 14,
-        fontWeight: '700',
+        fontFamily: 'Poppins_700Bold',
         letterSpacing: 0.2,
     },
 });

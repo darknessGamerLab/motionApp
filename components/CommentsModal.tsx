@@ -93,13 +93,13 @@ const cs = StyleSheet.create({
   avatar: { width: 38, height: 38, borderRadius: 19, backgroundColor: Colors.surfaceAlt },
   content: { flex: 1 },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 },
-  username: { fontSize: 13, fontWeight: '600', color: Colors.text },
-  time: { fontSize: 11, color: Colors.textMuted },
-  text: { fontSize: 14, color: Colors.textSecondary, lineHeight: 20 },
+  username: { fontSize: 13, fontFamily: 'Poppins_600SemiBold', color: Colors.text },
+  time: { fontSize: 11, fontFamily: 'Poppins_400Regular', color: Colors.textMuted },
+  text: { fontSize: 14, fontFamily: 'Poppins_400Regular', color: Colors.textSecondary, lineHeight: 20 },
   replyBtn: { marginTop: 6 },
-  replyText: { fontSize: 12, color: Colors.textMuted, fontWeight: '500' },
+  replyText: { fontSize: 12, color: Colors.textMuted, fontFamily: 'Poppins_500Medium' },
   likeBtn: { alignItems: 'center', gap: 3, paddingTop: 4 },
-  likeCount: { fontSize: 11, color: Colors.textMuted },
+  likeCount: { fontSize: 11, fontFamily: 'Poppins_400Regular', color: Colors.textMuted },
 });
 
 export default function CommentsModal({ visible, onClose, videoId, commentCount, onCommentAdded }: Props) {
@@ -314,12 +314,12 @@ const ms = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: 18, paddingVertical: 14,
   },
-  title: { fontSize: 16, fontWeight: '700', color: Colors.text },
+  title: { fontSize: 16, fontFamily: 'Poppins_700Bold', color: Colors.text },
   sep: { height: StyleSheet.hairlineWidth, backgroundColor: Colors.border },
   rowSep: { height: StyleSheet.hairlineWidth, backgroundColor: Colors.borderLight, marginLeft: 66 },
   empty: { alignItems: 'center', paddingTop: 60, gap: 8 },
-  emptyText: { fontSize: 15, fontWeight: '600', color: Colors.textMuted },
-  emptySubtext: { fontSize: 13, color: Colors.textDim },
+  emptyText: { fontSize: 15, fontFamily: 'Poppins_600SemiBold', color: Colors.textMuted },
+  emptySubtext: { fontSize: 13, fontFamily: 'Poppins_400Regular', color: Colors.textDim },
   inputRow: {
     flexDirection: 'row', alignItems: 'flex-end', gap: 10,
     paddingHorizontal: 14, paddingVertical: 12,
@@ -334,7 +334,7 @@ const ms = StyleSheet.create({
     paddingHorizontal: 12, paddingRight: 6, paddingVertical: 6,
     gap: 8,
   },
-  input: { flex: 1, fontSize: 14, color: Colors.text, maxHeight: 80, paddingVertical: 2 },
+  input: { flex: 1, fontSize: 14, color: Colors.text, fontFamily: 'Poppins_400Regular', maxHeight: 80, paddingVertical: 2 },
   sendBtn: {
     width: 30, height: 30, borderRadius: 15,
     backgroundColor: Colors.surfaceAlt,

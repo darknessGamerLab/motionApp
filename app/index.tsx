@@ -18,6 +18,7 @@ import { getTalentById } from '@/constants/Talents';
 import { useAuth } from '@/contexts/AuthContext';
 import { useFeed } from '@/hooks/useFeed';
 import { Ionicons } from '@expo/vector-icons';
+import { useIsFocused } from '@react-navigation/native';
 import { Image } from 'expo-image';
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -152,6 +153,9 @@ export default function MainLayout() {
   const userId = authState.user?.id;
   const navbarHeight = NAV_H + insets.bottom;
 
+  const isFocused = useIsFocused();
+  const isFeedActive = tab === 0 && isFocused && !guestModal.visible && !userProfileOpen;
+
   // ─── Feed state — delegated to useFeed hook ──────────────────────────
   const feed = useFeed({ userId, isAuth });
 
@@ -254,7 +258,7 @@ export default function MainLayout() {
         {/* Feed */}
         <LazyTabScreen visible={tab === 0 && !isFullscreen}>
           <HomeScreen
-            isActive={tab === 0 && !isFullscreen}
+            isActive={tab === 0 && isFocused && !isFullscreen && !guestModal.visible}
             isAuthenticated={isAuth}
             videos={feed.videos}
             videosLoading={!feed.initialLoaded}
@@ -274,9 +278,11 @@ export default function MainLayout() {
         {/* Explore */}
         <LazyTabScreen visible={tab === 1 && !isFullscreen}>
           <InspirationScreen
-            isActive={tab === 1}
+            isActive={tab === 1 && isFocused && !isFullscreen && !guestModal.visible}
             videos={feed.videos}
             videosLoading={!feed.initialLoaded}
+            refreshing={feed.loading}
+            onRefresh={feed.refresh}
             onVideoSaved={feed.updateVideoSave}
             onVideoLiked={feed.updateVideoLike}
             onVideoCommented={feed.updateVideoComment}
@@ -397,7 +403,7 @@ const styles = StyleSheet.create({
     borderRadius: 8, minWidth: 16, height: 16,
     alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3,
   },
-  badgeText: { color: '#fff', fontSize: 9, fontWeight: '700' },
+  badgeText: { color: '#fff', fontSize: 9, fontFamily: 'Poppins_700Bold' },
   uploadBar: {
     position: 'absolute', top: 0, left: 0, right: 0, zIndex: 999,
     backgroundColor: Colors.surface,
@@ -407,5 +413,5 @@ const styles = StyleSheet.create({
   },
   uploadBg: { height: 4, borderRadius: 2, backgroundColor: Colors.surfaceAlt, overflow: 'hidden' },
   uploadFill: { height: 4, borderRadius: 2, backgroundColor: Colors.primary },
-  uploadText: { fontSize: 12, color: Colors.textSecondary, fontWeight: '500' },
+  uploadText: { fontSize: 12, color: Colors.textSecondary, fontFamily: 'Poppins_500Medium' },
 });

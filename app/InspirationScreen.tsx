@@ -1,6 +1,7 @@
 import VideoPlayerModal from '@/components/VideoPlayerModal';
 import Colors from '@/constants/Colors';
 import { supabase } from '@/lib/supabase';
+import { fetchExploreVideos } from '@/services/videoService';
 import { VideoItem } from '@/types/video';
 import { formatNumber } from '@/utils/format';
 import { Ionicons } from '@expo/vector-icons';
@@ -17,6 +18,7 @@ import React, {
 import {
   Dimensions,
   FlatList,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -61,6 +63,8 @@ type Props = {
   onVideoCommented?: (id: string, count: number) => void;
   onUserPress?: (userId: string) => void;
   videosLoading?: boolean;
+  onRefresh?: () => void;
+  refreshing?: boolean;
 };
 
 // ─── Grid Tile ──────────────────────────────────────────────
@@ -71,11 +75,14 @@ const GridTile = React.memo(({ item, onPress }: {
     {/* FIX: expo-image instead of expo-av Video — eliminates native video decoder per tile */}
     {/* Each Video decoder = 5–15MB; 30 tiles = 150–450MB. expo-image uses shared cached memory */}
     <Image
-      source={item.thumbnail_url || item.user.avatar || 'https://i.pravatar.cc/100'}
+      // ✅ FIXED: Never use user avatar as video thumbnail fallback.
+      // thumbnail_url is the correct field; if absent show a neutral placeholder.
+      source={{ uri: item.thumbnail_url ?? '' }}
       style={StyleSheet.absoluteFill}
       contentFit="cover"
       transition={200}
       cachePolicy="memory-disk"
+    // Gray placeholder rendered by expo-image when url is empty string
     />
     {/* Play indicator overlay */}
     <View style={tc.playOverlay} pointerEvents="none">
@@ -113,7 +120,7 @@ const tc = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 2,
   },
   viewText: {
-    color: '#fff', fontSize: 10, fontWeight: '600',
+    color: '#fff', fontSize: 10, fontFamily: 'Poppins_600SemiBold',
   },
 });
 
@@ -212,7 +219,7 @@ const sp = StyleSheet.create({
     borderRadius: 4,
   },
   badgeText: {
-    color: '#fff', fontSize: 8, fontWeight: '700', letterSpacing: 0.5,
+    color: '#fff', fontSize: 8, fontFamily: 'Poppins_700Bold', letterSpacing: 0.5,
   },
   gradient: {
     position: 'absolute', bottom: 0, left: 0, right: 0, height: 60,
@@ -222,11 +229,11 @@ const sp = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
   },
   brand: {
-    color: 'rgba(255,255,255,0.9)', fontSize: 10, fontWeight: '500',
+    color: 'rgba(255,255,255,0.9)', fontSize: 10, fontFamily: 'Poppins_500Medium',
     marginBottom: 2,
   },
   title: {
-    color: '#fff', fontSize: 13, fontWeight: '700',
+    color: '#fff', fontSize: 13, fontFamily: 'Poppins_700Bold',
   },
   ctaBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 3,
@@ -236,7 +243,7 @@ const sp = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.4)',
   },
   ctaText: {
-    color: '#fff', fontSize: 11, fontWeight: '600',
+    color: '#fff', fontSize: 11, fontFamily: 'Poppins_600SemiBold',
   },
 });
 
@@ -270,7 +277,7 @@ const MOCK: VideoItem[] = Array.from({ length: 90 }, (_, i) => {
 
 // ─── Main ───────────────────────────────────────────────────
 export default function InspirationScreen({
-  isActive = false, videos = [], videosLoading = false, onVideoSaved, onVideoLiked, onVideoCommented, onUserPress,
+  isActive = false, videos = [], videosLoading = false, onVideoSaved, onVideoLiked, onVideoCommented, onUserPress, onRefresh, refreshing = false,
 }: Props) {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all');
@@ -301,19 +308,48 @@ export default function InspirationScreen({
   const secondaryBanners = useMemo(() => dbBanners.slice(0, 10), [dbBanners]);
   const thirdBanners = useMemo(() => dbBanners.slice(10), [dbBanners]);
 
-  const allVideos = useMemo(() => {
-    // Use only real videos from parent feed — no mock fallback
-    let list = [...videos];
+  // ─── Client-side explore data management ───────────────────────────────────
+  const [exploreVideos, setExploreVideos] = useState<VideoItem[]>([]);
+  const [exploreNextCursor, setExploreNextCursor] = useState<string | null>(null);
+  const [exploreLoading, setExploreLoading] = useState(false);
 
-    // Filter by chip
-    if (filter !== 'all') {
-      list = list.filter(v =>
-        v.topic?.toLowerCase().includes(filter) ||
-        v.description?.toLowerCase().includes(filter)
-      );
+  const loadExplore = useCallback(async (topic: string, reset = false) => {
+    setExploreLoading(true);
+    try {
+      const result = await fetchExploreVideos({
+        topic,
+        cursor: reset ? undefined : exploreNextCursor ?? undefined,
+        limit: 30,
+      });
+      if (reset) {
+        setExploreVideos(result.items);
+      } else {
+        setExploreVideos((prev) => [
+          ...prev,
+          ...result.items.filter((v) => !prev.find((p) => p.id === v.id)),
+        ]);
+      }
+      setExploreNextCursor(result.nextCursor);
+    } catch (e) {
+      if (__DEV__) console.warn('[InspirationScreen] explore fetch error:', e);
+    } finally {
+      setExploreLoading(false);
     }
+  }, [exploreNextCursor]);
 
-    // Search
+  // Reload when filter changes
+  useEffect(() => {
+    loadExplore(filter, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filter]);
+
+  const allVideos = useMemo(() => {
+    // Prefer explore videos from DB; fall back to parent-passed videos if explore is empty
+    const base = exploreVideos.length > 0 ? exploreVideos : videos;
+
+    let list = [...base];
+
+    // Apply search filter on top of already topic-filtered results from DB
     if (search.trim()) {
       const q = search.toLowerCase();
       list = list.filter(v =>
@@ -324,7 +360,7 @@ export default function InspirationScreen({
     }
 
     return list;
-  }, [videos, search, filter]);
+  }, [exploreVideos, videos, search]);
 
   const openPlayer = useCallback((idx: number) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -408,7 +444,15 @@ export default function InspirationScreen({
           </View>
         )
       ) : (
-        <ScrollView showsVerticalScrollIndicator={false} bounces={false} overScrollMode="never" contentContainerStyle={{ padding: 0 }}>
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          bounces={true}
+          overScrollMode="always"
+          contentContainerStyle={{ padding: 0 }}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} colors={[Colors.primary]} />
+          }
+        >
           {rows.map((row, ri) => (
             <React.Fragment key={`frag-${ri}`}>
               <View style={s.gridRow}>
@@ -461,7 +505,7 @@ const s = StyleSheet.create({
     backgroundColor: Colors.surfaceAlt,
     borderRadius: 8, paddingHorizontal: 12, height: 36,
   },
-  searchInput: { flex: 1, fontSize: 13, color: Colors.text, paddingVertical: 0 },
+  searchInput: { flex: 1, fontSize: 13, color: Colors.text, paddingVertical: 0, fontFamily: 'Poppins_400Regular' },
 
   // YouTube-style chips
   chipsWrap: {
@@ -485,10 +529,10 @@ const s = StyleSheet.create({
     borderColor: Colors.text,
   },
   chipText: {
-    fontSize: 13, fontWeight: '500', color: Colors.textSecondary,
+    fontSize: 13, fontFamily: 'Poppins_500Medium', color: Colors.textSecondary,
   },
   chipTextActive: {
-    color: '#fff', fontWeight: '600',
+    color: '#fff', fontFamily: 'Poppins_600SemiBold',
   },
 
   // Grid
@@ -503,5 +547,5 @@ const s = StyleSheet.create({
     flex: 1, alignItems: 'center', justifyContent: 'center',
     gap: 10, paddingBottom: 60,
   },
-  emptyTitle: { fontSize: 15, fontWeight: '600', color: Colors.textMuted },
+  emptyTitle: { fontSize: 15, fontFamily: 'Poppins_600SemiBold', color: Colors.textMuted },
 });

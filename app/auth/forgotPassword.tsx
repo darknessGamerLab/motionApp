@@ -188,7 +188,7 @@ export default function ForgotPasswordScreen() {
             </View>
             <Text style={styles.title}>Kodu Girin</Text>
             <Text style={styles.subtitle}>
-              <Text style={{ fontWeight: '600', color: Colors.text }}>{email}</Text>
+              <Text style={{ fontFamily: 'Poppins_600SemiBold', color: Colors.text }}>{email}</Text>
               {' '}adresine gönderilen 6 haneli kodu girin.
             </Text>
 
@@ -346,7 +346,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 26,
-    fontWeight: '700',
+    fontFamily: 'Poppins_700Bold',
     color: Colors.text,
     marginBottom: 10,
     textAlign: 'center',
@@ -355,6 +355,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.textSecondary,
     lineHeight: 21,
+    fontFamily: 'Poppins_400Regular',
     textAlign: 'center',
     marginBottom: 28,
   },
@@ -379,6 +380,7 @@ const styles = StyleSheet.create({
     height: 54,
     color: Colors.text,
     fontSize: 16,
+    fontFamily: 'Poppins_400Regular',
   },
   otpContainer: {
     flexDirection: 'row',
@@ -395,7 +397,7 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
     color: Colors.text,
     fontSize: 24,
-    fontWeight: '700',
+    fontFamily: 'Poppins_700Bold',
     textAlign: 'center',
   },
   otpInputFilled: {
@@ -414,6 +416,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 16,
     borderRadius: 10,
+    fontFamily: 'Poppins_500Medium',
   },
   button: {
     backgroundColor: Colors.primary,
@@ -433,7 +436,7 @@ const styles = StyleSheet.create({
   buttonText: {
     color: '#fff',
     fontSize: 16,
-    fontWeight: '700',
+    fontFamily: 'Poppins_700Bold',
   },
   resendBtn: {
     marginTop: 20,
@@ -443,7 +446,7 @@ const styles = StyleSheet.create({
   resendText: {
     color: Colors.primary,
     fontSize: 14,
-    fontWeight: '600',
+    fontFamily: 'Poppins_600SemiBold',
   },
   resendTextDisabled: {
     color: Colors.textMuted,
@@ -456,11 +459,12 @@ const styles = StyleSheet.create({
   footerText: {
     color: Colors.textSecondary,
     fontSize: 14,
+    fontFamily: 'Poppins_400Regular',
   },
   footerLink: {
     color: Colors.primary,
     fontSize: 14,
-    fontWeight: '700',
+    fontFamily: 'Poppins_700Bold',
   },
   // Success
   successContainer: {
@@ -474,7 +478,7 @@ const styles = StyleSheet.create({
   },
   successTitle: {
     fontSize: 26,
-    fontWeight: '700',
+    fontFamily: 'Poppins_700Bold',
     color: Colors.text,
     marginBottom: 12,
   },
@@ -483,6 +487,7 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     textAlign: 'center',
     lineHeight: 22,
+    fontFamily: 'Poppins_400Regular',
     marginBottom: 32,
   },
 });

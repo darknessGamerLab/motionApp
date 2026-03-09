@@ -35,12 +35,14 @@ import GuestAuthModal from '@/components/GuestAuthModal';
 import { SkeletonLoader } from '@/components/SkeletonLoader';
 import Colors from '@/constants/Colors';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/lib/supabase';
 import { VideoItem } from '@/types/video';
 import { formatNumber } from '@/utils/format';
 import { isValidUUID } from '@/utils/validate';
 
+import ActionBtn from '@/components/ActionBtn';
 import { CustomAlert as Alert } from '@/components/GlobalAlert';
+import VideoProgressBar from '@/components/VideoProgressBar';
+import { reportUser } from '@/services/interactionService';
 import { Ionicons } from '@expo/vector-icons';
 import { FlashList } from '@shopify/flash-list';
 import * as Haptics from 'expo-haptics';
@@ -84,6 +86,7 @@ interface HomeScreenProps {
   onVideoSaved?: (id: string, isSaved: boolean) => void;
   onVideoLiked?: (id: string, isLiked: boolean, likes: number) => void;
   onVideoCommented?: (id: string, comments: number) => void;
+  onVideoShared?: (id: string, shares: number) => void;
   onRefresh?: () => void;
   onEndReached?: () => void;
   refreshKey?: number;
@@ -95,48 +98,6 @@ interface HomeScreenProps {
   onActiveIndexChange?: (index: number) => void;
 }
 
-
-// ─── ActionBtn ────────────────────────────────────────────────────────
-const ActionBtn = memo(({
-  icon, filledIcon, count, color, active, onPress,
-}: {
-  icon: string;
-  filledIcon?: string;
-  count?: number;
-  color?: string;
-  active?: boolean;
-  onPress?: () => void;
-}) => {
-  const scale = useRef(new Animated.Value(1)).current;
-  const prevActive = useRef(active);
-
-  const bounce = useCallback(() => {
-    Animated.sequence([
-      Animated.spring(scale, { toValue: 1.4, useNativeDriver: true, speed: 30 }),
-      Animated.spring(scale, { toValue: 1, useNativeDriver: true, speed: 30 }),
-    ]).start();
-  }, [scale]);
-
-  useEffect(() => {
-    if (prevActive.current === active) return;
-    prevActive.current = active;
-    bounce();
-  }, [active, bounce]);
-
-  const handlePress = useCallback(() => {
-    bounce();
-    onPress?.();
-  }, [bounce, onPress]);
-
-  return (
-    <TouchableOpacity style={s.actionBtn} onPress={handlePress} activeOpacity={0.75}>
-      <Animated.View style={{ transform: [{ scale }] }}>
-        <Ionicons name={(active && filledIcon ? filledIcon : icon) as any} size={30} color={color || '#fff'} />
-      </Animated.View>
-      {count !== undefined && <Text style={s.actionCount}>{fmt(count)}</Text>}
-    </TouchableOpacity>
-  );
-});
 
 // ─── VideoCard ────────────────────────────────────────────────────────
 /**
@@ -160,6 +121,7 @@ export const VideoCard = memo(({
   onVideoSaved,
   onVideoLiked,
   onVideoCommented,
+  onVideoShared,
   onAuthRequired,
   onTogglePause,
 }: {
@@ -174,6 +136,7 @@ export const VideoCard = memo(({
   onVideoSaved?: (id: string, isSaved: boolean) => void;
   onVideoLiked?: (id: string, isLiked: boolean, likes: number) => void;
   onVideoCommented?: (id: string, comments: number) => void;
+  onVideoShared?: (id: string, shares: number) => void;
   onAuthRequired?: (action: 'like' | 'comment' | 'save' | 'follow' | 'create' | 'general') => void;
   onTogglePause?: () => void;
 }) => {
@@ -181,6 +144,7 @@ export const VideoCard = memo(({
   const [liked, setLiked] = useState(data.isLiked);
   const [saved, setSaved] = useState(data.isSaved);
   const [likes, setLikes] = useState(data.likes);
+  const [shares, setShares] = useState(data.shares);
   const [following, setFollowing] = useState(!!data.isFollowing);
   const [expanded, setExpanded] = useState(false);
   const [showComments, setShowComments] = useState(false);
@@ -289,8 +253,9 @@ export const VideoCard = memo(({
   useEffect(() => {
     setLikes(data.likes);
     setLiked(data.isLiked);
+    setShares(data.shares);
     setFollowing(!!data.isFollowing);
-  }, [data.id, data.likes, data.isLiked, data.isFollowing]);
+  }, [data.id, data.likes, data.isLiked, data.shares, data.isFollowing]);
 
   // ─── Auth guard ─────────────────────────────────────────────────────
   const guard = useCallback((action: 'like' | 'comment' | 'save' | 'follow', fn: () => void) => {
@@ -354,6 +319,19 @@ export const VideoCard = memo(({
     });
   }, [data.id, guard, onVideoSaved]);
 
+  const handleShare = useCallback(async () => {
+    try {
+      const res = await Share.share({ message: `${data.user.username}'in videosuna göz at! 🎬\n${data.description}` });
+      if (res.action === Share.sharedAction) {
+        setShares(s => {
+          const newS = s + 1;
+          onVideoShared?.(data.id, newS);
+          return newS;
+        });
+      }
+    } catch { }
+  }, [data.id, data.user.username, data.description, onVideoShared]);
+
   const openComments = useCallback(() => guard('comment', () => setShowComments(true)), [guard]);
 
   const isOwnVideo = authState.user?.id && authState.user.id === data.user.id;
@@ -375,14 +353,7 @@ export const VideoCard = memo(({
     if (!authState.user) { onAuthRequired?.('general'); return; }
     if (!isValidUUID(data.id)) { Alert.alert('Bilgi', 'Bu örnek içerik şu an raporlanamaz.'); return; }
     try {
-      const { error } = await (supabase as any).from('reports').insert({
-        reporter_id: authState.user.id,
-        target_type: 'content',
-        target_id: data.id,
-        reason,
-        status: 'pending',
-      });
-      if (error) throw error;
+      await reportUser(authState.user.id, data.id, reason);
       Alert.alert('Bildirildi', 'Bu içerik şikayetiniz üzerine incelenmeye alınmıştır.');
     } catch { Alert.alert('Hata', 'Rapor gönderilemedi.'); }
   };
@@ -509,10 +480,8 @@ export const VideoCard = memo(({
           <ActionBtn icon="bookmark-outline" filledIcon="bookmark" color={saved ? Colors.save : '#fff'} active={saved} onPress={toggleSave} />
           <ActionBtn
             icon="arrow-redo-outline"
-            count={data.shares}
-            onPress={async () => {
-              try { await Share.share({ message: `${data.user.username}'in videosuna göz at! 🎬\n${data.description}` }); } catch { }
-            }}
+            count={shares}
+            onPress={handleShare}
           />
           {!isOwnVideo && !hideReport && (
             <ActionBtn icon="flag-outline" color="rgba(255,255,255,0.6)" onPress={onReportPress} />
@@ -528,12 +497,8 @@ export const VideoCard = memo(({
         onCommentAdded={count => onVideoCommented?.(data.id, count)}
       />
 
-      {/* Video progress bar — thin TikTok-style bar at bottom */}
-      {active && (
-        <View style={s.progressTrack} pointerEvents="none">
-          <View style={[s.progressFill, { width: `${Math.min(progress * 100, 100)}%` as any }]} />
-        </View>
-      )}
+      {/* Video progress bar — using extracted VideoProgressBar component */}
+      {active && <VideoProgressBar progress={progress} />}
     </View>
   );
 }, (prev, next) =>
@@ -562,6 +527,7 @@ export default function HomeScreen({
   onVideoSaved,
   onVideoLiked,
   onVideoCommented,
+  onVideoShared,
   onRefresh,
   onEndReached,
   refreshKey = 0,
@@ -655,10 +621,11 @@ export default function HomeScreen({
       onVideoSaved={onVideoSaved}
       onVideoLiked={onVideoLiked}
       onVideoCommented={onVideoCommented}
+      onVideoShared={onVideoShared}
       onAuthRequired={showGuestModal}
       onTogglePause={togglePause}
     />
-  ), [isActive, activeIdx, h, isAuthenticated, paused, hideReport, onUserPress, onUserFollowed, onVideoSaved, onVideoLiked, onVideoCommented, showGuestModal, togglePause]);
+  ), [isActive, activeIdx, h, isAuthenticated, paused, hideReport, onUserPress, onUserFollowed, onVideoSaved, onVideoLiked, onVideoCommented, onVideoShared, showGuestModal, togglePause]);
 
   // ─── Loading / Empty states / Layout Buffer ────────────────────────
   if (h === 0 || (videosLoading && !videos.length)) {
@@ -754,7 +721,7 @@ export default function HomeScreen({
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
   empty: { alignItems: 'center', justifyContent: 'center' },
-  emptyText: { color: Colors.textMuted, fontSize: 14, marginTop: 10 },
+  emptyText: { color: Colors.textMuted, fontSize: 14, fontFamily: 'Poppins_400Regular', marginTop: 10 },
 
   card: { width: W, backgroundColor: '#000', overflow: 'hidden' },
 
@@ -789,8 +756,8 @@ const s = StyleSheet.create({
   userRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10, gap: 8 },
   avatar: { width: 40, height: 40, borderRadius: 20, borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.65)' },
   userMeta: { flex: 1, minWidth: 0 },
-  username: { color: '#fff', fontSize: 14, fontWeight: '700', letterSpacing: -0.2 },
-  topic: { color: 'rgba(255,255,255,0.7)', fontSize: 12, marginTop: 1 },
+  username: { color: '#fff', fontSize: 14, fontFamily: 'Poppins_700Bold', letterSpacing: -0.2 },
+  topic: { color: 'rgba(255,255,255,0.7)', fontSize: 12, fontFamily: 'Poppins_400Regular', marginTop: 1 },
   followBtn: {
     paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20,
     borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.8)',
@@ -798,12 +765,12 @@ const s = StyleSheet.create({
     minWidth: 32, justifyContent: 'center',
   },
   followBtnActive: { backgroundColor: 'rgba(255,255,255,0.15)', borderColor: 'transparent' },
-  followTxt: { color: '#fff', fontSize: 12, fontWeight: '600' },
+  followTxt: { color: '#fff', fontSize: 12, fontFamily: 'Poppins_600SemiBold' },
   followTxtActive: { color: 'rgba(255,255,255,0.7)' },
-  desc: { color: 'rgba(255,255,255,0.9)', fontSize: 13, lineHeight: 18 },
-  more: { color: 'rgba(255,255,255,0.6)', fontWeight: '600' },
+  desc: { color: 'rgba(255,255,255,0.9)', fontSize: 13, lineHeight: 18, fontFamily: 'Poppins_400Regular' },
+  more: { color: 'rgba(255,255,255,0.6)', fontFamily: 'Poppins_600SemiBold' },
   actions: { alignItems: 'center', gap: 18 },
   actionBtn: { alignItems: 'center', gap: 3 },
-  actionCount: { color: '#fff', fontSize: 12, fontWeight: '600' },
+  actionCount: { color: '#fff', fontSize: 12, fontFamily: 'Poppins_600SemiBold' },
   save: { color: Colors.save },
 });

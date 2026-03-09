@@ -332,19 +332,19 @@ const s = StyleSheet.create({
     backgroundColor: Colors.surface,
   },
   headerBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  headerTitle: { fontSize: 16, fontWeight: '700', color: Colors.text },
+  headerTitle: { fontSize: 16, fontFamily: 'Poppins_700Bold', color: Colors.text },
   saveBtn: {
     backgroundColor: Colors.primary,
     paddingHorizontal: 16, paddingVertical: 7,
     borderRadius: 8,
   },
   saveBtnDisabled: { opacity: 0.6 },
-  saveBtnText: { color: '#fff', fontSize: 14, fontWeight: '600' },
+  saveBtnText: { color: '#fff', fontSize: 14, fontFamily: 'Poppins_600SemiBold' },
 
   scroll: { flex: 1 },
   section: { paddingHorizontal: 20, paddingTop: 24 },
-  sectionTitle: { fontSize: 14, fontWeight: '600', color: Colors.text, marginBottom: 4 },
-  sectionSub: { fontSize: 12, color: Colors.textMuted, marginBottom: 12 },
+  sectionTitle: { fontSize: 14, fontFamily: 'Poppins_600SemiBold', color: Colors.text, marginBottom: 4 },
+  sectionSub: { fontSize: 12, color: Colors.textMuted, marginBottom: 12, fontFamily: 'Poppins_400Regular' },
   rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
 
   avatarsRow: { flexDirection: 'row', gap: 16, justifyContent: 'center' },
@@ -371,8 +371,8 @@ const s = StyleSheet.create({
     paddingHorizontal: 14, minHeight: 50,
   },
   inputIcon: { marginRight: 10 },
-  input: { flex: 1, fontSize: 15, color: Colors.text, paddingVertical: 12 },
-  charCount: { color: Colors.textDim, fontSize: 11, textAlign: 'right', marginTop: 6 },
+  input: { flex: 1, fontSize: 15, color: Colors.text, paddingVertical: 12, fontFamily: 'Poppins_400Regular' },
+  charCount: { color: Colors.textDim, fontSize: 11, textAlign: 'right', marginTop: 6, fontFamily: 'Poppins_400Regular' },
 
   talentsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   chip: {
@@ -382,6 +382,6 @@ const s = StyleSheet.create({
     borderRadius: 20, borderWidth: 1, borderColor: Colors.border,
   },
   chipSelected: { backgroundColor: Colors.primary, borderColor: Colors.primary },
-  chipText: { color: Colors.textSecondary, fontSize: 13, fontWeight: '500' },
+  chipText: { color: Colors.textSecondary, fontSize: 13, fontFamily: 'Poppins_500Medium' },
   chipTextSelected: { color: '#fff' },
 });

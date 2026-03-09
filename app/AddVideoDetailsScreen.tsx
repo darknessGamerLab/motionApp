@@ -301,7 +301,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: 17,
-    fontWeight: '700',
+    fontFamily: 'Poppins_700Bold',
     color: '#000', // Changed for visibility on light background
   },
   publishButton: {
@@ -318,7 +318,7 @@ const styles = StyleSheet.create({
   publishButtonText: {
     color: '#fff',
     fontSize: 13,
-    fontWeight: '700',
+    fontFamily: 'Poppins_700Bold',
   },
   scrollView: {
     flex: 1,
@@ -367,11 +367,11 @@ const styles = StyleSheet.create({
   retakeButtonText: {
     color: '#fff',
     fontSize: 11,
-    fontWeight: '500',
+    fontFamily: 'Poppins_500Medium',
   },
   sectionTitle: {
     fontSize: 14,
-    fontWeight: '700',
+    fontFamily: 'Poppins_700Bold',
     color: '#000', // Changed for visibility on light background
     marginBottom: 10,
   },
@@ -384,16 +384,19 @@ const styles = StyleSheet.create({
     minHeight: 90,
     borderWidth: 1,
     borderColor: '#e5e7eb',
+    fontFamily: 'Poppins_400Regular',
   },
   charCount: {
     color: '#666',
     fontSize: 11,
+    fontFamily: 'Poppins_400Regular',
     textAlign: 'right',
     marginTop: 4,
   },
   sectionSubtitle: {
     fontSize: 12,
     color: '#888',
+    fontFamily: 'Poppins_400Regular',
     marginBottom: 12,
   },
   selectedTopicContainer: {
@@ -412,7 +415,7 @@ const styles = StyleSheet.create({
   selectedTopicText: {
     color: '#fff',
     fontSize: 13,
-    fontWeight: '600',
+    fontFamily: 'Poppins_600SemiBold',
   },
   talentsContainer: {
     flexDirection: 'row',
@@ -440,11 +443,11 @@ const styles = StyleSheet.create({
   talentTagText: {
     color: '#374151',
     fontSize: 13,
-    fontWeight: '500',
+    fontFamily: 'Poppins_500Medium',
   },
   talentTagTextSelected: {
     color: '#DC143C',
-    fontWeight: '600',
+    fontFamily: 'Poppins_600SemiBold',
   },
   emptyTalentsContainer: {
     paddingVertical: 24,
@@ -453,11 +456,12 @@ const styles = StyleSheet.create({
   emptyTalentsText: {
     color: '#888',
     fontSize: 14,
-    fontWeight: '500',
+    fontFamily: 'Poppins_500Medium',
     marginBottom: 4,
   },
   emptyTalentsSubtext: {
     color: '#6b7280',
     fontSize: 12,
+    fontFamily: 'Poppins_400Regular',
   },
 });

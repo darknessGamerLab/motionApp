@@ -220,7 +220,7 @@ const s = StyleSheet.create({
         paddingHorizontal: 16, zIndex: 10,
     },
     headerBtn: { padding: 8 },
-    headerTitle: { color: '#fff', fontSize: 18, fontWeight: '600' },
+    headerTitle: { color: '#fff', fontSize: 18, fontFamily: 'Poppins_600SemiBold' },
 
     workspace: {
         flex: 1, alignItems: 'center', justifyContent: 'center',
@@ -245,7 +245,7 @@ const s = StyleSheet.create({
         height: 140, alignItems: 'center',
         paddingTop: 10, paddingBottom: 40,
     },
-    footerText: { color: '#fff', fontSize: 13, marginBottom: 15 },
+    footerText: { color: '#fff', fontSize: 13, fontFamily: 'Poppins_400Regular', marginBottom: 15 },
     zoomControls: {
         flexDirection: 'row', alignItems: 'center', gap: 20,
         backgroundColor: 'rgba(255,255,255,0.1)',
@@ -255,5 +255,5 @@ const s = StyleSheet.create({
         width: 36, height: 36, borderRadius: 18, backgroundColor: '#fff',
         alignItems: 'center', justifyContent: 'center'
     },
-    zText: { color: '#fff', fontSize: 14, fontWeight: '600' }
+    zText: { color: '#fff', fontSize: 14, fontFamily: 'Poppins_600SemiBold' }
 });

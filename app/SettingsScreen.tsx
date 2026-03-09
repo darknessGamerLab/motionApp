@@ -365,7 +365,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: 17,
-    fontWeight: '700',
+    fontFamily: 'Poppins_700Bold',
     color: Colors.text,
   },
   headerRight: {
@@ -390,7 +390,7 @@ const styles = StyleSheet.create({
   accountBadgeText: {
     color: Colors.primary,
     fontSize: 13,
-    fontWeight: '600',
+    fontFamily: 'Poppins_600SemiBold',
   },
   accountBadgeTextCorporate: {
     color: '#7C3AED',
@@ -400,7 +400,7 @@ const styles = StyleSheet.create({
   },
   sectionLabel: {
     fontSize: 12,
-    fontWeight: '600',
+    fontFamily: 'Poppins_600SemiBold',
     color: Colors.textMuted,
     textTransform: 'uppercase',
     letterSpacing: 0.8,
@@ -439,7 +439,7 @@ const styles = StyleSheet.create({
   },
   settingTitle: {
     fontSize: 15,
-    fontWeight: '500',
+    fontFamily: 'Poppins_500Medium',
     color: Colors.text,
   },
   settingTitleDanger: {
@@ -448,6 +448,7 @@ const styles = StyleSheet.create({
   settingSubtitle: {
     fontSize: 12,
     color: Colors.textMuted,
+    fontFamily: 'Poppins_400Regular',
     marginTop: 2,
   },
   badge: {
@@ -460,7 +461,7 @@ const styles = StyleSheet.create({
   badgeText: {
     color: '#fff',
     fontSize: 10,
-    fontWeight: '700',
+    fontFamily: 'Poppins_700Bold',
   },
   separator: {
     height: 1,
@@ -470,6 +471,7 @@ const styles = StyleSheet.create({
   versionText: {
     color: Colors.textDim,
     fontSize: 12,
+    fontFamily: 'Poppins_400Regular',
     textAlign: 'center',
     marginTop: 24,
   },
@@ -491,7 +493,7 @@ const modalStyles = StyleSheet.create({
   },
   title: {
     fontSize: 18,
-    fontWeight: '700',
+    fontFamily: 'Poppins_700Bold',
     color: Colors.text,
   },
   closeBtn: {
@@ -518,11 +520,12 @@ const modalStyles = StyleSheet.create({
     flex: 1,
     fontSize: 13,
     color: Colors.info,
+    fontFamily: 'Poppins_400Regular',
     lineHeight: 19,
   },
   sectionLabel: {
     fontSize: 13,
-    fontWeight: '600',
+    fontFamily: 'Poppins_600SemiBold',
     color: Colors.textMuted,
     marginBottom: 12,
   },
@@ -544,10 +547,12 @@ const modalStyles = StyleSheet.create({
     height: 54,
     color: Colors.text,
     fontSize: 16,
+    fontFamily: 'Poppins_400Regular',
   },
   errorText: {
     color: Colors.error,
     fontSize: 13,
+    fontFamily: 'Poppins_500Medium',
     marginBottom: 16,
     textAlign: 'center',
     backgroundColor: '#FFF0F0',
@@ -574,7 +579,7 @@ const modalStyles = StyleSheet.create({
   submitBtnText: {
     color: '#fff',
     fontSize: 16,
-    fontWeight: '700',
+    fontFamily: 'Poppins_700Bold',
   },
   // Success
   successContainer: {
@@ -588,13 +593,14 @@ const modalStyles = StyleSheet.create({
   },
   successTitle: {
     fontSize: 24,
-    fontWeight: '700',
+    fontFamily: 'Poppins_700Bold',
     color: Colors.text,
     marginBottom: 16,
     textAlign: 'center',
   },
   successText: {
     fontSize: 15,
+    fontFamily: 'Poppins_400Regular',
     color: Colors.textSecondary,
     textAlign: 'center',
     lineHeight: 22,
@@ -609,6 +615,6 @@ const modalStyles = StyleSheet.create({
   closeButtonText: {
     color: '#fff',
     fontSize: 16,
-    fontWeight: '700',
+    fontFamily: 'Poppins_700Bold',
   },
 });

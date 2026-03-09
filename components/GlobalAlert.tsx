@@ -147,7 +147,7 @@ const styles = StyleSheet.create({
     },
     title: {
         fontSize: 18,
-        fontWeight: '700',
+        fontFamily: 'Poppins_700Bold',
         color: Colors.text,
         textAlign: 'center',
         marginBottom: 8,
@@ -155,6 +155,7 @@ const styles = StyleSheet.create({
     },
     message: {
         fontSize: 15,
+        fontFamily: 'Poppins_400Regular',
         color: Colors.textSecondary,
         textAlign: 'center',
         lineHeight: 22,
@@ -182,7 +183,7 @@ const styles = StyleSheet.create({
     },
     buttonText: {
         fontSize: 16,
-        fontWeight: '600',
+        fontFamily: 'Poppins_600SemiBold',
     },
     textPrimary: {
         color: '#fff',
