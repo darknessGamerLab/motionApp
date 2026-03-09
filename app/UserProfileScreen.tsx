@@ -1,5 +1,6 @@
 import { CustomAlert as Alert } from '@/components/GlobalAlert';
 import ProfilePhotoCarousel from '@/components/ProfilePhotoCarousel';
+import ProfileTabGrid from '@/components/ProfileTabGrid';
 import { SkeletonLoader } from '@/components/SkeletonLoader';
 import VideoPlayerModal from '@/components/VideoPlayerModal';
 import Colors from '@/constants/Colors';
@@ -10,17 +11,14 @@ import { useVideoActions } from '@/hooks/useVideoActions';
 import { useVideoPlayer as usePlayerModal } from '@/hooks/useVideoPlayer';
 import { VideoItem } from '@/types/video';
 import { formatNumber } from '@/utils/format';
-import { animateTabSwitch } from '@/utils/transitions';
 import { isValidUUID } from '@/utils/validate';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { Image } from 'expo-image';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActionSheetIOS,
   Animated,
   Dimensions,
-  FlatList,
   Modal,
   Platform,
   ScrollView,
@@ -32,11 +30,10 @@ import {
 } from 'react-native';
 
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const GRID_COLUMNS = 3;
 const GRID_GAP = 2;
 const GRID_ITEM_WIDTH = (SCREEN_WIDTH - (GRID_GAP * (GRID_COLUMNS - 1))) / GRID_COLUMNS;
-
 
 
 interface UserProfileScreenProps {
@@ -63,14 +60,9 @@ export default function UserProfileScreen({
   onUserPress,
 }: UserProfileScreenProps) {
   const { authState } = useAuth();
-  const [activeTab, setActiveTab] = useState<'videos' | 'liked' | 'saved'>('videos');
   const [showReportMenu, setShowReportMenu] = useState(false);
-  // ── Video player modal — useVideoPlayer hook (replaces 3 manual states)
+  // ── Video player modal — useVideoPlayer hook
   const player = usePlayerModal();
-
-  // Tab animasyon değerleri
-  const tabIndicatorPosition = useRef(new Animated.Value(0)).current;
-  const contentPosition = useRef(new Animated.Value(0)).current;
 
   // ─── useProfile hook — cache'li, tek noktadan veri ──────────────────────────
   const {
@@ -89,13 +81,6 @@ export default function UserProfileScreen({
     isAuthenticated: !!authState.user,
   });
 
-  // Tab animasyonu — merkezi transitions utility'si
-  useEffect(() => {
-    const tabIdx = activeTab === 'videos' ? 0 : activeTab === 'liked' ? 1 : 2;
-    const contentVal = -tabIdx * SCREEN_WIDTH;
-    animateTabSwitch(tabIndicatorPosition, contentPosition, tabIdx, contentVal).start();
-  }, [activeTab]);
-
   // Fade in animasyonu — ekran açılınca
   const screenOpacity = useRef(new Animated.Value(0)).current;
   useEffect(() => {
@@ -108,13 +93,12 @@ export default function UserProfileScreen({
     }
   }, [loading]);
 
-  // Kullanıcı bilgilerini türet — avatars kolonunu doğru oku
+  // Kullanıcı bilgilerini türet
   const user = useMemo(() => ({
     id: profileData?.id || userId || '',
     username: profileData?.username || '...',
     fullName: profileData?.full_name || '',
     bio: profileData?.bio || '',
-    // ✅ DÜZELDİ: avatars kolonunu oku (eski avatar_urls değil), null safe
     avatars: (
       Array.isArray(profileData?.avatars) && profileData.avatars.length > 0
         ? profileData.avatars
@@ -134,12 +118,6 @@ export default function UserProfileScreen({
     if (userDbVideos.length > 0) return userDbVideos as VideoItem[];
     return allVideos.filter(v => v.user.id === user.id);
   }, [userDbVideos, allVideos, user.id]);
-
-  const currentTabVideos = useMemo(() => {
-    if (activeTab === 'liked') return userLikedVideos as VideoItem[];
-    if (activeTab === 'saved') return userSavedVideos as VideoItem[];
-    return displayVideos;
-  }, [activeTab, displayVideos, userLikedVideos, userSavedVideos]);
 
   // Şikayet
   const handleReport = async (reason: string) => {
@@ -211,34 +189,6 @@ export default function UserProfileScreen({
   const openVideoPlayer = useCallback((videos: VideoItem[], startIndex: number) => {
     player.open(videos, startIndex);
   }, [player]);
-
-  const renderVideoItem = useCallback((totalLength: number) => ({ item, index }: { item: VideoItem; index: number }) => {
-    const isLastInRow = (index + 1) % GRID_COLUMNS === 0;
-    const rowNumber = Math.floor(index / GRID_COLUMNS);
-    const totalRows = Math.ceil(totalLength / GRID_COLUMNS);
-    const isLastRow = rowNumber === totalRows - 1;
-
-    return (
-      <TouchableOpacity
-        style={[styles.videoItem, { marginRight: isLastInRow ? 0 : GRID_GAP, marginBottom: isLastRow ? 0 : GRID_GAP }]}
-        activeOpacity={0.8}
-        onPress={() => openVideoPlayer(currentTabVideos, index)}
-      >
-        {/* ✅ DÜZELDİ: expo-image + thumbnail_url kullan */}
-        <Image
-          source={(item as any).thumbnail_url || item.user.avatar || 'https://ui-avatars.com/api/?background=333&color=fff&name=V'}
-          style={styles.videoThumbnail}
-          contentFit="cover"
-          cachePolicy="memory-disk"
-          transition={150}
-        />
-        <View style={styles.viewsOverlay}>
-          <Ionicons name="play" size={10} color="#fff" />
-          <Text style={styles.viewsText}>{formatNumber(item.likes)}</Text>
-        </View>
-      </TouchableOpacity>
-    );
-  }, [displayVideos, openVideoPlayer]);
 
   // ─── Loading state: skeleton göster ─────────────────────────────────────────
   if (loading) {
@@ -366,92 +316,14 @@ export default function UserProfileScreen({
           </View>
         </View>
 
-        {/* Tabs */}
-        <View style={styles.tabs}>
-          <TouchableOpacity style={styles.tab} onPress={() => setActiveTab('videos')}>
-            <Ionicons name="videocam" size={22} color={activeTab === 'videos' ? Colors.primary : Colors.textMuted} />
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.tab} onPress={() => setActiveTab('liked')}>
-            <Ionicons name="heart" size={21} color={activeTab === 'liked' ? Colors.primary : Colors.textMuted} />
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.tab} onPress={() => setActiveTab('saved')}>
-            <Ionicons name="bookmark" size={21} color={activeTab === 'saved' ? Colors.primary : Colors.textMuted} />
-          </TouchableOpacity>
-          <Animated.View
-            style={[
-              styles.tabIndicator,
-              {
-                transform: [{
-                  translateX: tabIndicatorPosition.interpolate({
-                    inputRange: [0, 1, 2],
-                    outputRange: [
-                      SCREEN_WIDTH / 6 - 20,
-                      SCREEN_WIDTH / 2 - 20,
-                      SCREEN_WIDTH * 5 / 6 - 20,
-                    ],
-                  }),
-                }],
-              },
-            ]}
-          />
-        </View>
-
-        <Animated.View style={[styles.gridContainer, { transform: [{ translateX: contentPosition }] }]}>
-          {/* Videos Tab */}
-          <View style={styles.gridPage}>
-            {displayVideos.length > 0 ? (
-              <FlatList
-                data={displayVideos}
-                renderItem={renderVideoItem(displayVideos.length)}
-                keyExtractor={(item) => item.id}
-                numColumns={GRID_COLUMNS}
-                scrollEnabled={false}
-                contentContainerStyle={styles.gridContent}
-              />
-            ) : (
-              <View style={styles.emptyContainer}>
-                <Ionicons name="videocam-off-outline" size={44} color={Colors.textDim} />
-                <Text style={styles.emptyText}>Henüz video yok</Text>
-              </View>
-            )}
-          </View>
-          {/* Liked Tab */}
-          <View style={styles.gridPage}>
-            {(userLikedVideos as VideoItem[]).length > 0 ? (
-              <FlatList
-                data={userLikedVideos as VideoItem[]}
-                renderItem={renderVideoItem((userLikedVideos as VideoItem[]).length)}
-                keyExtractor={(item) => item.id}
-                numColumns={GRID_COLUMNS}
-                scrollEnabled={false}
-                contentContainerStyle={styles.gridContent}
-              />
-            ) : (
-              <View style={styles.emptyContainer}>
-                <Ionicons name="heart-outline" size={44} color={Colors.textDim} />
-                <Text style={styles.emptyText}>Beğenilen video yok</Text>
-              </View>
-            )}
-          </View>
-          {/* Saved Tab */}
-          <View style={styles.gridPage}>
-            {(userSavedVideos as VideoItem[]).length > 0 ? (
-              <FlatList
-                data={userSavedVideos as VideoItem[]}
-                renderItem={renderVideoItem((userSavedVideos as VideoItem[]).length)}
-                keyExtractor={(item) => item.id}
-                numColumns={GRID_COLUMNS}
-                scrollEnabled={false}
-                contentContainerStyle={styles.gridContent}
-              />
-            ) : (
-              <View style={styles.emptyContainer}>
-                <Ionicons name="bookmark-outline" size={44} color={Colors.textDim} />
-                <Text style={styles.emptyText}>Kaydedilen video yok</Text>
-              </View>
-            )}
-          </View>
-        </Animated.View>
+        {/* ✅ ProfileTabGrid — replaces ~90 lines of duplicate tab+FlatList code */}
+        <ProfileTabGrid
+          videos={displayVideos}
+          likedVideos={userLikedVideos as VideoItem[]}
+          savedVideos={userSavedVideos as VideoItem[]}
+          loading={loading}
+          onVideoPress={(list, idx) => player.open(list, idx)}
+        />
       </ScrollView>
 
       {/* Shared Video Player Modal */}

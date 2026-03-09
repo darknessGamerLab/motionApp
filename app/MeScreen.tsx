@@ -1,7 +1,7 @@
-import EmptyState from "@/components/EmptyState";
 import FollowListScreen from "@/components/FollowListScreen";
 import { CustomAlert as Alert } from '@/components/GlobalAlert';
 import ProfilePhotoCarousel from "@/components/ProfilePhotoCarousel";
+import ProfileTabGrid from "@/components/ProfileTabGrid";
 import { SkeletonLoader } from "@/components/SkeletonLoader";
 import VideoPlayerModal from "@/components/VideoPlayerModal";
 import Colors from "@/constants/Colors";
@@ -11,10 +11,8 @@ import { useVideoPlayer as usePlayerModal } from "@/hooks/useVideoPlayer";
 import { supabase } from "@/lib/supabase";
 import { VideoItem } from "@/types/video";
 import { formatNumber } from "@/utils/format";
-import { animateTabSwitch } from "@/utils/transitions";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import { Image } from "expo-image";
 import React, {
   useCallback,
   useEffect,
@@ -23,9 +21,7 @@ import React, {
   useState,
 } from "react";
 import {
-  Animated,
   Dimensions,
-  FlatList,
   Modal,
   ScrollView,
   Share,
@@ -74,16 +70,11 @@ export default function MeScreen({
   onUserPress,
 }: MeScreenProps) {
   const insets = useSafeAreaInsets();
-  const [activeTab, setActiveTab] = useState<"videos" | "liked" | "saved">("videos");
-  const [activeProfileIndex, setActiveProfileIndex] = useState(1);
-  const [showSettings, setShowSettings] = useState(false);
-  const [showEditProfile, setShowEditProfile] = useState(false);
-  const tabIndicatorPosition = useRef(new Animated.Value(0)).current;
-  const contentPosition = useRef(new Animated.Value(0)).current;
-
   // ── Video player modal — extracted to useVideoPlayer hook (replaces 3 manual states)
   const player = usePlayerModal();
 
+  const [showSettings, setShowSettings] = useState(false);
+  const [showEditProfile, setShowEditProfile] = useState(false);
   const { authState } = useAuth();
   const userId = authState.user?.id;
 
@@ -93,15 +84,6 @@ export default function MeScreen({
   const [dbLikedVideos, setDbLikedVideos] = useState<VideoItem[]>([]);
   const [dbLoading, setDbLoading] = useState(false);
   const [showFollowList, setShowFollowList] = useState(false);
-  const [followListTab, setFollowListTab] = useState<"following" | "followers">(
-    "followers",
-  );
-
-  const openFollowList = (tab: "following" | "followers") => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setFollowListTab(tab);
-    setShowFollowList(true);
-  };
 
   const hasFetchedRef = useRef(false);
 
@@ -259,31 +241,17 @@ export default function MeScreen({
       ? dbSavedVideos
       : allVideos.filter((v) => v.isSaved);
 
-  // ✅ Merkezi animasyon utility kullanımı — animateTabSwitch
-  useEffect(() => {
-    const tabIdx = activeTab === "videos" ? 0 : activeTab === "liked" ? 1 : 2;
-    const contentVal = -tabIdx * SCREEN_WIDTH;
-    animateTabSwitch(
-      tabIndicatorPosition,
-      contentPosition,
-      tabIdx,
-      contentVal,
-    ).start();
-  }, [activeTab]);
+  const [followListTab, setFollowListTab] = useState<"following" | "followers">("followers");
 
-  // Grid için kullanılacak videolar
-  const displayVideos =
-    activeTab === "videos" ? userVideos
-      : activeTab === "liked" ? dbLikedVideos
-        : savedVideosList;
-
-  const changeProfile = (index: number) => {
-    setActiveProfileIndex(index);
+  const openFollowList = (tab: "following" | "followers") => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setFollowListTab(tab);
+    setShowFollowList(true);
   };
 
-  // Video silme
+  // Video silme — ProfileTabGrid'e onVideoLongPress olarak geçilir
   const handleDeleteVideo = useCallback(
-    (videoId: string) => {
+    (video: VideoItem) => {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
       Alert.alert(
         "Videoyu Sil",
@@ -294,9 +262,8 @@ export default function MeScreen({
             text: "Sil",
             style: "destructive",
             onPress: () => {
-              // Remove from local dbUserVideos immediately
-              setDbUserVideos((prev) => prev.filter((v) => v.id !== videoId));
-              onVideoDelete?.(videoId);
+              setDbUserVideos((prev) => prev.filter((v) => v.id !== video.id));
+              onVideoDelete?.(video.id);
             },
           },
         ],
@@ -305,62 +272,14 @@ export default function MeScreen({
     [onVideoDelete],
   );
 
-  // Video kaydetme/çıkarma — local state'i de güncelle
   const handleVideoSaved = useCallback(
     (videoId: string, isSaved: boolean) => {
       if (!isSaved) {
-        // Kaydedilenlerden çıkarıldı — local listeden kaldır (NO refetch)
         setDbSavedVideos((prev) => prev.filter((v) => v.id !== videoId));
       }
-      // isSaved=true case: optimistic — the video is already in the feed/profile list.
-      // A full refetch here is expensive and causes egress. We skip it; the user
-      // can pull-to-refresh if they want to see the saved list updated immediately.
       onVideoSaved?.(videoId, isSaved);
     },
     [onVideoSaved],
-  );
-
-  const renderVideoItem = useCallback(
-    (totalLength: number, feedType: "profile" | "saved") =>
-      ({ item, index }: { item: VideoItem; index: number }) => {
-        const isLastInRow = (index + 1) % GRID_COLUMNS === 0;
-        const rowNumber = Math.floor(index / GRID_COLUMNS);
-        const totalRows = Math.ceil(totalLength / GRID_COLUMNS);
-        const isLastRow = rowNumber === totalRows - 1;
-
-        return (
-          <TouchableOpacity
-            style={[
-              styles.videoItem,
-              {
-                marginRight: isLastInRow ? 0 : GRID_GAP,
-                marginBottom: isLastRow ? 0 : GRID_GAP,
-              },
-            ]}
-            activeOpacity={0.8}
-            onPress={() => {
-              player.open(displayVideos, index);
-            }}
-            onLongPress={() => {
-              if (feedType === "profile") handleDeleteVideo(item.id);
-            }}
-            delayLongPress={500}
-          >
-            {/* ✅ DÜZELDİ: thumbnail_url kullan, expo-image ile cache'li yükleme */}
-            <Image
-              source={{ uri: (item as any).thumbnail_url || item.uri }}
-              style={styles.videoThumbnail}
-              contentFit="cover"
-              cachePolicy="memory-disk"
-              transition={150}
-            />
-            <View style={styles.viewsOverlay}>
-              <Ionicons name="play" size={12} color="#fff" />
-            </View>
-          </TouchableOpacity>
-        );
-      },
-    [userId, handleDeleteVideo],
   );
 
   const formatViews = formatNumber;
@@ -494,127 +413,15 @@ export default function MeScreen({
           </View>
         </View>
 
-        {/* Tabs */}
-        <View style={styles.tabs}>
-          <TouchableOpacity
-            style={styles.tab}
-            onPress={() => setActiveTab("videos")}
-          >
-            <Ionicons
-              name="videocam"
-              size={24}
-              color={activeTab === "videos" ? Colors.primary : Colors.textDim}
-            />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.tab}
-            onPress={() => setActiveTab("liked")}
-          >
-            <Ionicons
-              name="heart"
-              size={22}
-              color={activeTab === "liked" ? Colors.primary : Colors.textDim}
-            />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.tab}
-            onPress={() => setActiveTab("saved")}
-          >
-            <Ionicons
-              name="bookmark"
-              size={22}
-              color={activeTab === "saved" ? Colors.primary : Colors.textDim}
-            />
-          </TouchableOpacity>
-          {/* Animated indicator */}
-          <Animated.View
-            style={[
-              styles.tabIndicator,
-              {
-                transform: [
-                  {
-                    translateX: tabIndicatorPosition.interpolate({
-                      inputRange: [0, 1, 2],
-                      outputRange: [
-                        SCREEN_WIDTH / 6 - 20,
-                        SCREEN_WIDTH / 2 - 20,
-                        SCREEN_WIDTH * 5 / 6 - 20,
-                      ],
-                    }),
-                  },
-                ],
-              },
-            ]}
-          />
-        </View>
-
-        {/* Video Grid - Animated Area */}
-        <Animated.View
-          style={[
-            styles.gridContainer,
-            { transform: [{ translateX: contentPosition }] },
-          ]}
-        >
-          {/* My Videos Grid */}
-          <View style={styles.gridPage}>
-            {userVideos.length > 0 ? (
-              <FlatList
-                data={userVideos}
-                renderItem={renderVideoItem(userVideos.length, "profile")}
-                keyExtractor={(item) => item.id}
-                numColumns={GRID_COLUMNS}
-                scrollEnabled={false}
-                contentContainerStyle={styles.gridContent}
-              />
-            ) : (
-              <EmptyState
-                icon="videocam-off-outline"
-                title="Şu an video bulunmuyor"
-                subtitle="Henüz kendi videolarını yüklemedim."
-              />
-            )}
-          </View>
-
-          {/* Liked Videos Grid */}
-          <View style={styles.gridPage}>
-            {dbLikedVideos.length > 0 ? (
-              <FlatList
-                data={dbLikedVideos}
-                renderItem={renderVideoItem(dbLikedVideos.length, "saved")}
-                keyExtractor={(item) => item.id}
-                numColumns={GRID_COLUMNS}
-                scrollEnabled={false}
-                contentContainerStyle={styles.gridContent}
-              />
-            ) : (
-              <EmptyState
-                icon="heart-outline"
-                title="Beğenilen video yok"
-                subtitle="Beğendiğin videolar burada görünür."
-              />
-            )}
-          </View>
-
-          {/* Saved Videos Grid */}
-          <View style={styles.gridPage}>
-            {savedVideosList.length > 0 ? (
-              <FlatList
-                data={savedVideosList}
-                renderItem={renderVideoItem(savedVideosList.length, "saved")}
-                keyExtractor={(item) => item.id}
-                numColumns={GRID_COLUMNS}
-                scrollEnabled={false}
-                contentContainerStyle={styles.gridContent}
-              />
-            ) : (
-              <EmptyState
-                icon="bookmark-outline"
-                title="Kaydedilen video yok"
-                subtitle="Daha sonra izlemek için videoları kaydedebilirsin."
-              />
-            )}
-          </View>
-        </Animated.View>
+        {/* ✅ ProfileTabGrid — replaces ~160 lines of duplicate tab+FlatList code */}
+        <ProfileTabGrid
+          videos={userVideos}
+          likedVideos={dbLikedVideos}
+          savedVideos={savedVideosList}
+          loading={dbLoading}
+          onVideoPress={(list, idx) => player.open(list, idx)}
+          onVideoLongPress={handleDeleteVideo}
+        />
       </ScrollView>
 
       {/* ✅ Shared Video Player Modal - Overlay */}
@@ -627,7 +434,7 @@ export default function MeScreen({
         onVideoSaved={handleVideoSaved}
         onVideoLiked={onVideoLiked}
         onVideoCommented={onVideoCommented}
-        onDelete={activeTab === "videos" ? handleDeleteVideo : undefined}
+        onDelete={handleDeleteVideo ? (id: string) => handleDeleteVideo({ id } as any) : undefined}
         onUserPress={onUserPress}
       />
 

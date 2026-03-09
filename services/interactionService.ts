@@ -149,3 +149,90 @@ export async function countUnreadNotifications(userId: string): Promise<number> 
     if (error) throw error;
     return count ?? 0;
 }
+
+// ─── Follows ─────────────────────────────────────────────────────────────────
+
+/** Follow a user. Silently tolerates duplicate (23505). */
+export async function followUser(followingId: string, followerId?: string): Promise<void> {
+    // followerId is optional — caller can pass it, or we get it from Supabase session
+    const { data: { session } } = await supabase.auth.getSession();
+    const fid = followerId ?? session?.user?.id;
+    if (!fid) throw new Error('Not authenticated');
+    const { error } = await supabase
+        .from('follows')
+        .insert({ follower_id: fid, following_id: followingId });
+    if (error && error.code !== '23505') throw error;
+}
+
+/** Unfollow a user. */
+export async function unfollowUser(followingId: string, followerId?: string): Promise<void> {
+    const { data: { session } } = await supabase.auth.getSession();
+    const fid = followerId ?? session?.user?.id;
+    if (!fid) throw new Error('Not authenticated');
+    const { error } = await supabase
+        .from('follows')
+        .delete()
+        .eq('follower_id', fid)
+        .eq('following_id', followingId);
+    if (error) throw error;
+}
+
+// ─── Video Interactions ───────────────────────────────────────────────────────
+
+/** Like a video. Silently tolerates duplicate. */
+export async function likeVideo(userId: string, videoId: string): Promise<void> {
+    const { error } = await supabase
+        .from('likes')
+        .insert({ user_id: userId, video_id: videoId });
+    if (error && error.code !== '23505') throw error;
+}
+
+/** Unlike a video. */
+export async function unlikeVideo(userId: string, videoId: string): Promise<void> {
+    const { error } = await supabase
+        .from('likes')
+        .delete()
+        .eq('user_id', userId)
+        .eq('video_id', videoId);
+    if (error) throw error;
+}
+
+/** Save a video. Silently tolerates duplicate. */
+export async function saveVideo(userId: string, videoId: string): Promise<void> {
+    const { error } = await supabase
+        .from('saves')
+        .insert({ user_id: userId, video_id: videoId });
+    if (error && error.code !== '23505') throw error;
+}
+
+/** Unsave a video. */
+export async function unsaveVideo(userId: string, videoId: string): Promise<void> {
+    const { error } = await supabase
+        .from('saves')
+        .delete()
+        .eq('user_id', userId)
+        .eq('video_id', videoId);
+    if (error) throw error;
+}
+
+/** Increment shares_count for a video (fire-and-forget). */
+export async function updateVideoShare(videoId: string, newCount: number): Promise<void> {
+    const { error } = await supabase
+        .from('videos')
+        .update({ shares_count: newCount })
+        .eq('id', videoId);
+    if (error) throw error;
+}
+
+/** Report a user/video. */
+export async function reportUser(
+    reporterId: string,
+    targetId: string,
+    reason?: string,
+    targetType: 'video' | 'user' | 'comment' = 'video',
+): Promise<void> {
+    const { error } = await supabase
+        .from('reports')
+        .insert({ reporter_id: reporterId, target_id: targetId, target_type: targetType, reason: reason ?? 'other' });
+    if (error && error.code !== '23505') throw error;
+}
