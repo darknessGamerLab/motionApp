@@ -2,6 +2,7 @@ import EmptyState from '@/components/EmptyState';
 import { SkeletonLoader } from '@/components/SkeletonLoader';
 import Colors from '@/constants/Colors';
 import { useAuth } from '@/contexts/AuthContext';
+import { eventBus } from '@/lib/eventBus';
 import { supabase } from '@/lib/supabase';
 import { isValidUUID } from '@/utils/validate';
 
@@ -115,6 +116,8 @@ const NotifRow = memo(function NotifRow({
     setFollowing(newFollowing);
     // Propagate to parent immediately so all rows from same user sync
     onFollowChange?.(item.user.id, newFollowing);
+    // Broadcast via EventBus so useProfile + useFeed update too
+    eventBus.emit('follow:changed', { userId: item.user.id, isFollowing: newFollowing });
     try {
       if (newFollowing) {
         await (supabase as any).from('follows').insert({ follower_id: authState.user.id, following_id: item.user.id });
@@ -125,6 +128,8 @@ const NotifRow = memo(function NotifRow({
       // Rollback both local and parent state
       setFollowing(f => !f);
       onFollowChange?.(item.user.id, !newFollowing);
+      // Rollback EventBus too
+      eventBus.emit('follow:changed', { userId: item.user.id, isFollowing: !newFollowing });
     }
   };
 

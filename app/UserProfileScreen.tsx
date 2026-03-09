@@ -7,6 +7,7 @@ import { getTalentById, getTalentByName } from '@/constants/Talents';
 import { useAuth } from '@/contexts/AuthContext';
 import { useProfile } from '@/hooks/useProfile';
 import { useVideoActions } from '@/hooks/useVideoActions';
+import { useVideoPlayer as usePlayerModal } from '@/hooks/useVideoPlayer';
 import { VideoItem } from '@/types/video';
 import { formatNumber } from '@/utils/format';
 import { animateTabSwitch } from '@/utils/transitions';
@@ -64,9 +65,8 @@ export default function UserProfileScreen({
   const { authState } = useAuth();
   const [activeTab, setActiveTab] = useState<'videos' | 'liked' | 'saved'>('videos');
   const [showReportMenu, setShowReportMenu] = useState(false);
-  const [videoPlayerVisible, setVideoPlayerVisible] = useState(false);
-  const [videoPlayerVideos, setVideoPlayerVideos] = useState<VideoItem[]>([]);
-  const [videoPlayerStartIndex, setVideoPlayerStartIndex] = useState(0);
+  // ── Video player modal — useVideoPlayer hook (replaces 3 manual states)
+  const player = usePlayerModal();
 
   // Tab animasyon değerleri
   const tabIndicatorPosition = useRef(new Animated.Value(0)).current;
@@ -209,10 +209,8 @@ export default function UserProfileScreen({
   }, [authState.user, userId, isFollowing, follow, setIsFollowing, onUserFollowed]);
 
   const openVideoPlayer = useCallback((videos: VideoItem[], startIndex: number) => {
-    setVideoPlayerVideos(videos);
-    setVideoPlayerStartIndex(startIndex);
-    setVideoPlayerVisible(true);
-  }, []);
+    player.open(videos, startIndex);
+  }, [player]);
 
   const renderVideoItem = useCallback((totalLength: number) => ({ item, index }: { item: VideoItem; index: number }) => {
     const isLastInRow = (index + 1) % GRID_COLUMNS === 0;
@@ -458,10 +456,10 @@ export default function UserProfileScreen({
 
       {/* Shared Video Player Modal */}
       <VideoPlayerModal
-        visible={videoPlayerVisible}
-        videos={videoPlayerVideos}
-        startIndex={videoPlayerStartIndex}
-        onClose={() => setVideoPlayerVisible(false)}
+        visible={player.visible}
+        videos={player.videos}
+        startIndex={player.startIndex}
+        onClose={player.close}
         mode="profile"
         onVideoSaved={onVideoSaved}
         onVideoLiked={onVideoLiked}

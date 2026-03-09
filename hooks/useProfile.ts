@@ -14,6 +14,7 @@
  */
 
 import { useAuth } from '@/contexts/AuthContext';
+import { eventBus } from '@/lib/eventBus';
 import { queryCache } from '@/lib/queryCache';
 import { fetchProfile as fetchProfileData } from '@/services/profileService';
 import { fetchUserLikedVideos, fetchUserSavedVideos, fetchUserVideos } from '@/services/videoService';
@@ -178,6 +179,21 @@ export function useProfile(userId?: string) {
     useEffect(() => {
         if (userId) fetchProfile();
     }, [fetchProfile]);
+
+    // ─── EventBus: follow:changed listener ───────────────────────────────────
+    // Feed'de takip edilince UserProfileScreen'i de günceller (veri tutarsızlığı giderme)
+    useEffect(() => {
+        if (!userId) return;
+        const unsub = eventBus.on('follow:changed', ({ userId: changedUserId, isFollowing: newVal }) => {
+            if (changedUserId === userId) {
+                setIsFollowing(newVal);
+                // Cache'i de geçersiz kıl so that next open reads fresh
+                if (meId) queryCache.invalidate(`follow-status:${meId}:${userId}`);
+            }
+        });
+        return unsub;
+    }, [userId, meId]);
+
 
     const invalidateCache = useCallback(() => {
         if (userId) {

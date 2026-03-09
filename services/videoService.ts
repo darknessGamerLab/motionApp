@@ -37,12 +37,33 @@ type SaveRow = {
     videos: VideoRow | null;
 };
 
+// ─── Thumbnail Transform ─────────────────────────────────────────────────────
+/**
+ * Supabase Storage Transform API: resize thumbnail for grid display.
+ *
+ * Grid tile renders ~120x213px but raw thumbnail is 720x1280px → wasted bandwidth.
+ * Applying ?width=360&quality=70 reduces payload by ~75% with no visible quality loss.
+ *
+ * NOT applied to full-screen video playback — only thumbnail preview images.
+ * Only works with Supabase Storage URLs (contains /storage/v1/object/public/).
+ */
+const THUMB_TRANSFORM = '?width=360&quality=70&resize=cover';
+
+function applyThumbTransform(url: string | null | undefined): string | undefined {
+    if (!url) return undefined;
+    // Only apply to Supabase Storage URLs — skip external CDN or mock URLs
+    if (!url.includes('/storage/v1/object/public/')) return url;
+    // Don't double-apply
+    if (url.includes('?width=') || url.includes('&width=')) return url;
+    return url + THUMB_TRANSFORM;
+}
+
 /** Convert a raw VideoRow to a normalised VideoItem */
 function toItem(row: VideoRow): VideoItem {
     return {
         id: row.id,
         uri: row.video_url ?? '',
-        thumbnail_url: row.thumbnail_url ?? undefined,
+        thumbnail_url: applyThumbTransform(row.thumbnail_url),
         user: {
             id: row.user_id,
             username: row.profiles?.username ?? '',
@@ -221,5 +242,5 @@ export async function deleteVideo(videoId: string): Promise<void> {
 
 /** Increment view count for a video. Fire-and-forget, never throws. */
 export function incrementView(videoId: string): void {
-    supabase.rpc('increment_video_view', { p_video_id: videoId }).then(() => { }).catch(() => { });
+    void supabase.rpc('increment_video_view', { p_video_id: videoId }).then(() => { }).catch(() => { });
 }

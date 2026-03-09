@@ -267,6 +267,7 @@ export default function MainLayout() {
             onVideoSaved={feed.updateVideoSave}
             onVideoLiked={feed.updateVideoLike}
             onVideoCommented={feed.updateVideoComment}
+            onVideoShared={feed.updateVideoShare}
             onUserFollowed={feed.updateUserFollow}
             onRefresh={feed.refresh}
             onEndReached={feed.loadMore}

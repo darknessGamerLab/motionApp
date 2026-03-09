@@ -22,6 +22,7 @@
  */
 
 import { CustomAlert } from '@/components/GlobalAlert';
+import { eventBus } from '@/lib/eventBus';
 import { queryCache } from '@/lib/queryCache';
 import { supabase, THUMBNAILS_BUCKET, VIDEOS_BUCKET } from '@/lib/supabase';
 import { toVideoItem, VideoItem } from '@/types/video';
@@ -54,6 +55,8 @@ export interface UseFeedReturn extends FeedState {
     updateVideoSave: (id: string, isSaved: boolean) => void;
     updateVideoComment: (id: string, comments: number) => void;
     updateUserFollow: (authorId: string, isFollowing: boolean) => void;
+    /** Share count — also writes to DB and broadcasts via EventBus */
+    updateVideoShare: (videoId: string, shares: number) => void;
     deleteVideo: (videoId: string) => Promise<void>;
     prependVideo: (item: VideoItem) => void;
     setVideos: React.Dispatch<React.SetStateAction<VideoItem[]>>;
@@ -147,6 +150,20 @@ export function useFeed({ userId, isAuth }: UseFeedOptions): UseFeedReturn {
             }
 
             setVideos(prev => (append ? [...prev, ...annotated] : annotated));
+
+            // ── Thumbnail prefetch: preload next 12 thumbnails after first page ───
+            // expo-image will cache these in memory so they appear instantly on scroll
+            if (!append) {
+                const thumbUrls = annotated
+                    .slice(0, 12)
+                    .map((v: any) => v.thumbnail_url)
+                    .filter(Boolean) as string[];
+                if (thumbUrls.length > 0) {
+                    import('expo-image').then(({ Image }) => {
+                        Image.prefetch(thumbUrls).catch(() => { });
+                    });
+                }
+            }
         } catch (e) {
             if (__DEV__) console.warn('[useFeed] fetch error:', e);
             setFetchError(true);  // ← network error, not empty feed
@@ -236,6 +253,8 @@ export function useFeed({ userId, isAuth }: UseFeedOptions): UseFeedReturn {
 
     const updateVideoLike = useCallback((id: string, isLiked: boolean, likes: number) => {
         setVideos(prev => prev.map(v => v.id === id ? { ...v, isLiked, likes } : v));
+        // Broadcast to all screens (useProfile, VideoPlayerModal etc.)
+        eventBus.emit('video:liked', { videoId: id, isLiked, likes });
         if (!isAuth || !userId) return;
         (async () => {
             try {
@@ -251,6 +270,8 @@ export function useFeed({ userId, isAuth }: UseFeedOptions): UseFeedReturn {
 
     const updateVideoSave = useCallback((id: string, isSaved: boolean) => {
         setVideos(prev => prev.map(v => v.id === id ? { ...v, isSaved } : v));
+        // Broadcast to all screens
+        eventBus.emit('video:saved', { videoId: id, isSaved });
         if (!isAuth || !userId) return;
         (async () => {
             try {
@@ -270,6 +291,8 @@ export function useFeed({ userId, isAuth }: UseFeedOptions): UseFeedReturn {
 
     const updateUserFollow = useCallback((authorId: string, isFollowing: boolean) => {
         setVideos(prev => prev.map(v => v.user.id === authorId ? { ...v, isFollowing } : v));
+        // Broadcast — useProfile, NotificationsScreen dinleyecek
+        eventBus.emit('follow:changed', { userId: authorId, isFollowing });
         if (!isAuth || !userId) return;
         (async () => {
             try {
@@ -333,9 +356,25 @@ export function useFeed({ userId, isAuth }: UseFeedOptions): UseFeedReturn {
             }
 
             queryCache.invalidate(`feed:${userId ?? 'anon'}`);
+            // Broadcast to all screens
+            eventBus.emit('video:deleted', { videoId });
         } catch (e) {
             if (deletedVideo) setVideos(prev => [deletedVideo!, ...prev]);
             if (__DEV__) console.warn('[useFeed] deleteVideo exception:', e);
+        }
+    }, [userId]);
+
+    /** Share count — DB'ye yaz ve EventBus ile yayınla */
+    const updateVideoShare = useCallback((id: string, shares: number) => {
+        setVideos(prev => prev.map(v => v.id === id ? { ...v, shares } : v));
+        eventBus.emit('video:shared', { videoId: id, shares });
+        // DB'ye yaz (fire-and-forget) — önceden sadece UI güncelliyordu!
+        if (userId) {
+            (supabase as any).from('videos')
+                .update({ shares_count: shares })
+                .eq('id', id)
+                .then(() => { })
+                .catch((e: any) => { if (__DEV__) console.warn('[useFeed] share sync error:', e); });
         }
     }, [userId]);
 
@@ -359,6 +398,7 @@ export function useFeed({ userId, isAuth }: UseFeedOptions): UseFeedReturn {
         updateVideoSave,
         updateVideoComment,
         updateUserFollow,
+        updateVideoShare,
         deleteVideo,
         prependVideo,
         setVideos,

@@ -7,6 +7,7 @@ import VideoPlayerModal from "@/components/VideoPlayerModal";
 import Colors from "@/constants/Colors";
 import { getTalentById, getTalentByName } from "@/constants/Talents";
 import { useAuth } from "@/contexts/AuthContext";
+import { useVideoPlayer as usePlayerModal } from "@/hooks/useVideoPlayer";
 import { supabase } from "@/lib/supabase";
 import { VideoItem } from "@/types/video";
 import { formatNumber } from "@/utils/format";
@@ -80,10 +81,8 @@ export default function MeScreen({
   const tabIndicatorPosition = useRef(new Animated.Value(0)).current;
   const contentPosition = useRef(new Animated.Value(0)).current;
 
-  // Video player modal state
-  const [videoPlayerVisible, setVideoPlayerVisible] = useState(false);
-  const [videoPlayerVideos, setVideoPlayerVideos] = useState<VideoItem[]>([]);
-  const [videoPlayerStartIndex, setVideoPlayerStartIndex] = useState(0);
+  // ── Video player modal — extracted to useVideoPlayer hook (replaces 3 manual states)
+  const player = usePlayerModal();
 
   const { authState } = useAuth();
   const userId = authState.user?.id;
@@ -340,9 +339,7 @@ export default function MeScreen({
             ]}
             activeOpacity={0.8}
             onPress={() => {
-              setVideoPlayerVideos(displayVideos);
-              setVideoPlayerStartIndex(index);
-              setVideoPlayerVisible(true);
+              player.open(displayVideos, index);
             }}
             onLongPress={() => {
               if (feedType === "profile") handleDeleteVideo(item.id);
@@ -622,10 +619,10 @@ export default function MeScreen({
 
       {/* ✅ Shared Video Player Modal - Overlay */}
       <VideoPlayerModal
-        visible={videoPlayerVisible}
-        videos={videoPlayerVideos}
-        startIndex={videoPlayerStartIndex}
-        onClose={() => setVideoPlayerVisible(false)}
+        visible={player.visible}
+        videos={player.videos}
+        startIndex={player.startIndex}
+        onClose={player.close}
         mode="own-profile"
         onVideoSaved={handleVideoSaved}
         onVideoLiked={onVideoLiked}

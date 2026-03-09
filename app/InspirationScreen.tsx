@@ -1,5 +1,6 @@
 import VideoPlayerModal from '@/components/VideoPlayerModal';
 import Colors from '@/constants/Colors';
+import { useVideoPlayer as usePlayerModal } from '@/hooks/useVideoPlayer';
 import { supabase } from '@/lib/supabase';
 import { fetchExploreVideos } from '@/services/videoService';
 import { VideoItem } from '@/types/video';
@@ -281,9 +282,8 @@ export default function InspirationScreen({
 }: Props) {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all');
-  const [playerVisible, setPlayerVisible] = useState(false);
-  const [playerVideos, setPlayerVideos] = useState<VideoItem[]>([]);
-  const [playerStart, setPlayerStart] = useState(0);
+  // ── Video player modal — useVideoPlayer hook (replaces 3 manual states)
+  const player = usePlayerModal();
   // Real sponsor banners from DB
   const [dbBanners, setDbBanners] = useState<any[]>([]);
 
@@ -364,10 +364,8 @@ export default function InspirationScreen({
 
   const openPlayer = useCallback((idx: number) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setPlayerVideos(allVideos);
-    setPlayerStart(idx);
-    setPlayerVisible(true);
-  }, [allVideos]);
+    player.open(allVideos, idx);
+  }, [allVideos, player]);
 
   // Build grid rows of 3
   const rows = useMemo(() => {
@@ -477,10 +475,10 @@ export default function InspirationScreen({
 
       {/* ─── Shared Video Player Modal ─── */}
       <VideoPlayerModal
-        visible={playerVisible}
-        videos={playerVideos}
-        startIndex={playerStart}
-        onClose={() => setPlayerVisible(false)}
+        visible={player.visible}
+        videos={player.videos}
+        startIndex={player.startIndex}
+        onClose={player.close}
         mode="explore"
         onVideoSaved={onVideoSaved}
         onVideoLiked={onVideoLiked}
