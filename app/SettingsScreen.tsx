@@ -1,6 +1,8 @@
 import { CustomAlert as Alert } from '@/components/GlobalAlert';
 import Colors from '@/constants/Colors';
+import { TALENTS } from '@/constants/Talents';
 import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/lib/supabase';
 import { Ionicons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
 import { useFocusEffect } from 'expo-router';
@@ -71,17 +73,24 @@ function CorporateUpgradeModal({
   const [taxOffice, setTaxOffice] = useState('');
   const [taxNumber, setTaxNumber] = useState('');
   const [phone, setPhone] = useState('');
+  const [corporateEmail, setCorporateEmail] = useState('');
+  const [sector, setSector] = useState('');
+  const [showSectorPicker, setShowSectorPicker] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [submitted, setSubmitted] = useState(false);
 
   const handleSubmit = async () => {
-    if (!companyName.trim() || !taxOffice.trim() || !taxNumber.trim() || !phone.trim()) {
+    if (!companyName.trim() || !taxOffice.trim() || !taxNumber.trim() || !phone.trim() || !corporateEmail.trim() || !sector) {
       setError('Lütfen tüm alanları doldurun');
       return;
     }
     if (!/^\d{10}$/.test(taxNumber.trim())) {
       setError('Vergi numarası 10 haneli olmalıdır');
+      return;
+    }
+    if (!/^[^@]+@[^@]+\.[^@]+$/.test(corporateEmail.trim())) {
+      setError('Geçerli bir kurumsal e-posta adresi girin');
       return;
     }
     setError('');
@@ -91,6 +100,8 @@ function CorporateUpgradeModal({
       taxOffice: taxOffice.trim(),
       taxNumber: taxNumber.trim(),
       phone: phone.trim(),
+      corporateEmail: corporateEmail.trim(),
+      sector,
     });
     setLoading(false);
     if (result.error) {
@@ -105,6 +116,8 @@ function CorporateUpgradeModal({
     setTaxOffice('');
     setTaxNumber('');
     setPhone('');
+    setCorporateEmail('');
+    setSector('');
     setError('');
     setSubmitted(false);
     onClose();
@@ -196,6 +209,31 @@ function CorporateUpgradeModal({
                 />
               </View>
 
+              <View style={modalStyles.inputContainer}>
+                <Ionicons name="mail-outline" size={20} color={Colors.textMuted} style={modalStyles.inputIcon} />
+                <TextInput
+                  style={modalStyles.input}
+                  placeholder="Kurumsal E-posta"
+                  placeholderTextColor={Colors.textMuted}
+                  value={corporateEmail}
+                  onChangeText={setCorporateEmail}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                />
+              </View>
+
+              <Text style={modalStyles.sectionLabel}>Sektör (Keşfetmek istediğiniz yetenek alanı)</Text>
+              <TouchableOpacity
+                style={[modalStyles.inputContainer, { paddingVertical: 14 }]}
+                onPress={() => setShowSectorPicker(true)}
+              >
+                <Ionicons name="briefcase-outline" size={20} color={Colors.textMuted} style={modalStyles.inputIcon} />
+                <Text style={[modalStyles.input, { paddingTop: 4, color: sector ? Colors.text : Colors.textMuted }]}>
+                  {sector ? TALENTS.find(t => t.id === sector)?.name || sector : 'Sektör Seçin'}
+                </Text>
+                <Ionicons name="chevron-down" size={18} color={Colors.textMuted} />
+              </TouchableOpacity>
+
               {error ? <Text style={modalStyles.errorText}>{error}</Text> : null}
 
               <TouchableOpacity
@@ -212,6 +250,35 @@ function CorporateUpgradeModal({
             </ScrollView>
           )}
         </View>
+
+        {/* Sector Picker Modal */}
+        {showSectorPicker && (
+          <View style={modalStyles.pickerOverlay}>
+            <View style={modalStyles.pickerContainer}>
+              <View style={modalStyles.pickerHeader}>
+                <Text style={modalStyles.pickerTitle}>Sektör Seçin</Text>
+                <TouchableOpacity onPress={() => setShowSectorPicker(false)}>
+                  <Ionicons name="close" size={24} color={Colors.text} />
+                </TouchableOpacity>
+              </View>
+              <ScrollView showsVerticalScrollIndicator={false}>
+                {TALENTS.map(t => (
+                  <TouchableOpacity
+                    key={t.id}
+                    style={[modalStyles.pickerItem, sector === t.id && modalStyles.pickerItemActive]}
+                    onPress={() => { setSector(t.id); setShowSectorPicker(false); }}
+                  >
+                    <Ionicons name={t.icon as any} size={20} color={sector === t.id ? Colors.primary : Colors.textMuted} />
+                    <Text style={[modalStyles.pickerItemText, sector === t.id && modalStyles.pickerItemTextActive]}>
+                      {t.name}
+                    </Text>
+                    {sector === t.id && <Ionicons name="checkmark" size={18} color={Colors.primary} />}
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+          </View>
+        )}
       </KeyboardAvoidingView>
     </Modal>
   );
@@ -221,12 +288,44 @@ export default function SettingsScreen({ onBackPress, onEditProfile }: SettingsS
   const insets = useSafeAreaInsets();
   const { logout, authState, refreshProfile } = useAuth();
   const [showCorporateModal, setShowCorporateModal] = useState(false);
+  const [hideLikes, setHideLikes] = useState(authState.profile?.hide_likes ?? false);
+  const [hideSaves, setHideSaves] = useState(authState.profile?.hide_saves ?? false);
+  const [privacyLoading, setPrivacyLoading] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
       refreshProfile();
     }, [])
   );
+
+  // Sync privacy toggles when profile loads
+  const userId = authState.user?.id;
+  React.useEffect(() => {
+    if (authState.profile) {
+      setHideLikes(authState.profile.hide_likes ?? false);
+      setHideSaves(authState.profile.hide_saves ?? false);
+    }
+  }, [authState.profile?.hide_likes, authState.profile?.hide_saves]);
+
+  const toggleHideLikes = async (val: boolean) => {
+    if (!userId) return;
+    setHideLikes(val);
+    setPrivacyLoading(true);
+    try {
+      await (supabase as any).from('profiles').update({ hide_likes: val }).eq('id', userId);
+    } catch { setHideLikes(!val); }
+    setPrivacyLoading(false);
+  };
+
+  const toggleHideSaves = async (val: boolean) => {
+    if (!userId) return;
+    setHideSaves(val);
+    setPrivacyLoading(true);
+    try {
+      await (supabase as any).from('profiles').update({ hide_saves: val }).eq('id', userId);
+    } catch { setHideSaves(!val); }
+    setPrivacyLoading(false);
+  };
 
   const isCorporate = authState.userType === 'corporate';
 
@@ -288,6 +387,44 @@ export default function SettingsScreen({ onBackPress, onEditProfile }: SettingsS
               />
             </>
           )}
+        </View>
+
+        {/* Gizlilik Grubu */}
+        <Text style={styles.sectionLabel}>Gizlilik</Text>
+        <View style={styles.group}>
+          <View style={styles.settingItem}>
+            <View style={[styles.settingIcon, { backgroundColor: '#EC4899' }]}>
+              <Ionicons name="heart" size={20} color="#fff" />
+            </View>
+            <View style={styles.settingInfo}>
+              <Text style={styles.settingTitle}>Beğenilenleri Gizle</Text>
+              <Text style={styles.settingSubtitle}>Başkaları beğendiğin videoları göremez</Text>
+            </View>
+            <TouchableOpacity
+              style={[styles.toggle, hideLikes && styles.toggleActive]}
+              onPress={() => toggleHideLikes(!hideLikes)}
+              disabled={privacyLoading}
+            >
+              <View style={[styles.toggleKnob, hideLikes && styles.toggleKnobActive]} />
+            </TouchableOpacity>
+          </View>
+          <Separator />
+          <View style={styles.settingItem}>
+            <View style={[styles.settingIcon, { backgroundColor: '#F59E0B' }]}>
+              <Ionicons name="bookmark" size={20} color="#fff" />
+            </View>
+            <View style={styles.settingInfo}>
+              <Text style={styles.settingTitle}>Kaydedilenleri Gizle</Text>
+              <Text style={styles.settingSubtitle}>Başkaları kaydettiğin videoları göremez</Text>
+            </View>
+            <TouchableOpacity
+              style={[styles.toggle, hideSaves && styles.toggleActive]}
+              onPress={() => toggleHideSaves(!hideSaves)}
+              disabled={privacyLoading}
+            >
+              <View style={[styles.toggleKnob, hideSaves && styles.toggleKnobActive]} />
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Uygulama Grubu */}
@@ -475,6 +612,31 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 24,
   },
+  toggle: {
+    width: 44,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: Colors.border,
+    padding: 2,
+    justifyContent: 'center',
+  },
+  toggleActive: {
+    backgroundColor: Colors.primary,
+  },
+  toggleKnob: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#fff',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  toggleKnobActive: {
+    transform: [{ translateX: 18 }],
+  },
 });
 
 const modalStyles = StyleSheet.create({
@@ -616,5 +778,54 @@ const modalStyles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontFamily: 'Poppins_700Bold',
+  },
+  // Sector picker
+  pickerOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+    zIndex: 999,
+  },
+  pickerContainer: {
+    backgroundColor: Colors.background,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '70%',
+    paddingBottom: 40,
+  },
+  pickerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: Colors.border,
+  },
+  pickerTitle: {
+    fontSize: 17,
+    fontFamily: 'Poppins_700Bold',
+    color: Colors.text,
+  },
+  pickerItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: Colors.border,
+  },
+  pickerItemActive: {
+    backgroundColor: Colors.primary + '0A',
+  },
+  pickerItemText: {
+    flex: 1,
+    fontSize: 15,
+    fontFamily: 'Poppins_400Regular',
+    color: Colors.text,
+  },
+  pickerItemTextActive: {
+    color: Colors.primary,
+    fontFamily: 'Poppins_600SemiBold',
   },
 });

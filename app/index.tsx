@@ -20,7 +20,10 @@ import { useFeed } from '@/hooks/useFeed';
 import { Ionicons } from '@expo/vector-icons';
 import { useIsFocused } from '@react-navigation/native';
 import { Image } from 'expo-image';
-import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { getOptimizedImageUrl } from '@/utils/format';
+import React, { Suspense, lazy, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { supabase } from '@/lib/supabase';
+import { uploadVideoSilently } from '@/utils/BackgroundUploader';
 import {
   Animated,
   Modal,
@@ -33,12 +36,13 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import CreateScreen from './CreateScreen';
-import HomeScreen from './HomeScreen';
-import InspirationScreen from './InspirationScreen';
-import MeScreen from './MeScreen';
-import NotificationsScreen from './NotificationsScreen';
-import UserProfileScreen from './UserProfileScreen';
+const AddVideoDetailsScreen = lazy(() => import('./AddVideoDetailsScreen'));
+const CreateScreen = lazy(() => import('./CreateScreen'));
+const HomeScreen = lazy(() => import('./HomeScreen'));
+const InspirationScreen = lazy(() => import('./InspirationScreen'));
+const MeScreen = lazy(() => import('./MeScreen'));
+const NotificationsScreen = lazy(() => import('./NotificationsScreen'));
+const UserProfileScreen = lazy(() => import('./UserProfileScreen'));
 
 const ACCENT = Colors.primary;
 const NAV_H = 52;
@@ -59,7 +63,7 @@ const TabBtn = memo(({ icon, active, onPress, isCreate, badge, avatar }: {
       </View>
     ) : avatar ? (
       <View style={[styles.tabIconWrap, active && styles.tabAvatarActive]}>
-        <Image source={{ uri: avatar }} style={styles.tabAvatar} contentFit="cover" cachePolicy="memory-disk" />
+        <Image source={{ uri: getOptimizedImageUrl(avatar, 80, 85) ?? avatar }} style={styles.tabAvatar} contentFit="cover" cachePolicy="memory-disk" />
         {!!badge && <View style={styles.badge}><Text style={styles.badgeText}>{badge > 9 ? '9+' : badge}</Text></View>}
       </View>
     ) : (
@@ -157,7 +161,9 @@ export default function MainLayout() {
   const isFeedActive = tab === 0 && isFocused && !guestModal.visible && !userProfileOpen;
 
   // ─── Feed state — delegated to useFeed hook ──────────────────────────
-  const feed = useFeed({ userId, isAuth });
+  const userType = (authState.profile as any)?.user_type as 'individual' | 'corporate' | undefined;
+  const feed = useFeed({ userId, isAuth, userType, authLoading: authState.isLoading });
+
 
   // ─── Profile state ───────────────────────────────────────────────────
   const initialProfile = useMemo(() => buildProfile(authState), [authState.userData, authState.profile]);
@@ -204,35 +210,79 @@ export default function MainLayout() {
     onAuth();
   }, [isAuth]);
 
-  // ─── Video publish ───────────────────────────────────────────────────
-  const onVideoPublished = useCallback((videoUrl: string, description?: string, topic?: string) => {
+  // ─── Recording done: Camera unmount → details ekranı ───────────────
+  const [pendingVideoUri, setPendingVideoUri] = useState<string | null>(null);
+
+  const onRecordingDone = useCallback((uri: string) => {
+    console.log('[MainLayout] onRecordingDone triggered', { uri });
+    // 1. CreateScreen'i unmount et (Camera codec serbest kalsın)
+    setTab(-1 as any); // -1 = hiçbir tab aktif değil, CreateScreen unmount olur
+    console.log('[MainLayout] tab set to -1 (unmounting Create)');
+
+    // 2. Kısa gecikme: Camera'nın native kaynakları tam serbest kalsın
+    setTimeout(() => {
+      console.log('[MainLayout] Setting pendingVideoUri');
+      setPendingVideoUri(uri); // 3. AddVideoDetailsScreen göster
+    }, 300);
+  }, []);
+
+  const onDetailsBack = useCallback(() => {
+    setPendingVideoUri(null);
+    setTab(2); // Kameraya geri dön
+  }, []);
+
+  const onDetailsPublish = useCallback(async (videoUri: string, description: string, topicLabel?: string, category?: string) => {
+    // 1. Arayüzü hemen boşalt ve Feed'e dön
+    setPendingVideoUri(null);
+    setTab(0);
     setUploadProgress(0);
-    let p = 0;
-    const interval = setInterval(() => {
-      p += Math.random() * 20;
-      if (p >= 100) {
-        p = 100;
-        clearInterval(interval);
-        feed.prependVideo({
-          id: `vid-${Date.now()}`,
-          uri: videoUrl,
-          user: { id: profile.id, username: profile.username, avatar: profile.avatarUri },
-          description: description || '',
-          topic: topic ?? undefined,
-          likes: 0, comments: 0, shares: 0,
-          isLiked: false, isSaved: false, isFollowing: false,
-        });
-        setProfile(prev => ({ ...prev, videos: prev.videos + 1 }));
-        setTab(0);
+
+    // 2. Optimistic (Sahte) Video Ekle
+    const optimisticId = `optimistic-${Date.now()}`;
+    feed.prependVideo({
+      id: optimisticId,
+      uri: videoUri, // Lokal adres, video hemen oynar!
+      user: { id: profile.id, username: profile.username, avatar: profile.avatarUri },
+      description: description || '',
+      topic: topicLabel,
+      category: category,
+      likes: 0, comments: 0, shares: 0,
+      isLiked: false, isSaved: false, isFollowing: false,
+    } as any);
+    setProfile(prev => ({ ...prev, videos: prev.videos + 1 }));
+
+    // 3. Arka Planda Yükle
+    const session = await supabase.auth.getSession();
+    const token = session.data.session?.access_token;
+    if (!token || !userId) {
+      setUploadProgress(null);
+      return;
+    }
+
+    uploadVideoSilently({
+      videoUri,
+      userId,
+      accessToken: token,
+      description,
+      topic: topicLabel,
+      category,
+      onProgress: (p) => setUploadProgress(p),
+      onSuccess: (publicUrl) => {
+        setUploadProgress(100);
         setTimeout(() => {
           setUploadProgress(null);
-          feed.refresh();
+          feed.refresh(); // Gerçek veriyi çek
           setHomeRefreshKey(k => k + 1);
-        }, 4000);
+        }, 3000);
+      },
+      onError: (err) => {
+        setUploadProgress(null);
+        feed.deleteVideo(optimisticId); // Hata varsa sahteyi kaldır
+        setProfile(prev => ({ ...prev, videos: Math.max(0, prev.videos - 1) }));
       }
-      setUploadProgress(Math.min(p, 100));
-    }, 200);
-  }, [profile.id, profile.username, profile.avatarUri, feed.prependVideo, feed.refresh]);
+    });
+
+  }, [profile, feed, userId]);
 
   const onVideoDelete = useCallback(async (videoId: string) => {
     await feed.deleteVideo(videoId);
@@ -255,10 +305,12 @@ export default function MainLayout() {
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
       <View style={styles.content}>
+        <Suspense fallback={<View style={{ flex: 1, backgroundColor: Colors.background }} />}>
         {/* Feed */}
         <LazyTabScreen visible={tab === 0 && !isFullscreen}>
           <HomeScreen
             isActive={tab === 0 && isFocused && !isFullscreen && !guestModal.visible}
+            isBackgrounded={tab !== 0 || !!pendingVideoUri} // CRITICAL: Free RAM completely when not on Home
             isAuthenticated={isAuth}
             videos={feed.videos}
             videosLoading={!feed.initialLoaded}
@@ -288,6 +340,7 @@ export default function MainLayout() {
             onVideoLiked={feed.updateVideoLike}
             onVideoCommented={feed.updateVideoComment}
             onUserPress={openProfile}
+            isBackgrounded={tab !== 1 || !!pendingVideoUri}
           />
         </LazyTabScreen>
 
@@ -312,15 +365,27 @@ export default function MainLayout() {
             onVideoLiked={feed.updateVideoLike}
             onVideoCommented={feed.updateVideoComment}
             onUserPress={openProfile}
+            isBackgrounded={tab !== 4 || !!pendingVideoUri}
           />
         </LazyTabScreen>
 
-        {/* Create — fullscreen overlay */}
-        <Modal visible={tab === 2} animationType="slide" transparent={true} onRequestClose={() => setTab(0)}>
-          <View style={styles.fullscreen}>
-            <CreateScreen isActive={tab === 2} onClose={() => setTab(0)} onVideoPublished={onVideoPublished} />
+        {/* Create — fullscreen overlay (Modal KULLANMA: Android'de native Dialog + VisionCamera crash) */}
+        {tab === 2 && (
+          <View style={[styles.fullscreen, { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 100 }]}>
+            <CreateScreen isActive={tab === 2} onClose={() => setTab(0)} onRecordingDone={onRecordingDone} />
           </View>
-        </Modal>
+        )}
+
+        {/* AddVideoDetailsScreen — CreateScreen unmount olduktan SONRA ayrı render */}
+        {pendingVideoUri && (
+          <View style={[styles.fullscreen, { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 100, backgroundColor: '#000' }]}>
+            <AddVideoDetailsScreen
+              videoUri={pendingVideoUri}
+              onBack={onDetailsBack}
+              onPublish={onDetailsPublish}
+            />
+          </View>
+        )}
 
         {/* User Profile — fullscreen overlay */}
         <Modal visible={userProfileOpen} animationType="slide" transparent={true} onRequestClose={closeProfile}>
@@ -335,9 +400,11 @@ export default function MainLayout() {
               onVideoCommented={feed.updateVideoComment}
               onUserFollowed={feed.updateUserFollow}
               onUserPress={openProfile}
+              isBackgrounded={tab === 2}
             />
           </View>
         </Modal>
+        </Suspense>
       </View>
 
       {/* Bottom tab bar */}
@@ -416,3 +483,5 @@ const styles = StyleSheet.create({
   uploadFill: { height: 4, borderRadius: 2, backgroundColor: Colors.primary },
   uploadText: { fontSize: 12, color: Colors.textSecondary, fontFamily: 'Poppins_500Medium' },
 });
+
+

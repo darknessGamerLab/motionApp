@@ -1,3 +1,4 @@
+import FollowButton from '@/components/FollowButton';
 import { CustomAlert as Alert } from '@/components/GlobalAlert';
 import ProfilePhotoCarousel from '@/components/ProfilePhotoCarousel';
 import ProfileTabGrid from '@/components/ProfileTabGrid';
@@ -46,6 +47,7 @@ interface UserProfileScreenProps {
   onVideoCommented?: (videoId: string, newCommentCount: number) => void;
   onUserFollowed?: (userId: string, isFollowing: boolean) => void;
   onUserPress?: (userId: string) => void;
+  isBackgrounded?: boolean;
 }
 
 export default function UserProfileScreen({
@@ -58,6 +60,7 @@ export default function UserProfileScreen({
   onVideoCommented,
   onUserFollowed,
   onUserPress,
+  isBackgrounded = false,
 }: UserProfileScreenProps) {
   const { authState } = useAuth();
   const [showReportMenu, setShowReportMenu] = useState(false);
@@ -235,35 +238,39 @@ export default function UserProfileScreen({
 
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false} scrollEnabled={isActive}>
         <View style={styles.profileSection}>
-          {/* 3 Profil Fotoğrafı */}
+
+          {/* 3'lü profil fotoğraf carousel — basılı tutunca büyür */}
           <ProfilePhotoCarousel
             avatars={user.avatars}
             size={90}
             isEditable={false}
           />
 
+          {/* İsim + Bio — carousel'in altına ortalı */}
           <Text style={styles.fullName}>{user.fullName}</Text>
-          <Text style={styles.bio} numberOfLines={1}>{user.bio}</Text>
+          <Text style={styles.bio} numberOfLines={2}>{user.bio}</Text>
 
-          <View style={styles.skillsContainer}>
-            {user.skills.map((skill: string, index: number) => {
-              const talent = getTalentById(skill) || getTalentByName(skill);
-              const label = talent ? talent.name : skill;
-              return (
-                <Text key={index} style={styles.skillText}>#{label.toLowerCase()}</Text>
-              );
-            })}
-          </View>
+          {user.skills.length > 0 && (
+            <View style={styles.skillsContainer}>
+              {user.skills.map((skill: string, index: number) => {
+                const talent = getTalentById(skill) || getTalentByName(skill);
+                const label = talent ? talent.name : skill;
+                return (
+                  <Text key={index} style={styles.skillText}>#{label.toLowerCase()}</Text>
+                );
+              })}
+            </View>
+          )}
 
           <View style={styles.stats}>
             <TouchableOpacity style={styles.statItem}>
-              <Text style={styles.statNumber}>{user.following}</Text>
-              <Text style={styles.statLabel}>Takip Edilen</Text>
+              <Text style={styles.statNumber}>{user.followers}</Text>
+              <Text style={styles.statLabel}>Takipçi</Text>
             </TouchableOpacity>
             <View style={styles.statDivider} />
             <TouchableOpacity style={styles.statItem}>
-              <Text style={styles.statNumber}>{user.followers}</Text>
-              <Text style={styles.statLabel}>Takipçi</Text>
+              <Text style={styles.statNumber}>{user.following}</Text>
+              <Text style={styles.statLabel}>Takip</Text>
             </TouchableOpacity>
             <View style={styles.statDivider} />
             <TouchableOpacity style={styles.statItem}>
@@ -275,29 +282,12 @@ export default function UserProfileScreen({
           <View style={styles.actionButtons}>
             {authState.user?.id !== userId && (
               <>
-                <TouchableOpacity
-                  style={[styles.actionButton, styles.primaryActionButton, isFollowing ? styles.followButtonActive : styles.followButtonInactive]}
-                  onPress={handleFollowOrRadar}
-                >
-                  {authState.profile?.user_type === 'corporate' ? (
-                    // Kurumsal görünce: Radara Al / Radarda
-                    <>
-                      <Ionicons
-                        name={isFollowing ? 'radio' : 'radio-outline'}
-                        size={15}
-                        color={isFollowing ? '#fff' : Colors.primary}
-                      />
-                      <Text style={[styles.actionButtonText, { color: isFollowing ? '#fff' : Colors.primary }]}>
-                        {isFollowing ? 'Radarda' : 'Radara Al'}
-                      </Text>
-                    </>
-                  ) : (
-                    // Bireysel görünce: Takip Et / Takip Ediliyor
-                    <Text style={[styles.actionButtonText, isFollowing ? styles.followButtonTextActive : { color: Colors.primary }]}>
-                      {isFollowing ? 'Takip Ediliyor' : 'Takip Et'}
-                    </Text>
-                  )}
-                </TouchableOpacity>
+                <FollowButton
+                  userId={userId || ''}
+                  initialFollowing={isFollowing}
+                  onChanged={setIsFollowing}
+                  fullWidth
+                />
 
                 <TouchableOpacity
                   style={styles.actionButton}
@@ -322,6 +312,8 @@ export default function UserProfileScreen({
           likedVideos={userLikedVideos as VideoItem[]}
           savedVideos={userSavedVideos as VideoItem[]}
           loading={loading}
+          hideLikes={userId !== authState.user?.id && profileData?.hide_likes}
+          hideSaves={userId !== authState.user?.id && profileData?.hide_saves}
           onVideoPress={(list, idx) => player.open(list, idx)}
         />
       </ScrollView>
@@ -337,6 +329,7 @@ export default function UserProfileScreen({
         onVideoLiked={onVideoLiked}
         onVideoCommented={onVideoCommented}
         onUserPress={onUserPress}
+        isBackgrounded={isBackgrounded}
       />
 
       {/* Şikayet Menüsü */}
@@ -369,27 +362,28 @@ const styles = StyleSheet.create({
   headerButton: { padding: 4 },
   headerUsername: { fontSize: 16, fontFamily: 'Poppins_700Bold', color: Colors.text },
   scrollView: { flex: 1 },
-  profileSection: { paddingHorizontal: 20, paddingTop: 10, alignItems: 'center' },
-  fullName: { fontSize: 17, fontFamily: 'Poppins_600SemiBold', color: Colors.text, marginBottom: 4 },
-  bio: { fontSize: 13, fontFamily: 'Poppins_400Regular', color: Colors.textSecondary, textAlign: 'center', marginBottom: 10, maxWidth: '80%' },
-  skillsContainer: { flexDirection: 'row', gap: 16, marginBottom: 16, justifyContent: 'center' },
+  profileSection: { paddingHorizontal: 16, paddingTop: 10, paddingBottom: 4, alignItems: 'center' },
+
+  fullName: { fontSize: 17, fontFamily: 'Poppins_700Bold', color: Colors.text, textAlign: 'center', marginBottom: 2 },
+  bio: { fontSize: 13, fontFamily: 'Poppins_400Regular', color: Colors.textMuted, lineHeight: 18, textAlign: 'center', marginBottom: 8, paddingHorizontal: 8 },
+  skillsContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12, justifyContent: 'center' },
   skillText: { color: Colors.primary, fontSize: 12, fontFamily: 'Poppins_500Medium' },
   stats: {
     flexDirection: 'row', alignItems: 'center',
-    justifyContent: 'center', gap: 16, width: '100%',
+    justifyContent: 'space-evenly', marginBottom: 12, width: '100%',
   },
   statItem: { alignItems: 'center', flex: 1 },
-  statNumber: { fontSize: 17, fontFamily: 'Poppins_700Bold', color: Colors.text, marginBottom: 2 },
+  statNumber: { fontSize: 18, fontFamily: 'Poppins_700Bold', color: Colors.text },
   statLabel: { fontSize: 11, color: Colors.textMuted, fontFamily: 'Poppins_500Medium' },
-  statDivider: { width: 1, height: 28, backgroundColor: Colors.border },
-  actionButtons: { flexDirection: 'row', gap: 8, width: '100%', marginTop: 12 },
+  statDivider: { width: 1, height: 24, backgroundColor: Colors.border },
+  actionButtons: { flexDirection: 'row', gap: 8, width: '100%', marginBottom: 4 },
   actionButton: {
-    flex: 1, paddingVertical: 9, borderRadius: 8,
+    flex: 1, paddingVertical: 6, borderRadius: 8,
     backgroundColor: Colors.surfaceAlt,
     alignItems: 'center', justifyContent: 'center',
     flexDirection: 'row', gap: 5,
     borderWidth: 1, borderColor: Colors.border,
-    minHeight: 38,
+    minHeight: 34,
   },
   actionButtonText: { fontSize: 13, fontFamily: 'Poppins_600SemiBold', color: Colors.text },
   followButtonActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
@@ -404,7 +398,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 5,
-    minHeight: 38,
+    minHeight: 34,
   },
   tabs: {
     flexDirection: 'row',

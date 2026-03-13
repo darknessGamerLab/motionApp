@@ -51,6 +51,9 @@ const THUMB_TRANSFORM = '?width=360&quality=70&resize=cover';
 
 function applyThumbTransform(url: string | null | undefined): string | undefined {
     if (!url) return undefined;
+    // SAFETY: Never use a video file URL as a thumbnail — this causes massive bandwidth waste
+    // Video URLs contain '/videos/' bucket path, thumbnails should be in '/thumbnails/'
+    if (url.includes('/storage/v1/object/public/videos/')) return undefined;
     // Only apply to Supabase Storage URLs — skip external CDN or mock URLs
     if (!url.includes('/storage/v1/object/public/')) return url;
     // Don't double-apply
@@ -92,6 +95,8 @@ export interface FetchExploreOptions {
     topic?: string;
     /** User's talent IDs for personalised ranking boost */
     userTalents?: string[];
+    /** Search query for description, topic, or username (requires pg_trgm index for perf) */
+    searchQuery?: string;
     limit?: number;
 }
 
@@ -121,6 +126,14 @@ export async function fetchExploreVideos(options: FetchExploreOptions = {}): Pro
 
     if (topic && topic !== 'all') {
         query = query.ilike('topic', `%${topic}%`);
+    }
+
+    if (options.searchQuery) {
+        const sq = options.searchQuery.trim();
+        // PostgREST or filter: we search description and topic for the term
+        // profiles.username won't work in standard `or` without a custom view/rpc,
+        // so we stick to videos table columns here.
+        query = query.or(`description.ilike.%${sq}%,topic.ilike.%${sq}%`);
     }
 
     if (cursor) {
@@ -242,5 +255,5 @@ export async function deleteVideo(videoId: string): Promise<void> {
 
 /** Increment view count for a video. Fire-and-forget, never throws. */
 export function incrementView(videoId: string): void {
-    void supabase.rpc('increment_video_view', { p_video_id: videoId }).then(() => { }).catch(() => { });
+    supabase.rpc('increment_video_view', { p_video_id: videoId }).then(() => { }, () => { });
 }

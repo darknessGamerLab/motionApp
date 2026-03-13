@@ -27,6 +27,7 @@ import { queryCache } from '@/lib/queryCache';
 import { supabase, THUMBNAILS_BUCKET, VIDEOS_BUCKET } from '@/lib/supabase';
 import { toVideoItem, VideoItem } from '@/types/video';
 import { annotateInteractions } from '@/utils/videoInteractions';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 const PAGE_SIZE = 15;
@@ -35,6 +36,9 @@ const FEED_CACHE_TTL = 30_000; // 30 seconds — first page only
 interface UseFeedOptions {
     userId?: string;
     isAuth: boolean;
+    /** Auth context hala initialize ediliyor mu? True iken fetch'i geciktir */
+    authLoading?: boolean;
+    userType?: 'individual' | 'corporate'; // Kurumsal kullanıcı radars tablosuna yazar
 }
 
 export interface FeedState {
@@ -64,7 +68,7 @@ export interface UseFeedReturn extends FeedState {
     refresh: () => Promise<void>;
 }
 
-export function useFeed({ userId, isAuth }: UseFeedOptions): UseFeedReturn {
+export function useFeed({ userId, isAuth, userType, authLoading }: UseFeedOptions): UseFeedReturn {
     const [videos, setVideos] = useState<VideoItem[]>([]);
     const [loading, setLoading] = useState(false);
     const [initialLoaded, setInitialLoaded] = useState(false);
@@ -142,14 +146,20 @@ export function useFeed({ userId, isAuth }: UseFeedOptions): UseFeedReturn {
             const more = rows.length === PAGE_SIZE;
             setHasMore(more);
 
-            // Track cursor for next loadMore call
             if (annotated.length > 0) {
                 const lastItem = annotated[annotated.length - 1];
                 // We need created_at from the raw row. Attach it as a temporary field.
                 setLastTimestamp((lastItem as any).created_at ?? null);
             }
 
-            setVideos(prev => (append ? [...prev, ...annotated] : annotated));
+            setVideos(prev => {
+                const newVideos = append ? [...prev, ...annotated] : annotated;
+                if (!append) {
+                    // Save the first page to offline cache
+                    AsyncStorage.setItem(`offline_feed_${userId || 'anon'}`, JSON.stringify(newVideos)).catch(e => console.log('Offline cache save error:', e));
+                }
+                return newVideos;
+            });
 
             // ── Thumbnail prefetch: preload next 12 thumbnails after first page ───
             // expo-image will cache these in memory so they appear instantly on scroll
@@ -176,15 +186,37 @@ export function useFeed({ userId, isAuth }: UseFeedOptions): UseFeedReturn {
 
     // ─── Initial load + re-fetch when userId changes ─────────────────────
     useEffect(() => {
+        // Auth henüz yükleniyorsa bekle
+        if (authLoading) return;
         if (!hasInitiallyLoaded.current) {
-            fetchVideos(null, false, false);
+            // Pre-baked data (Offline Cache) phase:
+            AsyncStorage.getItem(`offline_feed_${userId || 'anon'}`).then(cachedRaw => {
+                if (cachedRaw) {
+                    try {
+                        const cachedVideos = JSON.parse(cachedRaw);
+                        if (cachedVideos && cachedVideos.length > 0) {
+                            setVideos(cachedVideos);
+                            setInitialLoaded(true); // Ekrana anında basılsın
+                        }
+                    } catch (e) {
+                        console.log('Failed to parse offline feed cache', e);
+                    }
+                }
+                // Ardından internetten tazesini çekmeye başlat (arka planda sessizce yeniler)
+                fetchVideos(null, false, false);
+            }).catch(() => {
+                fetchVideos(null, false, false);
+            });
             hasInitiallyLoaded.current = true;
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    }, [authLoading, userId]);
 
     useEffect(() => {
         // Re-fetch when user identity changes (update liked/saved states)
+        // authLoading'den FALSE'a dönüş hasInitiallyLoaded beklediğimiz için de yakalanmaz,
+        // yukarıdaki effect bunu halleder.
+        if (authLoading) return;
         if (hasInitiallyLoaded.current) {
             // Invalidate cache on auth change so new user sees correct interaction states
             queryCache.invalidate(`feed:${userId ?? 'anon'}`);
@@ -194,44 +226,13 @@ export function useFeed({ userId, isAuth }: UseFeedOptions): UseFeedReturn {
     }, [userId]);
 
     // ─── Realtime Subscription ────────────────────────────────────────────
-    useEffect(() => {
-        const channel = (supabase as any)
-            .channel('feed-video-events')
-            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'videos' },
-                (payload: any) => {
-                    setVideos(prev =>
-                        prev.map(v =>
-                            v.id === payload.new.id
-                                ? {
-                                    ...v,
-                                    likes: payload.new.likes_count ?? v.likes,
-                                    comments: payload.new.comments_count ?? v.comments,
-                                }
-                                : v
-                        )
-                    );
-                }
-            )
-            .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'videos' },
-                (payload: any) => {
-                    setVideos(prev => prev.filter(v => v.id !== payload.old?.id));
-                }
-            )
-            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'videos' },
-                (payload: any) => {
-                    // Only prepend videos from OTHER users (own video prepended optimistically)
-                    // NOTE: payload.new lacks `profiles` join — we prepend a placeholder
-                    // and invalidate cache so next refresh has the full data.
-                    if (payload.new?.user_id && payload.new.user_id !== userId) {
-                        queryCache.invalidate(`feed:${userId ?? 'anon'}`);
-                        setVideos(prev => [toVideoItem(payload.new), ...prev]);
-                    }
-                }
-            )
-            .subscribe();
-
-        return () => { (supabase as any).removeChannel(channel); };
-    }, [userId]);
+    // NOTE: 'videos' table is NOT in supabase_realtime publication.
+    // Subscribing to it wastes connection overhead with silent reconnect loops.
+    // Video freshness is handled via:
+    //   - queryCache invalidation on mutations
+    //   - pull-to-refresh
+    //   - EventBus for local optimistic updates
+    // If realtime is needed in the future, add 'videos' to supabase_realtime publication first.
 
     // ─── Pagination — cursor-based loadMore ───────────────────────────────
     const loadMore = useCallback(() => {
@@ -253,36 +254,38 @@ export function useFeed({ userId, isAuth }: UseFeedOptions): UseFeedReturn {
 
     const updateVideoLike = useCallback((id: string, isLiked: boolean, likes: number) => {
         setVideos(prev => prev.map(v => v.id === id ? { ...v, isLiked, likes } : v));
-        // Broadcast to all screens (useProfile, VideoPlayerModal etc.)
         eventBus.emit('video:liked', { videoId: id, isLiked, likes });
+        queryCache.invalidate(`feed:${userId ?? 'anon'}`);
         if (!isAuth || !userId) return;
-        (async () => {
-            try {
-                if (isLiked) {
-                    await (supabase as any).from('likes')
-                        .upsert({ user_id: userId, video_id: id }, { onConflict: 'user_id,video_id', ignoreDuplicates: true });
-                } else {
-                    await (supabase as any).from('likes').delete().eq('user_id', userId).eq('video_id', id);
-                }
-            } catch (e) { if (__DEV__) console.warn('[useFeed] like sync error:', e); }
-        })();
+        // UUID kontrolü: geçici ID'ler (vid-timestamp) için DB'ye yazma
+        const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (!UUID_REGEX.test(id)) return;
+        // RPC kullan: PostgREST FK embedding hatasını atlatmak için
+        (supabase as any).rpc('toggle_like', {
+            p_user_id: userId,
+            p_video_id: id,
+            p_liked: isLiked,
+        }).then(({ error }: any) => {
+            if (error && __DEV__) console.warn('[useFeed] like sync error:', error);
+        });
     }, [isAuth, userId]);
 
     const updateVideoSave = useCallback((id: string, isSaved: boolean) => {
         setVideos(prev => prev.map(v => v.id === id ? { ...v, isSaved } : v));
-        // Broadcast to all screens
         eventBus.emit('video:saved', { videoId: id, isSaved });
+        queryCache.invalidate(`feed:${userId ?? 'anon'}`);
         if (!isAuth || !userId) return;
-        (async () => {
-            try {
-                if (isSaved) {
-                    await (supabase as any).from('saves')
-                        .upsert({ user_id: userId, video_id: id }, { onConflict: 'user_id,video_id', ignoreDuplicates: true });
-                } else {
-                    await (supabase as any).from('saves').delete().eq('user_id', userId).eq('video_id', id);
-                }
-            } catch (e) { if (__DEV__) console.warn('[useFeed] save sync error:', e); }
-        })();
+        // UUID kontrolü
+        const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (!UUID_REGEX.test(id)) return;
+        // RPC kullan
+        (supabase as any).rpc('toggle_save', {
+            p_user_id: userId,
+            p_video_id: id,
+            p_saved: isSaved,
+        }).then(({ error }: any) => {
+            if (error && __DEV__) console.warn('[useFeed] save sync error:', error);
+        });
     }, [isAuth, userId]);
 
     const updateVideoComment = useCallback((id: string, comments: number) => {
@@ -296,16 +299,29 @@ export function useFeed({ userId, isAuth }: UseFeedOptions): UseFeedReturn {
         if (!isAuth || !userId) return;
         (async () => {
             try {
+                const isCorporate = userType === 'corporate';
                 if (isFollowing) {
-                    await (supabase as any).from('follows')
-                        .upsert({ follower_id: userId, following_id: authorId }, { onConflict: 'follower_id,following_id', ignoreDuplicates: true });
+                    if (isCorporate) {
+                        // Kurumsal → bireysel: radars tablosuna yaz (radar bildirimi trigger’ı çalışır)
+                        await (supabase as any).from('radars')
+                            .upsert({ corporate_id: userId, individual_id: authorId }, { onConflict: 'corporate_id,individual_id', ignoreDuplicates: true });
+                    } else {
+                        // Bireysel → bireysel/kurumsal: follows tablosuna yaz
+                        await (supabase as any).from('follows')
+                            .upsert({ follower_id: userId, following_id: authorId }, { onConflict: 'follower_id,following_id', ignoreDuplicates: true });
+                    }
                 } else {
-                    await (supabase as any).from('follows').delete()
-                        .eq('follower_id', userId).eq('following_id', authorId);
+                    if (isCorporate) {
+                        await (supabase as any).from('radars').delete()
+                            .eq('corporate_id', userId).eq('individual_id', authorId);
+                    } else {
+                        await (supabase as any).from('follows').delete()
+                            .eq('follower_id', userId).eq('following_id', authorId);
+                    }
                 }
             } catch (e) { if (__DEV__) console.warn('[useFeed] follow sync error:', e); }
         })();
-    }, [isAuth, userId]);
+    }, [isAuth, userId, userType]);
 
     const deleteVideo = useCallback(async (videoId: string) => {
         if (!userId) return;
@@ -383,6 +399,37 @@ export function useFeed({ userId, isAuth }: UseFeedOptions): UseFeedReturn {
         // Invalidate so next full refresh includes this video from DB
         queryCache.invalidate(`feed:${userId ?? 'anon'}`);
     }, [userId]);
+
+    // ─── Global Event Listeners (Sync across screens & Realtime) ──────────
+    useEffect(() => {
+        const unsubs = [
+            eventBus.on('video:liked', ({ videoId, isLiked, likes }) => {
+                setVideos(prev => prev.map(v => v.id === videoId ? { ...v, isLiked, likes } : v));
+            }),
+            eventBus.on('video:saved', ({ videoId, isSaved }) => {
+                setVideos(prev => prev.map(v => v.id === videoId ? { ...v, isSaved } : v));
+            }),
+            eventBus.on('video:commented', ({ videoId, comments }) => {
+                setVideos(prev => prev.map(v => v.id === videoId ? { ...v, comments } : v));
+            }),
+            eventBus.on('video:shared', ({ videoId, shares }) => {
+                setVideos(prev => prev.map(v => v.id === videoId ? { ...v, shares } : v));
+            }),
+            eventBus.on('video:deleted', ({ videoId }) => {
+                setVideos(prev => prev.filter(v => v.id !== videoId));
+            }),
+            eventBus.on('video:like_count_changed', ({ videoId, delta }) => {
+                setVideos(prev => prev.map(v => v.id === videoId ? { ...v, likes: Math.max(0, v.likes + delta) } : v));
+            }),
+            eventBus.on('video:comment_count_changed', ({ videoId, delta }) => {
+                setVideos(prev => prev.map(v => v.id === videoId ? { ...v, comments: Math.max(0, v.comments + delta) } : v));
+            }),
+            eventBus.on('follow:changed', ({ userId: authorId, isFollowing }) => {
+                setVideos(prev => prev.map(v => v.user.id === authorId ? { ...v, isFollowing } : v));
+            })
+        ];
+        return () => unsubs.forEach(unsub => unsub());
+    }, []);
 
     return {
         videos,

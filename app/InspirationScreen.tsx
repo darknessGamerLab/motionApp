@@ -3,6 +3,7 @@ import Colors from '@/constants/Colors';
 import { useVideoPlayer as usePlayerModal } from '@/hooks/useVideoPlayer';
 import { supabase } from '@/lib/supabase';
 import { fetchExploreVideos } from '@/services/videoService';
+import { useDebounce } from '@/hooks/useDebounce';
 import { VideoItem } from '@/types/video';
 import { formatNumber } from '@/utils/format';
 import { Ionicons } from '@expo/vector-icons';
@@ -66,6 +67,7 @@ type Props = {
   videosLoading?: boolean;
   onRefresh?: () => void;
   refreshing?: boolean;
+  isBackgrounded?: boolean;
 };
 
 // ─── Grid Tile ──────────────────────────────────────────────
@@ -251,34 +253,21 @@ const sp = StyleSheet.create({
 
 
 
-// ─── Mock Data ──────────────────────────────────────────────
-const MOCK_BASE: VideoItem[] = [
-  { id: 'm1', uri: 'https://videos.pexels.com/video-files/3045163/3045163-uhd_2560_1440_25fps.mp4', user: { id: 'u1', username: 'hasan_gul', avatar: 'https://i.pravatar.cc/100?img=1' }, description: 'Arkadaşlarla hafta sonu 😂', topic: '#komedi', likes: 14500, comments: 230, shares: 12, isLiked: false, isSaved: false },
-  { id: 'm2', uri: 'https://videos.pexels.com/video-files/2491284/2491284-uhd_2560_1440_25fps.mp4', user: { id: 'u2', username: 'komedi_dunyasi', avatar: 'https://i.pravatar.cc/100?img=2' }, description: 'Köpeğimin tepkisi efsane', topic: '#komedi', likes: 8900, comments: 140, shares: 45, isLiked: false, isSaved: false },
-  { id: 'm3', uri: 'https://videos.pexels.com/video-files/3195394/3195394-uhd_2560_1440_25fps.mp4', user: { id: 'u3', username: 'mizah_adam', avatar: 'https://i.pravatar.cc/100?img=3' }, description: 'Sınavdan sonra ben', topic: '#komedi', likes: 3200, comments: 50, shares: 8, isLiked: false, isSaved: false },
-  { id: 'm4', uri: 'https://videos.pexels.com/video-files/2495382/2495382-uhd_2560_1440_25fps.mp4', user: { id: 'u4', username: 'ayse_komik', avatar: 'https://i.pravatar.cc/100?img=4' }, description: 'Ev hali', topic: '#komedi', likes: 4500, comments: 80, shares: 15, isLiked: false, isSaved: false },
-  { id: 's1', uri: 'https://videos.pexels.com/video-files/3195394/3195394-uhd_2560_1440_25fps.mp4', user: { id: 'u5', username: 'fit_boy', avatar: 'https://i.pravatar.cc/100?img=5' }, description: 'Bacak günü! 🦵🔥', topic: '#spor', likes: 21000, comments: 400, shares: 200, isLiked: false, isSaved: false },
-  { id: 's2', uri: 'https://videos.pexels.com/video-files/2491284/2491284-uhd_2560_1440_25fps.mp4', user: { id: 'u6', username: 'basket_tr', avatar: 'https://i.pravatar.cc/100?img=6' }, description: 'Son saniye basketi', topic: '#spor', likes: 18000, comments: 300, shares: 150, isLiked: false, isSaved: false },
-  { id: 's3', uri: 'https://videos.pexels.com/video-files/2495382/2495382-uhd_2560_1440_25fps.mp4', user: { id: 'u7', username: 'gym_girl', avatar: 'https://i.pravatar.cc/100?img=7' }, description: 'Sabah koşusu', topic: '#spor', likes: 5600, comments: 120, shares: 30, isLiked: false, isSaved: false },
-  { id: 'd1', uri: 'https://videos.pexels.com/video-files/3045163/3045163-uhd_2560_1440_25fps.mp4', user: { id: 'u8', username: 'dance_machine', avatar: 'https://i.pravatar.cc/100?img=8' }, description: 'Yeni trend dans 🕺💃', topic: '#dans', likes: 45000, comments: 1000, shares: 500, isLiked: false, isSaved: false },
-  { id: 'd2', uri: 'https://videos.pexels.com/video-files/2495382/2495382-uhd_2560_1440_25fps.mp4', user: { id: 'u9', username: 'hiphop_crew', avatar: 'https://i.pravatar.cc/100?img=9' }, description: 'Sokak stili', topic: '#dans', likes: 12000, comments: 200, shares: 80, isLiked: false, isSaved: false },
-  { id: 't1', uri: 'https://videos.pexels.com/video-files/2491284/2491284-uhd_2560_1440_25fps.mp4', user: { id: 'u10', username: 'tech_guru', avatar: 'https://i.pravatar.cc/100?img=10' }, description: 'Yeni telefon inceleme 📱', topic: '#teknoloji', likes: 8900, comments: 450, shares: 100, isLiked: false, isSaved: false },
-  { id: 't2', uri: 'https://videos.pexels.com/video-files/3195394/3195394-uhd_2560_1440_25fps.mp4', user: { id: 'u11', username: 'kodlama_101', avatar: 'https://i.pravatar.cc/100?img=11' }, description: '5 dakikada app yapımı', topic: '#teknoloji', likes: 11000, comments: 300, shares: 250, isLiked: false, isSaved: false },
-  { id: 't3', uri: 'https://videos.pexels.com/video-files/3045163/3045163-uhd_2560_1440_25fps.mp4', user: { id: 'u12', username: 'ai_gelecek', avatar: 'https://i.pravatar.cc/100?img=12' }, description: 'Yapay zeka devrimi', topic: '#teknoloji', likes: 15600, comments: 800, shares: 600, isLiked: false, isSaved: false },
-  { id: 'se1', uri: 'https://videos.pexels.com/video-files/2495382/2495382-uhd_2560_1440_25fps.mp4', user: { id: 'u13', username: 'gezgin_kiz', avatar: 'https://i.pravatar.cc/100?img=13' }, description: 'Bali günlüklerim 🌴', topic: '#seyahat', likes: 32000, comments: 800, shares: 400, isLiked: false, isSaved: false },
-  { id: 'se2', uri: 'https://videos.pexels.com/video-files/2491284/2491284-uhd_2560_1440_25fps.mp4', user: { id: 'u14', username: 'doga_sever', avatar: 'https://i.pravatar.cc/100?img=14' }, description: 'Karadeniz kampı', topic: '#seyahat', likes: 24000, comments: 600, shares: 300, isLiked: false, isSaved: false },
-];
 
-// Satırları doldurabilmek için mock veriyi çokladık (en az 50 öğe olmalı ki 13 satır dolabilsin)
-const MOCK: VideoItem[] = Array.from({ length: 90 }, (_, i) => {
-  const base = MOCK_BASE[i % MOCK_BASE.length];
-  return { ...base, id: `${base.id}-${i}` };
-});
 
 
 // ─── Main ───────────────────────────────────────────────────
 export default function InspirationScreen({
-  isActive = false, videos = [], videosLoading = false, onVideoSaved, onVideoLiked, onVideoCommented, onUserPress, onRefresh, refreshing = false,
+  isActive = false,
+  videos = [],
+  videosLoading = false,
+  onVideoSaved,
+  onVideoLiked,
+  onVideoCommented,
+  onUserPress,
+  onRefresh,
+  refreshing = false,
+  isBackgrounded = false,
 }: Props) {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all');
@@ -313,13 +302,16 @@ export default function InspirationScreen({
   const [exploreNextCursor, setExploreNextCursor] = useState<string | null>(null);
   const [exploreLoading, setExploreLoading] = useState(false);
 
-  const loadExplore = useCallback(async (topic: string, reset = false) => {
+  const debouncedSearch = useDebounce(search, 300);
+
+  const loadExplore = useCallback(async (topic: string, sq?: string, reset = false) => {
     setExploreLoading(true);
     try {
       const result = await fetchExploreVideos({
         topic,
+        searchQuery: sq,
         cursor: reset ? undefined : exploreNextCursor ?? undefined,
-        limit: 30,
+        limit: 18, // 6 rows of 3 — reduced from 30 to save bandwidth
       });
       if (reset) {
         setExploreVideos(result.items);
@@ -337,30 +329,16 @@ export default function InspirationScreen({
     }
   }, [exploreNextCursor]);
 
-  // Reload when filter changes
+  // Reload when filter or debouncedSearch changes
   useEffect(() => {
-    loadExplore(filter, true);
+    loadExplore(filter, debouncedSearch, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filter]);
+  }, [filter, debouncedSearch]);
 
   const allVideos = useMemo(() => {
     // Prefer explore videos from DB; fall back to parent-passed videos if explore is empty
-    const base = exploreVideos.length > 0 ? exploreVideos : videos;
-
-    let list = [...base];
-
-    // Apply search filter on top of already topic-filtered results from DB
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      list = list.filter(v =>
-        v.description?.toLowerCase().includes(q) ||
-        v.user.username?.toLowerCase().includes(q) ||
-        v.topic?.toLowerCase().includes(q)
-      );
-    }
-
-    return list;
-  }, [exploreVideos, videos, search]);
+    return exploreVideos.length > 0 ? exploreVideos : videos;
+  }, [exploreVideos, videos]);
 
   const openPlayer = useCallback((idx: number) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -484,6 +462,7 @@ export default function InspirationScreen({
         onVideoLiked={onVideoLiked}
         onVideoCommented={onVideoCommented}
         onUserPress={onUserPress}
+        isBackgrounded={isBackgrounded}
       />
     </View>
   );

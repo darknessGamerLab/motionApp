@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase';
 import { Ionicons } from '@expo/vector-icons';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import * as VideoThumbnails from 'expo-video-thumbnails';
+import { Video } from 'react-native-compressor';
 import React, { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -21,7 +22,8 @@ const CHROME_COLOR = '#FFFFFF';
 interface AddVideoDetailsScreenProps {
   videoUri: string;
   onBack: () => void;
-  onPublish: (videoUrl: string, description: string, tags: string[]) => void;
+  // Artık sadece lokal URI ve meta datayı yolluyoruz, index.tsx upload yönetecek
+  onPublish: (videoUri: string, description: string, topic?: string, category?: string) => void;
 }
 
 export default function AddVideoDetailsScreen({
@@ -31,6 +33,8 @@ export default function AddVideoDetailsScreen({
 }: AddVideoDetailsScreenProps) {
   const { authState } = useAuth();
 
+  // Camera artık tamamen unmount (CreateScreen index.tsx'te kaldırıldı) olduğu için
+  // codec çakışması yok — güvenle auto-play yapabiliriz.
   const videoPlayer = useVideoPlayer(videoUri, player => {
     player.loop = true;
     player.muted = true;
@@ -65,100 +69,18 @@ export default function AddVideoDetailsScreen({
     setIsPublishing(true);
 
     try {
-      const topicTag = [selectedTopic];
       const topicTalent = getTalentById(selectedTopic);
       const category = topicTalent?.name?.toLowerCase() || '';
       const topicLabel = topicTalent ? `#${category}` : undefined;
 
-      const fileExt = videoUri.split('.').pop()?.split('?')[0] || 'mp4';
-      const fileName = `${authState.user.id}/${Date.now()}.${fileExt}`;
+      // Sadece index.tsx'e yolla, oradaki state arka planda halledecek.
+      onPublish(videoUri, description, topicLabel, category);
 
-      // FormData ile multipart upload (binary okumak yerine dosya sisteminden aktarır)
-      const formData = new FormData();
-      formData.append('file', {
-        uri: videoUri,
-        name: `video.${fileExt}`,
-        type: `video/${fileExt}` as any,
-      } as any);
-
-      const session = (await supabase.auth.getSession()).data.session;
-      const uploadResp = await fetch(
-        `https://mhgxrzejobmkuwylyelx.supabase.co/storage/v1/object/videos/${fileName}`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${session?.access_token}`,
-          },
-          body: formData as any,
-        }
-      );
-
-      if (!uploadResp.ok) {
-        const errText = await uploadResp.text();
-        throw new Error(`Upload failed: ${uploadResp.status} - ${errText}`);
-      }
-
-      // Public URL al
-      const { data: urlData } = supabase.storage.from('videos').getPublicUrl(fileName);
-      const publicUrl = urlData.publicUrl;
-
-      // 1. Generate thumbnail
-      let thumbnailUrl = '';
-      try {
-        const { uri: thumbUri } = await VideoThumbnails.getThumbnailAsync(videoUri, { time: 1000 });
-
-        // 2. Upload thumbnail
-        const thumbExt = 'jpg';
-        const thumbName = `${authState.user.id}/thumb_${Date.now()}.${thumbExt}`;
-        const thumbFormData = new FormData();
-        thumbFormData.append('file', {
-          uri: thumbUri,
-          name: `thumb.${thumbExt}`,
-          type: 'image/jpeg',
-        } as any);
-
-        const thumbResp = await fetch(
-          `https://mhgxrzejobmkuwylyelx.supabase.co/storage/v1/object/thumbnails/${thumbName}`,
-          {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${session?.access_token}`,
-            },
-            body: thumbFormData as any,
-          }
-        );
-
-        if (thumbResp.ok) {
-          const { data: tUrlData } = supabase.storage.from('thumbnails').getPublicUrl(thumbName);
-          thumbnailUrl = tUrlData.publicUrl;
-        }
-      } catch (e) {
-        console.log('Thumbnail generation/upload error:', e);
-      }
-
-      // 3. Veritabanına kaydet
-      const { data: inserted, error: dbError } = await (supabase as any)
-        .from('videos')
-        .insert({
-          user_id: authState.user.id,
-          video_url: publicUrl,
-          thumbnail_url: thumbnailUrl || publicUrl, // Fallback
-          description: description || '',
-          topic: topicLabel,
-          category: category,
-        })
-        .select()
-        .single();
-
-      if (dbError) throw dbError;
-
-      onPublish(publicUrl, description, topicTag);
-
+      setIsPublishing(false);
     } catch (err: any) {
       console.error('[Publish Error]', err);
-      CustomAlert.alert('Hata', 'Video yüklenirken sorun oluştu: ' + (err.message || 'Bilinmeyen hata'));
-    } finally {
       setIsPublishing(false);
+      CustomAlert.alert('Hata', 'İşlem başlatılamadı: ' + (err.message || 'Bilinmeyen hata'));
     }
   };
 

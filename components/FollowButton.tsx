@@ -17,7 +17,6 @@
  *   <FollowButton
  *     userId={video.user.id}
  *     initialFollowing={video.isFollowing}
- *     isCorporate={video.user.user_type === 'corporate'}
  *     onChanged={(isFollowing) => onUserFollowed(userId, isFollowing)}
  *   />
  *
@@ -28,7 +27,9 @@
  *   <FollowButton userId={uid} initialFollowing={f} fullWidth />
  */
 
+import { useAuth } from '@/contexts/AuthContext';
 import { eventBus } from '@/lib/eventBus';
+import { supabase } from '@/lib/supabase';
 import { followUser, unfollowUser } from '@/services/interactionService';
 import { isValidUUID } from '@/utils/validate';
 import { Ionicons } from '@expo/vector-icons';
@@ -45,7 +46,6 @@ import {
 interface FollowButtonProps {
     userId: string;
     initialFollowing?: boolean;
-    isCorporate?: boolean;
     /** Called after optimistic update (before DB response) */
     onChanged?: (isFollowing: boolean) => void;
     /** Compact mode: small pill button used in VideoCard overlay */
@@ -59,14 +59,19 @@ interface FollowButtonProps {
 export default function FollowButton({
     userId,
     initialFollowing = false,
-    isCorporate = false,
     onChanged,
     compact = false,
     fullWidth = false,
     hidden = false,
 }: FollowButtonProps) {
+    const { authState } = useAuth();
     const [following, setFollowing] = useState(initialFollowing);
     const [loading, setLoading] = useState(false);
+
+    // Mevcut kullanicının kurumsal olup olmadığını kontrol et
+    const currentUserType = (authState.profile as any)?.user_type;
+    const isCorporateViewer = currentUserType === 'corporate';
+    const currentUserId = authState.user?.id;
 
     // Sync from external EventBus (e.g. another screen followed/unfollowed same user)
     useEffect(() => {
@@ -83,6 +88,7 @@ export default function FollowButton({
 
     const handlePress = useCallback(async () => {
         if (!isValidUUID(userId)) return;
+        if (!currentUserId) return;
         const newFollowing = !following;
 
         // Optimistic
@@ -90,18 +96,28 @@ export default function FollowButton({
         onChanged?.(newFollowing);
         eventBus.emit('follow:changed', { userId, isFollowing: newFollowing });
 
-        Haptics.impactAsync(
-            isCorporate
-                ? Haptics.ImpactFeedbackStyle.Medium
-                : Haptics.ImpactFeedbackStyle.Light,
-        );
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
         setLoading(true);
         try {
-            if (newFollowing) {
-                await followUser(userId);
+            if (isCorporateViewer) {
+                // Kurumsal kullanıcı → radars tablosuna yaz (radar bildirimi trigger'ı çalışır)
+                if (newFollowing) {
+                    const { error } = await (supabase as any).from('radars')
+                        .upsert({ corporate_id: currentUserId, individual_id: userId }, { onConflict: 'corporate_id,individual_id', ignoreDuplicates: true });
+                    if (error) throw error;
+                } else {
+                    const { error } = await (supabase as any).from('radars').delete()
+                        .eq('corporate_id', currentUserId).eq('individual_id', userId);
+                    if (error) throw error;
+                }
             } else {
-                await unfollowUser(userId);
+                // Bireysel kullanıcı → follows tablosuna yaz
+                if (newFollowing) {
+                    await followUser(userId);
+                } else {
+                    await unfollowUser(userId);
+                }
             }
         } catch {
             // Rollback
@@ -111,7 +127,7 @@ export default function FollowButton({
         } finally {
             setLoading(false);
         }
-    }, [userId, following, isCorporate, onChanged]);
+    }, [userId, following, onChanged, isCorporateViewer, currentUserId]);
 
     if (hidden) return null;
 
@@ -125,30 +141,19 @@ export default function FollowButton({
             >
                 {loading ? (
                     <ActivityIndicator size="small" color="rgba(255,255,255,0.8)" />
-                ) : isCorporate ? (
-                    <>
-                        <Ionicons
-                            name={following ? 'radio' : 'radio-outline'}
-                            size={12}
-                            color={following ? 'rgba(255,255,255,0.6)' : '#fff'}
-                        />
-                        <Text style={[cs.txt, following && cs.txtFollowing]}>
-                            {following ? 'Radarda' : 'Radara Al'}
-                        </Text>
-                    </>
                 ) : following ? (
-                    <Ionicons name="checkmark" size={14} color="rgba(255,255,255,0.6)" />
+                    <Ionicons name={isCorporateViewer ? 'radio' : 'checkmark'} size={14} color="rgba(255,255,255,0.6)" />
                 ) : (
-                    <Text style={cs.txt}>Takip Et</Text>
+                    <Text style={cs.txt}>{isCorporateViewer ? 'Radara Al' : 'Takip Et'}</Text>
                 )}
             </TouchableOpacity>
         );
     }
 
     // ── Full-width (profile page) ────────────────────────────────────────
-    const label = isCorporate
-        ? (following ? 'Radarda' : 'Radara Al')
-        : (following ? 'Takip Ediliyor' : 'Takip Et');
+    const label = following
+        ? (isCorporateViewer ? 'Radarda 📡' : 'Takip Ediliyor')
+        : (isCorporateViewer ? 'Radara Al' : 'Takip Et');
 
     return (
         <TouchableOpacity
@@ -160,14 +165,7 @@ export default function FollowButton({
                 <ActivityIndicator size="small" color={following ? '#888' : '#fff'} />
             ) : (
                 <View style={fs.inner}>
-                    {isCorporate && (
-                        <Ionicons
-                            name={following ? 'radio' : 'radio-outline'}
-                            size={14}
-                            color={following ? '#888' : '#fff'}
-                            style={{ marginRight: 4 }}
-                        />
-                    )}
+                    {isCorporateViewer && <Ionicons name={following ? 'radio' : 'radio-outline'} size={14} color={following ? '#888' : '#fff'} style={{ marginRight: 4 }} />}
                     <Text style={[fs.txt, following && fs.txtFollowing]}>{label}</Text>
                 </View>
             )}
@@ -197,12 +195,11 @@ const cs = StyleSheet.create({
     txtFollowing: { color: 'rgba(255,255,255,0.7)' },
 });
 
-// ── Full-width styles ─────────────────────────────────────────────────
 const fs = StyleSheet.create({
     btn: {
-        height: 38,
+        height: 34,
         paddingHorizontal: 20,
-        borderRadius: 10,
+        borderRadius: 8,
         backgroundColor: '#111',
         alignItems: 'center',
         justifyContent: 'center',
@@ -216,6 +213,6 @@ const fs = StyleSheet.create({
         flex: 1,
     },
     inner: { flexDirection: 'row', alignItems: 'center' },
-    txt: { color: '#fff', fontSize: 14, fontFamily: 'Poppins_600SemiBold' },
+    txt: { color: '#fff', fontSize: 13, fontFamily: 'Poppins_600SemiBold' },
     txtFollowing: { color: '#555', fontFamily: 'Poppins_500Medium' },
 });

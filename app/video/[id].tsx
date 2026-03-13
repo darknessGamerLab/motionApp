@@ -1,4 +1,4 @@
-import { VideoCard } from "@/app/HomeScreen";
+import { FeedCard } from "@/app/HomeScreen";
 import CommentsModal from "@/components/CommentsModal";
 import { CustomAlert } from '@/components/GlobalAlert';
 import { useAuth } from "@/contexts/AuthContext";
@@ -169,10 +169,11 @@ export default function VideoScreen() {
 
     const renderItem = useCallback(
         ({ item, index }: { item: VideoItem; index: number }) => (
-            <VideoCard
+            <FeedCard
                 data={item}
                 active={index === activeIdx}
                 paused={paused && index === activeIdx}
+                isBackgrounded={false}
                 height={FULL_H}
                 isAuthenticated={!!currentUserId}
                 onTogglePause={togglePause}
@@ -181,7 +182,7 @@ export default function VideoScreen() {
                 onAuthRequired={() =>
                     CustomAlert.alert("Giriş Yap", "Devam etmek için giriş yapmalısınız.")
                 }
-                onVideoCommented={(vid, count) => {
+                onVideoCommented={(vid: string, count: number) => {
                     setCommentVideoId(vid);
                     setCommentCount(count);
                     setShowComments(true);

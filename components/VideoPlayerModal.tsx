@@ -49,6 +49,7 @@ interface VideoPlayerModalProps {
     onVideoCommented?: (videoId: string, newCommentCount: number) => void;
     onDelete?: (videoId: string) => void;
     onUserPress?: (userId: string) => void;
+    isBackgrounded?: boolean;
 }
 
 export default function VideoPlayerModal({
@@ -62,6 +63,7 @@ export default function VideoPlayerModal({
     onVideoCommented,
     onDelete,
     onUserPress,
+    isBackgrounded = false,
 }: VideoPlayerModalProps) {
     const insets = useSafeAreaInsets();
     const safeTop = insets.top || Constants.statusBarHeight;
@@ -144,6 +146,7 @@ export default function VideoPlayerModal({
                                 CustomAlert.alert("Kayıt Gerekli", "Bu işlem için giriş yapmalısınız.");
                             }
                         }}
+                        isBackgrounded={isBackgrounded}
                     />
 
                     {/* Mask FlashList initial jump with a skeleton loader */}

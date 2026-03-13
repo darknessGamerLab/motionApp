@@ -1,4 +1,4 @@
-import FollowListScreen from "@/components/FollowListScreen";
+
 import { CustomAlert as Alert } from '@/components/GlobalAlert';
 import ProfilePhotoCarousel from "@/components/ProfilePhotoCarousel";
 import ProfileTabGrid from "@/components/ProfileTabGrid";
@@ -8,12 +8,16 @@ import Colors from "@/constants/Colors";
 import { getTalentById, getTalentByName } from "@/constants/Talents";
 import { useAuth } from "@/contexts/AuthContext";
 import { useVideoPlayer as usePlayerModal } from "@/hooks/useVideoPlayer";
+import { eventBus } from "@/lib/eventBus";
 import { supabase } from "@/lib/supabase";
 import { VideoItem } from "@/types/video";
 import { formatNumber } from "@/utils/format";
+import { annotateInteractions } from '@/utils/videoInteractions';
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import React, {
+import {
+  Suspense,
+  lazy,
   useCallback,
   useEffect,
   useMemo,
@@ -21,6 +25,7 @@ import React, {
   useState,
 } from "react";
 import {
+  ActivityIndicator,
   Dimensions,
   Modal,
   ScrollView,
@@ -31,10 +36,10 @@ import {
   View
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import EditProfileScreen from "./EditProfileScreen";
 
-import { annotateInteractions } from '@/utils/videoInteractions';
-import SettingsScreen from "./SettingsScreen";
+const EditProfileScreen = lazy(() => import('./EditProfileScreen'));
+const SettingsScreen = lazy(() => import('./SettingsScreen'));
+const FollowListScreen = lazy(() => import('@/components/FollowListScreen'));
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const GRID_COLUMNS = 3;
@@ -56,6 +61,7 @@ interface MeScreenProps {
   onVideoCommented?: (videoId: string, newCommentCount: number) => void;
   onProfileUpdate?: (updatedProfile: any) => void;
   onUserPress?: (userId: string) => void;
+  isBackgrounded?: boolean;
 }
 
 export default function MeScreen({
@@ -68,9 +74,9 @@ export default function MeScreen({
   onVideoDelete,
   onProfileUpdate,
   onUserPress,
+  isBackgrounded = false,
 }: MeScreenProps) {
   const insets = useSafeAreaInsets();
-  // ── Video player modal — extracted to useVideoPlayer hook (replaces 3 manual states)
   const player = usePlayerModal();
 
   const [showSettings, setShowSettings] = useState(false);
@@ -78,7 +84,6 @@ export default function MeScreen({
   const { authState } = useAuth();
   const userId = authState.user?.id;
 
-  // DB'den kullanıcının kendi videoları
   const [dbUserVideos, setDbUserVideos] = useState<VideoItem[]>([]);
   const [dbSavedVideos, setDbSavedVideos] = useState<VideoItem[]>([]);
   const [dbLikedVideos, setDbLikedVideos] = useState<VideoItem[]>([]);
@@ -90,7 +95,6 @@ export default function MeScreen({
   const fetchMyData = useCallback(
     async (force = false) => {
       if (!userId) return;
-      // Only fetch once per userId session unless forced (e.g. after delete/save)
       if (!force && hasFetchedRef.current) return;
       hasFetchedRef.current = true;
       setDbLoading(true);
@@ -200,19 +204,39 @@ export default function MeScreen({
     [userId],
   );
 
-  // Fetch on mount; userId change resets the guard
+  // Fetch on mount
   useEffect(() => {
     hasFetchedRef.current = false;
     fetchMyData();
   }, [userId]);
 
-  // userProfile'dan user bilgilerini al
+  // EventBus: beğeni değiştiğinde liked listesini yenile
+  useEffect(() => {
+    if (!userId) return;
+    const unsubLike = eventBus.on('video:liked', ({ videoId, isLiked }) => {
+      if (isLiked) {
+        hasFetchedRef.current = false;
+        fetchMyData(true);
+      } else {
+        setDbLikedVideos(prev => prev.filter(v => v.id !== videoId));
+      }
+    });
+    const unsubSave = eventBus.on('video:saved', ({ videoId, isSaved }) => {
+      if (isSaved) {
+        hasFetchedRef.current = false;
+        fetchMyData(true);
+      } else {
+        setDbSavedVideos(prev => prev.filter(v => v.id !== videoId));
+      }
+    });
+    return () => { unsubLike(); unsubSave(); };
+  }, [userId, fetchMyData]);
+
   const user = useMemo(
     () => ({
       username: userProfile?.username || "kullanici",
       fullName: userProfile?.fullName || "Kullanıcı",
       bio: userProfile?.bio || "Merhaba! 👋",
-      // Use real avatar_urls array if available, else single avatar_url, else generated
       avatars:
         userProfile?.avatars?.length > 0
           ? userProfile.avatars
@@ -229,7 +253,6 @@ export default function MeScreen({
     [userProfile],
   );
 
-  // DB videolarını önce kullan, fallback olarak prop'tan gelen allVideos
   const userVideos =
     dbUserVideos.length > 0
       ? dbUserVideos
@@ -249,7 +272,6 @@ export default function MeScreen({
     setShowFollowList(true);
   };
 
-  // Video silme — ProfileTabGrid'e onVideoLongPress olarak geçilir
   const handleDeleteVideo = useCallback(
     (video: VideoItem) => {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
@@ -329,47 +351,37 @@ export default function MeScreen({
         showsVerticalScrollIndicator={false}
         scrollEnabled={isActive}
       >
-        {/* Profile Photos - 3 Photos */}
+        {/* ─── Profile Header: Avatar (username altında) ─────────── */}
         <View style={styles.profileSection}>
-          {/* 3 Photos Carousel */}
+
+          {/* 3'lü profil fotoğraf carousel — basılı tutunca büyür */}
           <ProfilePhotoCarousel
             avatars={user.avatars}
             size={90}
-            isEditable={true}
-            onEditPress={() => setShowEditProfile(true)}
+            isEditable={false}
           />
 
-          {/* Full Name */}
+          {/* İsim + Bio */}
           <Text style={styles.fullName}>{user.fullName}</Text>
+          <Text style={styles.bio} numberOfLines={2}>{user.bio}</Text>
 
-          {/* Bio */}
-          <Text style={styles.bio} numberOfLines={1}>
-            {user.bio}
-          </Text>
+          {/* Yetenekler */}
+          {user.skills.length > 0 && (
+            <View style={styles.skillsContainer}>
+              {user.skills.map((skill: string, index: number) => {
+                const talent = getTalentById(skill) || getTalentByName(skill);
+                const label = talent ? talent.name : skill;
+                return (
+                  <Text key={index} style={styles.skillText}>
+                    #{label.toLowerCase()}
+                  </Text>
+                );
+              })}
+            </View>
+          )}
 
-          {/* Skills - 3 Skills Mandatory */}
-          <View style={styles.skillsContainer}>
-            {user.skills.map((skill: string, index: number) => {
-              const talent = getTalentById(skill) || getTalentByName(skill);
-              const label = talent ? talent.name : skill;
-              return (
-                <Text key={index} style={styles.skillText}>
-                  #{label.toLowerCase()}
-                </Text>
-              );
-            })}
-          </View>
-
-          {/* Stats — tıklanabilir, takıpçi/takip listesi açıyor */}
+          {/* İstatistikler */}
           <View style={styles.stats}>
-            <TouchableOpacity
-              style={styles.statItem}
-              onPress={() => openFollowList("following")}
-            >
-              <Text style={styles.statNumber}>{user.following}</Text>
-              <Text style={styles.statLabel}>Takip Edilen</Text>
-            </TouchableOpacity>
-            <View style={styles.statDivider} />
             <TouchableOpacity
               style={styles.statItem}
               onPress={() => openFollowList("followers")}
@@ -378,15 +390,22 @@ export default function MeScreen({
               <Text style={styles.statLabel}>Takipçi</Text>
             </TouchableOpacity>
             <View style={styles.statDivider} />
+            <TouchableOpacity
+              style={styles.statItem}
+              onPress={() => openFollowList("following")}
+            >
+              <Text style={styles.statNumber}>{user.following}</Text>
+              <Text style={styles.statLabel}>Takip</Text>
+            </TouchableOpacity>
+            <View style={styles.statDivider} />
             <TouchableOpacity style={styles.statItem}>
               <Text style={styles.statNumber}>{formatViews(user.videos)}</Text>
               <Text style={styles.statLabel}>Video</Text>
             </TouchableOpacity>
           </View>
 
-          {/* Action Buttons */}
+          {/* Aksiyon Butonları */}
           <View style={styles.actionButtons}>
-            {/* Profili Düzenle — uygulama kırmızısı */}
             <TouchableOpacity
               style={styles.editProfileButton}
               onPress={() => setShowEditProfile(true)}
@@ -413,7 +432,7 @@ export default function MeScreen({
           </View>
         </View>
 
-        {/* ✅ ProfileTabGrid — replaces ~160 lines of duplicate tab+FlatList code */}
+        {/* ProfileTabGrid */}
         <ProfileTabGrid
           videos={userVideos}
           likedVideos={dbLikedVideos}
@@ -424,7 +443,7 @@ export default function MeScreen({
         />
       </ScrollView>
 
-      {/* ✅ Shared Video Player Modal - Overlay */}
+      {/* Video Player Modal */}
       <VideoPlayerModal
         visible={player.visible}
         videos={player.videos}
@@ -434,22 +453,24 @@ export default function MeScreen({
         onVideoSaved={handleVideoSaved}
         onVideoLiked={onVideoLiked}
         onVideoCommented={onVideoCommented}
-        onDelete={handleDeleteVideo ? (id: string) => handleDeleteVideo({ id } as any) : undefined}
+        onDelete={(videoId) => handleDeleteVideo({ id: videoId } as VideoItem)}
         onUserPress={onUserPress}
+        isBackgrounded={isBackgrounded}
       />
 
-      {/* ✅ Takipçi / Takip Listesi Modal */}
+      {/* Takipçi / Takip Listesi */}
       {showFollowList && (
-        <FollowListScreen
-          visible={showFollowList}
-          userId={userId || ""}
-          initialTab={followListTab}
-          onClose={() => setShowFollowList(false)}
-          onUserPress={(uid) => {
-            setShowFollowList(false);
-            // Parent'a geiş için — index.tsx'de yönetilecek
-          }}
-        />
+        <Suspense fallback={<View style={{flex:1, justifyContent:'center', alignItems:'center'}}><ActivityIndicator size="large" color={Colors.primary} /></View>}>
+          <FollowListScreen
+            visible={showFollowList}
+            userId={userId || ""}
+            initialTab={followListTab}
+            onClose={() => setShowFollowList(false)}
+            onUserPress={(uid) => {
+              setShowFollowList(false);
+            }}
+          />
+        </Suspense>
       )}
 
       {/* Settings Modal */}
@@ -458,33 +479,37 @@ export default function MeScreen({
         animationType="slide"
         onRequestClose={() => setShowSettings(false)}
       >
-        <SettingsScreen
-          onBackPress={() => setShowSettings(false)}
-          onEditProfile={() => {
-            setShowSettings(false);
-            setShowEditProfile(true);
-          }}
-        />
+        <Suspense fallback={<View style={{flex:1, justifyContent:'center', alignItems:'center'}}><ActivityIndicator size="large" color={Colors.primary} /></View>}>
+          <SettingsScreen
+            onBackPress={() => setShowSettings(false)}
+            onEditProfile={() => {
+              setShowSettings(false);
+              setShowEditProfile(true);
+            }}
+          />
+        </Suspense>
       </Modal>
 
-      {/* Edit Profile Screen */}
+      {/* Edit Profile Modal */}
       <Modal
         visible={showEditProfile}
         animationType="slide"
         onRequestClose={() => setShowEditProfile(false)}
       >
-        <EditProfileScreen
-          onClose={() => setShowEditProfile(false)}
-          userProfile={{
-            ...user,
-            avatarUri: user.avatars?.[0] || "",
-            talents: (userProfile as any).talents || [],
-          }}
-          onSave={(updatedProfile) => {
-            onProfileUpdate?.(updatedProfile);
-            setShowEditProfile(false);
-          }}
-        />
+        <Suspense fallback={<View style={{flex:1, justifyContent:'center', alignItems:'center'}}><ActivityIndicator size="large" color={Colors.primary} /></View>}>
+          <EditProfileScreen
+            onClose={() => setShowEditProfile(false)}
+            userProfile={{
+              ...user,
+              avatarUri: user.avatars?.[0] || "",
+              talents: (userProfile as any).talents || [],
+            }}
+            onSave={(updatedProfile) => {
+              onProfileUpdate?.(updatedProfile);
+              setShowEditProfile(false);
+            }}
+          />
+        </Suspense>
       </Modal>
     </View>
   );
@@ -502,86 +527,78 @@ const styles = StyleSheet.create({
   headerButton: { padding: 4 },
   headerUsername: { fontSize: 16, fontFamily: 'Poppins_700Bold', color: Colors.text },
   scrollView: { flex: 1 },
+
+  // ─── Profile Section ────────────────────────────────────────────
   profileSection: {
-    paddingHorizontal: 20,
-    paddingTop: 10,
-    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 4,
+    alignItems: 'center',         // ortada hizalanmış
   },
+
   fullName: {
-    fontSize: 18,
-    fontFamily: 'Poppins_600SemiBold',
+    fontSize: 17,
+    fontFamily: 'Poppins_700Bold',
     color: Colors.text,
-    marginBottom: 4,
-    letterSpacing: 0.3,
+    textAlign: 'center',
+    marginBottom: 2,
   },
   bio: {
     fontSize: 13,
     fontFamily: 'Poppins_400Regular',
     color: Colors.textMuted,
-    textAlign: "center",
     lineHeight: 18,
-    marginBottom: 12,
-    maxWidth: "80%",
+    textAlign: 'center',
+    marginBottom: 8,
+    paddingHorizontal: 8,
   },
+
+  // Skills
   skillsContainer: {
     flexDirection: "row",
-    gap: 32,
-    marginBottom: 16,
-    justifyContent: "center",
-    paddingHorizontal: 20,
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 12,
+    justifyContent: 'center',
   },
-  skillText: { color: Colors.primary, fontSize: 13, fontFamily: 'Poppins_500Medium' },
+  skillText: { color: Colors.primary, fontSize: 12, fontFamily: 'Poppins_500Medium' },
+
+  // Stats — tam genişlik kullan
   stats: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    gap: 16,
-    marginBottom: 0,
-    paddingHorizontal: 20,
+    justifyContent: "space-evenly",   // eşit aralıklı ve tam genişlik
     width: "100%",
+    marginBottom: 12,
+    paddingHorizontal: 8,
   },
   statItem: { alignItems: "center", flex: 1 },
   statNumber: {
     fontSize: 18,
     fontFamily: 'Poppins_700Bold',
     color: Colors.text,
-    marginBottom: 3,
   },
-  statLabel: { fontSize: 12, color: Colors.textMuted, fontFamily: 'Poppins_500Medium' },
-  statDivider: { width: 1, height: 32, backgroundColor: Colors.border },
-  taxInfoBar: {
-    backgroundColor: "rgba(0,0,0,0.04)",
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 6,
-    marginTop: 12,
-    borderLeftWidth: 3,
-    borderLeftColor: Colors.primary,
-  },
-  taxLabel: {
-    fontSize: 10,
-    fontFamily: "Poppins_700Bold",
-    color: Colors.textSecondary,
-    letterSpacing: 0.5,
-  },
-  actionButtons: { flexDirection: "row", gap: 8, width: "100%", marginTop: 10 },
-  // Profili Düzenle butonu — kırmızı tema rengi
+  statLabel: { fontSize: 11, color: Colors.textMuted, fontFamily: 'Poppins_500Medium' },
+  statDivider: { width: 1, height: 24, backgroundColor: Colors.border },
+
+  // Action Buttons — tam genişlik
+  actionButtons: { flexDirection: "row", gap: 8, width: "100%", marginBottom: 4 },
   editProfileButton: {
     flex: 1,
-    paddingVertical: 10,
-    borderRadius: 10,
+    paddingVertical: 8,
+    borderRadius: 8,
     backgroundColor: Colors.primary,
     alignItems: "center",
     justifyContent: "center",
     flexDirection: "row",
     gap: 6,
+    minHeight: 36,
   },
   editProfileButtonText: { fontSize: 13, fontFamily: 'Poppins_700Bold', color: "#fff" },
-  // Paylaş butonu — nötr
   shareButton: {
     flex: 1,
-    paddingVertical: 10,
-    borderRadius: 10,
+    paddingVertical: 8,
+    borderRadius: 8,
     backgroundColor: Colors.surfaceAlt,
     alignItems: "center",
     justifyContent: "center",
@@ -589,107 +606,7 @@ const styles = StyleSheet.create({
     gap: 6,
     borderWidth: 1,
     borderColor: Colors.border,
+    minHeight: 36,
   },
   shareButtonText: { fontSize: 13, fontFamily: 'Poppins_600SemiBold', color: Colors.text },
-  // Eski tek tip buton (kültüşme için tutuldu)
-  actionButton: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: 10,
-    backgroundColor: Colors.surfaceAlt,
-    alignItems: "center",
-    justifyContent: "center",
-    flexDirection: "row",
-    gap: 6,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  actionButtonText: { fontSize: 13, fontFamily: "Poppins_600SemiBold", color: Colors.text },
-  tabs: {
-    flexDirection: "row",
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: Colors.border,
-    marginTop: 2,
-    position: "relative",
-  },
-  tab: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingTop: 12,
-    paddingBottom: 5,
-  },
-  tabIndicator: {
-    position: "absolute",
-    bottom: -1,
-    width: 40,
-    height: 3,
-    backgroundColor: Colors.primary,
-    borderRadius: 1.5,
-  },
-  gridContainer: { flexDirection: "row", width: SCREEN_WIDTH * 3 },
-  gridPage: { width: SCREEN_WIDTH },
-  gridContent: { paddingBottom: 4 },
-  videoItem: {
-    width: GRID_ITEM_WIDTH,
-    height: GRID_ITEM_WIDTH * 1.3,
-    backgroundColor: Colors.surfaceAlt,
-  },
-  videoThumbnail: { width: "100%", height: "100%" },
-  viewsOverlay: {
-    position: "absolute",
-    bottom: 4,
-    left: 4,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-  },
-  viewsText: {
-    color: "#fff",
-    fontSize: 11,
-    fontFamily: "Poppins_700Bold",
-    textShadowColor: "rgba(0,0,0,0.75)",
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
-  },
-  editModalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.5)",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  editModalContent: {
-    width: "85%",
-    backgroundColor: Colors.surface,
-    borderRadius: 16,
-    padding: 24,
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.12,
-    shadowRadius: 16,
-    elevation: 8,
-  },
-  editModalHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    width: "100%",
-    marginBottom: 20,
-  },
-  editModalTitle: { fontSize: 18, fontFamily: 'Poppins_700Bold', color: Colors.text },
-  editModalPlaceholder: {
-    color: Colors.textMuted,
-    fontSize: 14,
-    marginBottom: 20,
-    textAlign: "center",
-    fontFamily: 'Poppins_400Regular',
-  },
-  editModalButton: {
-    backgroundColor: Colors.primary,
-    paddingHorizontal: 32,
-    paddingVertical: 12,
-    borderRadius: 10,
-  },
-  editModalButtonText: { color: "#fff", fontSize: 14, fontFamily: 'Poppins_600SemiBold' },
 });

@@ -5,6 +5,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { eventBus } from '@/lib/eventBus';
 import { supabase } from '@/lib/supabase';
 import { isValidUUID } from '@/utils/validate';
+import { getOptimizedImageUrl } from '@/utils/format';
 
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -150,7 +151,13 @@ const NotifRow = memo(function NotifRow({
               <Ionicons name="notifications" size={24} color={Colors.primary} />
             </View>
           ) : (
-            <Image source={{ uri: item.user.avatar }} style={s.avatar} contentFit="cover" transition={150} />
+            <Image 
+              source={{ uri: getOptimizedImageUrl(item.user.avatar, 100, 85) ?? item.user.avatar }} 
+              style={s.avatar} 
+              contentFit="cover" 
+              transition={150} 
+              cachePolicy="memory-disk"
+            />
           )}
           <View style={[s.badge, { backgroundColor: NOTIF_COLORS[item.type] }]}>
             <Ionicons name={NOTIF_ICONS[item.type]} size={9} color="#fff" />
@@ -168,7 +175,12 @@ const NotifRow = memo(function NotifRow({
 
         {/* Thumbnail or Follow btn */}
         {item.thumbnail ? (
-          <Image source={{ uri: item.thumbnail }} style={s.thumb} contentFit="cover" />
+          <Image 
+            source={{ uri: getOptimizedImageUrl(item.thumbnail, 200, 85) ?? item.thumbnail }} 
+            style={s.thumb} 
+            contentFit="cover" 
+            cachePolicy="memory-disk"
+          />
         ) : (item.type === 'follow' || item.type === 'radar') && (
           <TouchableOpacity
             style={[s.followBtn, following && s.followBtnOut]}
@@ -208,7 +220,7 @@ export default function NotificationsScreen({ isActive = true, onUserPress, onLo
 
   // Throttle: track when we last fetched so useFocusEffect doesn't spam DB
   const lastFetchTime = useRef(0);
-  const FETCH_THROTTLE_MS = 60_000; // only refetch if >60s stale
+  const FETCH_THROTTLE_MS = 30_000; // only refetch if >30s stale
 
   // When not authenticated, show empty state
   useEffect(() => {
@@ -227,14 +239,15 @@ export default function NotificationsScreen({ isActive = true, onUserPress, onLo
       const { data, error } = await supabase
         .from('notifications')
         .select(`
-          id, type, message, created_at, is_read, from_user_id, video_id,
+          id, type, message, created_at, is_read, from_user_id, video_id, thumbnail_url,
           profiles!notifications_from_user_id_fkey (
             username,
             avatar_url
           )
         `)
         .eq('user_id', authState.user.id)
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .limit(100);
 
       if (error) throw error;
       lastFetchTime.current = Date.now();

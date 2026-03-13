@@ -4,6 +4,7 @@ import Colors from '@/constants/Colors';
 import { TALENTS, getTalentById } from '@/constants/Talents';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
+import { getOptimizedImageUrl } from '@/utils/format';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
@@ -225,7 +226,7 @@ export default function EditProfileScreen({ onClose, userProfile, onSave }: Edit
               {[0, 1, 2].map((index) => (
                 <TouchableOpacity key={index} style={s.avatarContainer} onPress={() => pickImage(index)}>
                   {avatars[index] ? (
-                    <Image source={{ uri: avatars[index] }} style={s.avatar} contentFit="cover" transition={200} />
+                    <Image source={{ uri: getOptimizedImageUrl(avatars[index], 300, 90) ?? avatars[index] }} style={s.avatar} contentFit="cover" transition={200} cachePolicy="memory-disk" />
                   ) : (
                     <View style={s.avatarPlaceholder}>
                       <Ionicons name="camera-outline" size={22} color={Colors.textMuted} />

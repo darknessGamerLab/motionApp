@@ -29,6 +29,7 @@ import EmptyState from '@/components/EmptyState';
 import { SkeletonLoader } from '@/components/SkeletonLoader';
 import Colors from '@/constants/Colors';
 import { VideoItem } from '@/types/video';
+import { getOptimizedImageUrl } from '@/utils/format';
 import { animateTabSwitch } from '@/utils/transitions';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
@@ -65,6 +66,9 @@ interface ProfileTabGridProps {
     /** Controlled tab — if provided external controls the active tab */
     activeTab?: TabKey;
     onTabChange?: (tab: TabKey) => void;
+    /** Ability to hide tabs based on privacy settings */
+    hideLikes?: boolean;
+    hideSaves?: boolean;
 }
 
 // ─── Grid Item ────────────────────────────────────────────────────────
@@ -85,7 +89,7 @@ const GridItem = React.memo(({
         activeOpacity={0.8}
     >
         <Image
-            source={{ uri: item.thumbnail_url ?? '' }}
+            source={{ uri: getOptimizedImageUrl(item.thumbnail_url, Math.floor(GRID_ITEM_WIDTH * 1.5)) ?? '' }}
             style={gs.thumb}
             contentFit="cover"
             cachePolicy="memory-disk"
@@ -115,22 +119,31 @@ export default function ProfileTabGrid({
     initialTab = 'videos',
     activeTab: controlledTab,
     onTabChange,
+    hideLikes = false,
+    hideSaves = false,
 }: ProfileTabGridProps) {
     const [internalTab, setInternalTab] = useState<TabKey>(initialTab);
     const activeTab = controlledTab ?? internalTab;
+
+    // Available tabs based on props
+    const availableTabs = [
+        { key: 'videos' as TabKey, icon: 'grid-outline', label: 'Videolar' },
+        ...(hideLikes ? [] : [{ key: 'liked' as TabKey, icon: 'heart-outline', label: 'Beğenilen' }]),
+        ...(hideSaves ? [] : [{ key: 'saved' as TabKey, icon: 'bookmark-outline', label: 'Kaydedilen' }]),
+    ];
 
     const tabIndicatorPosition = useRef(new Animated.Value(0)).current;
     const contentPosition = useRef(new Animated.Value(0)).current;
 
     useEffect(() => {
-        const tabIdx = activeTab === 'videos' ? 0 : activeTab === 'liked' ? 1 : 2;
+        const tabIdx = availableTabs.findIndex(t => t.key === activeTab) || 0;
         animateTabSwitch(
             tabIndicatorPosition,
             contentPosition,
             tabIdx,
             -tabIdx * SCREEN_WIDTH,
         ).start();
-    }, [activeTab]);
+    }, [activeTab, availableTabs.length]);
 
     const setTab = useCallback((tab: TabKey) => {
         if (!controlledTab) setInternalTab(tab);
@@ -154,7 +167,7 @@ export default function ProfileTabGrid({
     if (loading && videos.length === 0) {
         return (
             <View style={s.container}>
-                <TabBar activeTab={activeTab} onTabChange={setTab} indicator={tabIndicatorPosition} />
+                <TabBar activeTab={activeTab} onTabChange={setTab} indicator={tabIndicatorPosition} tabs={availableTabs} />
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: GRID_GAP, padding: GRID_GAP }}>
                     {Array.from({ length: 9 }).map((_, i) => (
                         <SkeletonLoader key={i} width={GRID_ITEM_WIDTH} height={GRID_ITEM_HEIGHT} borderRadius={2} />
@@ -166,10 +179,10 @@ export default function ProfileTabGrid({
 
     return (
         <View style={s.container}>
-            <TabBar activeTab={activeTab} onTabChange={setTab} indicator={tabIndicatorPosition} />
+            <TabBar activeTab={activeTab} onTabChange={setTab} indicator={tabIndicatorPosition} tabs={availableTabs} />
             <Animated.View style={[
                 s.grid,
-                { transform: [{ translateX: contentPosition }] },
+                { transform: [{ translateX: contentPosition }], width: SCREEN_WIDTH * availableTabs.length },
             ]}>
                 {/* ─── Videos page ─────────────────────────────────── */}
                 <View style={s.page}>
@@ -188,36 +201,40 @@ export default function ProfileTabGrid({
                 </View>
 
                 {/* ─── Liked page ──────────────────────────────────── */}
-                <View style={s.page}>
-                    {likedVideos.length > 0 ? (
-                        <FlatList
-                            data={likedVideos}
-                            renderItem={renderItem}
-                            keyExtractor={(item: VideoItem) => item.id}
-                            numColumns={GRID_COLUMNS}
-                            scrollEnabled={false}
-                            contentContainerStyle={{ padding: GRID_GAP / 2 }}
-                        />
-                    ) : (
-                        <EmptyState {...EMPTY_STATES.liked} />
-                    )}
-                </View>
+                {!hideLikes && (
+                    <View style={s.page}>
+                        {likedVideos.length > 0 ? (
+                            <FlatList
+                                data={likedVideos}
+                                renderItem={renderItem}
+                                keyExtractor={(item: VideoItem) => item.id}
+                                numColumns={GRID_COLUMNS}
+                                scrollEnabled={false}
+                                contentContainerStyle={{ padding: GRID_GAP / 2 }}
+                            />
+                        ) : (
+                            <EmptyState {...EMPTY_STATES.liked} />
+                        )}
+                    </View>
+                )}
 
                 {/* ─── Saved page ───────────────────────────────────── */}
-                <View style={s.page}>
-                    {savedVideos.length > 0 ? (
-                        <FlatList
-                            data={savedVideos}
-                            renderItem={renderItem}
-                            keyExtractor={(item: VideoItem) => item.id}
-                            numColumns={GRID_COLUMNS}
-                            scrollEnabled={false}
-                            contentContainerStyle={{ padding: GRID_GAP / 2 }}
-                        />
-                    ) : (
-                        <EmptyState {...EMPTY_STATES.saved} />
-                    )}
-                </View>
+                {!hideSaves && (
+                    <View style={s.page}>
+                        {savedVideos.length > 0 ? (
+                            <FlatList
+                                data={savedVideos}
+                                renderItem={renderItem}
+                                keyExtractor={(item: VideoItem) => item.id}
+                                numColumns={GRID_COLUMNS}
+                                scrollEnabled={false}
+                                contentContainerStyle={{ padding: GRID_GAP / 2 }}
+                            />
+                        ) : (
+                            <EmptyState {...EMPTY_STATES.saved} />
+                        )}
+                    </View>
+                )}
             </Animated.View>
         </View>
     );
@@ -228,25 +245,28 @@ function TabBar({
     activeTab,
     onTabChange,
     indicator,
+    tabs,
 }: {
     activeTab: TabKey;
     onTabChange: (tab: TabKey) => void;
     indicator: Animated.Value;
+    tabs: { key: TabKey; icon: any; label: string }[];
 }) {
-    const TABS: { key: TabKey; icon: any; label: string }[] = [
-        { key: 'videos', icon: 'grid-outline', label: 'Videolar' },
-        { key: 'liked', icon: 'heart-outline', label: 'Beğenilen' },
-        { key: 'saved', icon: 'bookmark-outline', label: 'Kaydedilen' },
-    ];
+    const tabCount = tabs.length;
+    const tabWidth = SCREEN_WIDTH / tabCount;
+    // `interpolate` requires at least 2 elements in input and output ranges.
+    // If only 1 tab is available, provide a dummy second element to prevent "Invariant Violation" crash.
+    const inputRange = tabCount > 1 ? tabs.map((_, i) => i) : [0, 1];
+    const outputRange = tabCount > 1 ? tabs.map((_, i) => i * tabWidth) : [0, 0];
 
     const indicatorTranslateX = indicator.interpolate({
-        inputRange: [0, 1, 2],
-        outputRange: [0, SCREEN_WIDTH / 3, (SCREEN_WIDTH / 3) * 2],
+        inputRange,
+        outputRange,
     });
 
     return (
         <View style={tb.container}>
-            {TABS.map(({ key, icon, label }) => (
+            {tabs.map(({ key, icon, label }) => (
                 <TouchableOpacity
                     key={key}
                     style={tb.tab}
@@ -255,7 +275,7 @@ function TabBar({
                 >
                     <Ionicons
                         name={icon}
-                        size={22}
+                        size={18}
                         color={activeTab === key ? Colors.primary : Colors.textMuted}
                     />
                     <Text style={[tb.label, activeTab === key && tb.labelActive]}>
@@ -305,16 +325,18 @@ const tb = StyleSheet.create({
         marginTop: 2,
     },
     tab: {
+        flexDirection: 'row',
         flex: 1,
         alignItems: 'center',
         justifyContent: 'center',
-        paddingVertical: 10,
-        gap: 3,
+        paddingVertical: 8,
+        gap: 4,
     },
     label: {
         fontSize: 10,
         fontFamily: 'Poppins_400Regular',
         color: Colors.textMuted,
+        marginBottom: -2,
     },
     labelActive: {
         color: Colors.primary,
@@ -322,8 +344,7 @@ const tb = StyleSheet.create({
     },
     indicator: {
         position: 'absolute',
-        bottom: -1,
-        width: SCREEN_WIDTH / 3,
+        bottom: 0,
         height: 2,
         backgroundColor: Colors.primary,
         borderRadius: 1,

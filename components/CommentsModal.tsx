@@ -136,7 +136,7 @@ export default function CommentsModal({ visible, onClose, videoId, commentCount,
     try {
       const { data, error } = await supabase.rpc('get_video_comments', {
         p_video_id: videoId,
-        p_viewer_id: authState.user?.id || null
+        p_viewer_id: authState.user?.id || undefined
       });
 
       if (error) {

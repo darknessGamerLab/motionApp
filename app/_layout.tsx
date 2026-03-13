@@ -5,6 +5,7 @@ import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { Poppins_400Regular, Poppins_500Medium, Poppins_600SemiBold, Poppins_700Bold, Poppins_800ExtraBold, useFonts } from '@expo-google-fonts/poppins';
 import { router, Stack, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
+import { useGlobalRealtime } from '@/hooks/useGlobalRealtime';
 import { useEffect } from 'react';
 import { ActivityIndicator, Platform, StatusBar, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -21,6 +22,7 @@ if (Platform.OS === 'android') {
 function RootLayoutNav() {
   const { authState } = useAuth();
   const segments = useSegments();
+  useGlobalRealtime();
   const isAuthRoute = segments[0] === 'auth';
 
   const [fontsLoaded] = useFonts({

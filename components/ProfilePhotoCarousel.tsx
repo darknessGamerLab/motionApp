@@ -2,6 +2,7 @@ import Colors from '@/constants/Colors';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
+import { getOptimizedImageUrl } from '@/utils/format';
 import React, { useCallback, useRef, useState } from 'react';
 import {
     Animated,
@@ -76,10 +77,11 @@ export default function ProfilePhotoCarousel({
                         <TouchableWithoutFeedback onLongPress={openViewer} delayLongPress={300}>
                             <View style={[styles.avatarWrap, { width: size, height: size }]}>
                                 <Image
-                                    source={{ uri: item }}
+                                    source={{ uri: getOptimizedImageUrl(item, size * 2, 85) ?? item }}
                                     style={[styles.avatar, { width: size, height: size, borderRadius: size / 2 }]}
                                     contentFit="cover"
                                     transition={200}
+                                    cachePolicy="memory-disk"
                                 />
                             </View>
                         </TouchableWithoutFeedback>
@@ -115,7 +117,7 @@ export default function ProfilePhotoCarousel({
                     </TouchableWithoutFeedback>
 
                     <Animated.Image
-                        source={{ uri: avatars[activeIndex] }}
+                        source={{ uri: getOptimizedImageUrl(avatars[activeIndex], W * 1.5, 90) ?? avatars[activeIndex] }}
                         style={[styles.viewerImage, { transform: [{ scale: scaleAnim }] }]}
                     // expo-image
                     />

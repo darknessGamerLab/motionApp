@@ -36,7 +36,7 @@ import { SkeletonLoader } from '@/components/SkeletonLoader';
 import Colors from '@/constants/Colors';
 import { useAuth } from '@/contexts/AuthContext';
 import { VideoItem } from '@/types/video';
-import { formatNumber } from '@/utils/format';
+import { formatNumber, getOptimizedImageUrl } from '@/utils/format';
 import { isValidUUID } from '@/utils/validate';
 
 import ActionBtn from '@/components/ActionBtn';
@@ -96,6 +96,8 @@ interface HomeScreenProps {
   hideReport?: boolean;
   /** Called whenever the visible video index changes — used by VideoPlayerModal to open correct CommentsModal */
   onActiveIndexChange?: (index: number) => void;
+  /** When true (app minimized or screen off), pause all videos */
+  isBackgrounded?: boolean;
 }
 
 
@@ -149,6 +151,12 @@ export const VideoCard = memo(({
   const [expanded, setExpanded] = useState(false);
   const [showComments, setShowComments] = useState(false);
   const isCorporateViewer = authState.profile?.user_type === 'corporate';
+
+  // ─── Sync Local State to Props for Realtime Updates ─────────────────
+  useEffect(() => { setLiked(data.isLiked); setLikes(data.likes); }, [data.isLiked, data.likes]);
+  useEffect(() => { setSaved(data.isSaved); }, [data.isSaved]);
+  useEffect(() => { setShares(data.shares); }, [data.shares]);
+  useEffect(() => { setFollowing(!!data.isFollowing); }, [data.isFollowing]);
 
   // Thumbnail sits on top of VideoView, fades to 0 when first frame is ready
   const thumbnailOpacity = useRef(new Animated.Value(1)).current;
@@ -433,10 +441,11 @@ export const VideoCard = memo(({
           <View style={s.userRow}>
             <TouchableOpacity onPress={() => onUserPress?.(data.user.id)} activeOpacity={0.8}>
               <Image
-                source={{ uri: data.user.avatar || 'https://i.pravatar.cc/100' }}
+                source={{ uri: getOptimizedImageUrl(data.user.avatar, 100, 85) ?? data.user.avatar ?? 'https://i.pravatar.cc/100' }}
                 style={s.avatar}
                 contentFit="cover"
                 transition={150}
+                cachePolicy="memory-disk"
               />
             </TouchableOpacity>
             <View style={s.userMeta}>
@@ -535,6 +544,7 @@ export default function HomeScreen({
   startIndex = 0,
   hideReport = false,
   onActiveIndexChange,
+  isBackgrounded = false,
 }: HomeScreenProps) {
   // Stable ref so onViewChange (which is itself a ref) always calls the latest callback
   const onActiveIndexChangeRef = useRef(onActiveIndexChange);
@@ -611,7 +621,7 @@ export default function HomeScreen({
   const renderItem = useCallback(({ item, index }: { item: VideoItem; index: number }) => (
     <VideoCard
       data={item}
-      active={isActive && index === activeIdx}
+      active={isActive && index === activeIdx && !isBackgrounded}
       paused={paused && index === activeIdx}
       height={h}
       isAuthenticated={isAuthenticated}

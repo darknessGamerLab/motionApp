@@ -31,14 +31,23 @@ export type AppEvents = {
     /** Kullanıcı takip edildi veya takipten çıktı */
     'follow:changed': { userId: string; isFollowing: boolean };
 
-    /** Video beğenildi veya beğeni kaldırıldı */
+    /** Video beğenildi veya beğeni kaldırıldı (Kendi aksiyonumuz) */
     'video:liked': { videoId: string; isLiked: boolean; likes: number };
+
+    /** Dışarıdan gelen realtime beğeni sayısı güncellemesi */
+    'video:like_count_changed': { videoId: string; delta: number };
 
     /** Video kaydedildi veya kaydı silindi */
     'video:saved': { videoId: string; isSaved: boolean };
 
     /** Video silindi */
     'video:deleted': { videoId: string };
+
+    /** Yorum sayısı güncellendi (Kendi aksiyonumuz) */
+    'video:commented': { videoId: string; comments: number };
+
+    /** Dışarıdan gelen realtime yorum sayısı güncellemesi */
+    'video:comment_count_changed': { videoId: string; delta: number };
 
     /** Video paylaşıldı — shares_count güncellendi */
     'video:shared': { videoId: string; shares: number };

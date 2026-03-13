@@ -55,5 +55,8 @@ export const toVideoItem = (row: any): VideoItem => ({
     isLiked: row.is_liked ?? row.isLiked ?? false,
     isSaved: row.is_saved ?? row.isSaved ?? false,
     isFollowing: row.is_following ?? row.isFollowing ?? false,
-    thumbnail_url: row.thumbnail_url ?? undefined,
+    // SAFETY: Never use a video file URL as thumbnail — massive bandwidth waste
+    thumbnail_url: (row.thumbnail_url && !String(row.thumbnail_url).includes('/storage/v1/object/public/videos/'))
+        ? row.thumbnail_url
+        : undefined,
 });

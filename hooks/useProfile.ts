@@ -36,6 +36,8 @@ export interface ProfileData {
     followers_count: number;
     following_count: number;
     videos_count: number;
+    hide_likes: boolean;
+    hide_saves: boolean;
 }
 
 export interface VideoData {
@@ -77,53 +79,51 @@ export function useProfile(userId?: string) {
 
         setLoading(true);
         try {
-            // All fetches are independently cached and deduplicated.
-            const [profileData, videosResult, likedResult, savedResult, followingResult] = await Promise.all([
+            // 1. Fetch BFF Data (Profile, Follow status, First 15 Videos) in exactly ONE request
+            const bffData = await queryCache.get(
+                `profile-bff:${userId}:${meId || 'anon'}`,
+                async () => {
+                    const { supabase: sb } = await import('@/lib/supabase');
+                    const { data, error } = await (sb as any).rpc('get_profile_bff', {
+                        p_user_id: userId,
+                        p_viewer_id: meId || null
+                    });
+                    if (error) throw error;
+                    return data as { profile: any; is_following: boolean; videos: any[] };
+                },
+                PROFILE_TTL,
+                force
+            ) as { profile: any; is_following: boolean; videos: any[] };
 
-                queryCache.get(
-                    `profile:${userId}`,
-                    () => fetchProfileData(userId),
-                    PROFILE_TTL,
-                    force
-                ),
+            // 2. Map and Annotate
+            const bffVideos = bffData.videos.map((v: any) => ({
+                id: v.id,
+                uri: v.video_url ?? '',
+                thumbnail_url: v.thumbnail_url,
+                user: v.user,
+                description: v.description ?? '',
+                topic: v.topic ?? '',
+                likes: v.likes ?? 0,
+                comments: v.comments ?? 0,
+                shares: v.shares ?? 0,
+                isLiked: false,
+                isSaved: false,
+            }));
 
-                queryCache.get(
-                    `profile-videos:${userId}`,
-                    () => fetchUserVideos({ userId }),
-                    VIDEOS_TTL,
-                    force
-                ),
-
+            // 3. Launch Liked/Saved fetches in background / parallel (less critical for first paint)
+            const [likedResult, savedResult] = await Promise.all([
                 queryCache.get(
                     `profile-liked-videos:${userId}`,
                     () => fetchUserLikedVideos({ userId }),
                     VIDEOS_TTL,
                     force
                 ),
-
                 queryCache.get(
                     `profile-saved-videos:${userId}`,
                     () => fetchUserSavedVideos({ userId }),
                     VIDEOS_TTL,
                     force
                 ),
-
-                meId
-                    ? queryCache.get(
-                        `follow-status:${meId}:${userId}`,
-                        async () => {
-                            const { data } = await (await import('@/lib/supabase')).supabase
-                                .from('follows')
-                                .select('id')
-                                .eq('follower_id', meId)
-                                .eq('following_id', userId)
-                                .maybeSingle();
-                            return !!data;
-                        },
-                        PROFILE_TTL,
-                        force
-                    )
-                    : Promise.resolve(false),
             ]);
 
             if (!mounted.current) return;
@@ -143,11 +143,11 @@ export function useProfile(userId?: string) {
                 isSaved: false,
             }));
 
-            const annotatedVideos = await annotateInteractions(mapToVideoData(videosResult.items), meId);
+            const annotatedVideos = await annotateInteractions(bffVideos, meId);
             const annotatedLiked = await annotateInteractions(mapToVideoData(likedResult.items), meId);
             const annotatedSaved = await annotateInteractions(mapToVideoData(savedResult.items), meId);
 
-            const profileRow = profileData as any;
+            const profileRow = bffData.profile;
             setProfile({
                 id: profileRow.id,
                 username: profileRow.username,
@@ -160,14 +160,16 @@ export function useProfile(userId?: string) {
                 followers_count: profileRow.followers_count ?? 0,
                 following_count: profileRow.following_count ?? 0,
                 videos_count: profileRow.videos_count ?? 0,
+                hide_likes: profileRow.hide_likes ?? false,
+                hide_saves: profileRow.hide_saves ?? false,
             });
             setVideos(annotatedVideos as any);
             setLikedVideos(annotatedLiked as any);
             setSavedVideos(annotatedSaved as any);
-            setVideosNextCursor(videosResult.nextCursor);
+            setVideosNextCursor(null); // BFF returns exactly 15, next cursor can be handled if needed
             setLikedNextCursor(likedResult.nextCursor);
             setSavedNextCursor(savedResult.nextCursor);
-            setIsFollowing(followingResult);
+            setIsFollowing(bffData.is_following);
         } catch (e) {
             if (__DEV__) console.warn('[useProfile] error:', e);
         } finally {
@@ -184,21 +186,39 @@ export function useProfile(userId?: string) {
     // Feed'de takip edilince UserProfileScreen'i de günceller (veri tutarsızlığı giderme)
     useEffect(() => {
         if (!userId) return;
-        const unsub = eventBus.on('follow:changed', ({ userId: changedUserId, isFollowing: newVal }) => {
+        const unsubFollow = eventBus.on('follow:changed', ({ userId: changedUserId, isFollowing: newVal }) => {
             if (changedUserId === userId) {
                 setIsFollowing(newVal);
                 // Cache'i de geçersiz kıl so that next open reads fresh
                 if (meId) queryCache.invalidate(`follow-status:${meId}:${userId}`);
             }
         });
-        return unsub;
-    }, [userId, meId]);
 
+        // Kendi profilimizdeyken bir video kaydedilirse/beğenilirse anında güncelle
+        const unsubSave = eventBus.on('video:saved', ({ videoId, isSaved }) => {
+            if (meId === userId) {
+                queryCache.invalidate(`profile-saved-videos:${userId}`);
+                fetchProfile(true); // reload to get new saved videos
+            }
+        });
+
+        const unsubLike = eventBus.on('video:liked', ({ videoId, isLiked }) => {
+            if (meId === userId) {
+                queryCache.invalidate(`profile-liked-videos:${userId}`);
+                fetchProfile(true); // reload to get new liked videos
+            }
+        });
+
+        return () => {
+            unsubFollow();
+            unsubSave();
+            unsubLike();
+        };
+    }, [userId, meId, fetchProfile]);
 
     const invalidateCache = useCallback(() => {
         if (userId) {
-            queryCache.invalidate(`profile:${userId}`);
-            queryCache.invalidate(`profile-videos:${userId}`);
+            queryCache.invalidate(`profile-bff:${userId}:${meId || 'anon'}`);
             queryCache.invalidate(`profile-liked-videos:${userId}`);
             queryCache.invalidate(`profile-saved-videos:${userId}`);
             if (meId) queryCache.invalidate(`follow-status:${meId}:${userId}`);

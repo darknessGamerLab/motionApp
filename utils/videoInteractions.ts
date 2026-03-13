@@ -3,7 +3,9 @@ import { VideoItem } from '@/types/video';
 
 /**
  * Annotate rows with like/save/follow state for a given user.
- * All three queries run in parallel.
+ * Phase 7: BFF & Batch Request optimization.
+ * Uses a single RPC call to fetch likes, saves, and follows simultaneously,
+ * significantly reducing client-side network overhead.
  */
 export async function annotateInteractions(
     rows: VideoItem[],
@@ -16,37 +18,25 @@ export async function annotateInteractions(
         (id) => id && id.length > 5
     );
 
-    const [
-        { data: likedData },
-        { data: savedData },
-        { data: followsData }
-    ] = await Promise.all([
-        ids.length > 0
-            ? (supabase as any)
-                .from('likes')
-                .select('video_id')
-                .eq('user_id', userId)
-                .in('video_id', ids)
-            : Promise.resolve({ data: [] }),
-        ids.length > 0
-            ? (supabase as any)
-                .from('saves')
-                .select('video_id')
-                .eq('user_id', userId)
-                .in('video_id', ids)
-            : Promise.resolve({ data: [] }),
-        userIds.length > 0
-            ? (supabase as any)
-                .from('follows')
-                .select('following_id')
-                .eq('follower_id', userId)
-                .in('following_id', userIds)
-            : Promise.resolve({ data: [] }),
-    ]);
+    if (ids.length === 0 && userIds.length === 0) return rows;
 
-    const likedSet = new Set((likedData || []).map((r: any) => r.video_id));
-    const savedSet = new Set((savedData || []).map((r: any) => r.video_id));
-    const followSet = new Set((followsData || []).map((r: any) => r.following_id));
+    // Single server roundtrip
+    const { data, error } = await (supabase as any).rpc('get_user_interactions', {
+        p_user_id: userId,
+        p_video_ids: ids,
+        p_author_ids: userIds
+    });
+
+    if (error || !data) {
+        if (__DEV__) console.warn('[annotateInteractions] RPC failed:', error);
+        return rows;
+    }
+
+    const interactions = data as { liked: string[], saved: string[], followed: string[] };
+
+    const likedSet = new Set(interactions.liked || []);
+    const savedSet = new Set(interactions.saved || []);
+    const followSet = new Set(interactions.followed || []);
 
     return rows.map((v) => ({
         ...v,

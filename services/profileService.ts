@@ -22,6 +22,8 @@ export interface ProfileDetails {
     following_count: number;
     videos_count: number;
     is_banned: boolean;
+    hide_likes: boolean;
+    hide_saves: boolean;
 }
 
 function toProfileDetails(row: ProfileRow): ProfileDetails {
@@ -38,6 +40,8 @@ function toProfileDetails(row: ProfileRow): ProfileDetails {
         following_count: row.following_count,
         videos_count: row.videos_count,
         is_banned: row.is_banned,
+        hide_likes: row.hide_likes ?? false,
+        hide_saves: row.hide_saves ?? false,
     };
 }
 
@@ -64,7 +68,7 @@ export async function fetchMyProfile(userId: string): Promise<ProfileDetails> {
  */
 export async function updateProfile(
     userId: string,
-    updates: Partial<Pick<ProfileRow, 'full_name' | 'bio' | 'avatar_url' | 'avatars' | 'talents' | 'username'>>
+    updates: Partial<Pick<ProfileRow, 'full_name' | 'bio' | 'avatar_url' | 'avatars' | 'talents' | 'username' | 'hide_likes' | 'hide_saves'>>
 ): Promise<ProfileDetails> {
     const { data, error } = await supabase
         .from('profiles')

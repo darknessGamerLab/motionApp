@@ -28,6 +28,8 @@ type CorporateApplicationData = {
   taxOffice: string;
   taxNumber: string;
   phone: string;
+  corporateEmail?: string;
+  sector?: string;
 };
 
 type AuthContextType = {
@@ -128,7 +130,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const { data: profile, error } = await supabase
         .from('profiles')
-        .select('id, username, full_name, avatar_url, avatars, user_type, talents, is_banned, tax_office, tax_number, bio, created_at, updated_at, last_seen_at, followers_count, following_count, videos_count, radars_count')
+        .select('id, username, full_name, avatar_url, avatars, user_type, talents, is_banned, tax_office, tax_number, bio, created_at, updated_at, last_seen_at, followers_count, following_count, videos_count, radars_count, hide_likes, hide_saves')
         .eq('id', user.id)
         .single();
 
@@ -153,7 +155,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           userData: {
             username: profile.username,
             fullName: profile.full_name,
-            talents: profile.talents,
+            talents: profile.talents ?? undefined,
           },
         }));
         // ✅ DÜZELDİ: last_seen_at doğrudan güncelle (bio hack'i kaldırıldı)
@@ -184,7 +186,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const { data: profile, error } = await supabase
       .from('profiles')
-      .select('id, username, full_name, avatar_url, avatars, user_type, talents, is_banned, tax_office, tax_number, bio, created_at, updated_at, last_seen_at, followers_count, following_count, videos_count, radars_count')
+      .select('id, username, full_name, avatar_url, avatars, user_type, talents, is_banned, tax_office, tax_number, bio, created_at, updated_at, last_seen_at, followers_count, following_count, videos_count, radars_count, hide_likes, hide_saves')
       .eq('id', uid)
       .single();
 
@@ -201,7 +203,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         userData: {
           username: profile.username,
           fullName: profile.full_name,
-          talents: profile.talents,
+          talents: profile.talents ?? undefined,
         },
       }));
     }
@@ -375,6 +377,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           tax_office: data.taxOffice,
           tax_number: data.taxNumber,
           phone: data.phone,
+          corporate_email: data.corporateEmail,
+          sector: data.sector,
           status: 'pending',
           created_at: new Date().toISOString(),
         });
