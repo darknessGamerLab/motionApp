@@ -18,6 +18,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { mergeTopInset } from '@/utils/safeInsets';
 
 interface SettingsScreenProps {
   onBackPress?: () => void;
@@ -87,10 +88,9 @@ function CorporateUpgradeModal({
     setError('');
     setLoading(true);
     const result = await submitCorporateApplication({
-      companyName: companyName.trim(),
-      taxOffice: taxOffice.trim(),
-      taxNumber: taxNumber.trim(),
       phone: phone.trim(),
+      corporateEmail: taxNumber.trim() + '@' + companyName.trim().replace(/\s+/g, '') + '.com',
+      sector: taxOffice.trim(),
     });
     setLoading(false);
     if (result.error) {
@@ -219,6 +219,7 @@ function CorporateUpgradeModal({
 
 export default function SettingsScreen({ onBackPress, onEditProfile }: SettingsScreenProps) {
   const insets = useSafeAreaInsets();
+  const topInset = mergeTopInset(insets);
   const { logout, authState, refreshProfile } = useAuth();
   const [showCorporateModal, setShowCorporateModal] = useState(false);
 
@@ -242,7 +243,7 @@ export default function SettingsScreen({ onBackPress, onEditProfile }: SettingsS
   };
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
+    <View style={[styles.container, { paddingTop: topInset }]}>
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity style={styles.backButton} onPress={onBackPress}>
@@ -264,7 +265,10 @@ export default function SettingsScreen({ onBackPress, onEditProfile }: SettingsS
         </Text>
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: Math.max(40, insets.bottom + 24) }]}
+      >
         {/* Hesap Grubu */}
         <Text style={styles.sectionLabel}>Hesap</Text>
         <View style={styles.group}>

@@ -16,16 +16,15 @@ import GuestAuthModal from '@/components/GuestAuthModal';
 import Colors from '@/constants/Colors';
 import { getTalentById } from '@/constants/Talents';
 import { useAuth } from '@/contexts/AuthContext';
+import { useTheme } from '@/contexts/ThemeContext';
 import { useFeed } from '@/hooks/useFeed';
 import { Ionicons } from '@expo/vector-icons';
-import { useIsFocused } from '@react-navigation/native';
+import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import { Image } from 'expo-image';
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
   Modal,
-  Platform,
-  StatusBar,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -112,17 +111,15 @@ function buildProfile(authState: any) {
   const p = authState.profile as any;
   const talentIds = authState.userData?.talents || [];
   const skills = talentIds.map((id: string) => getTalentById(id)?.name || '').filter(Boolean);
-  const avatarFallback = p?.username
-    ? `https://ui-avatars.com/api/?name=${encodeURIComponent(p.username)}&background=random&size=300`
-    : 'https://ui-avatars.com/api/?name=U&background=888&color=fff&size=300';
+  
   return {
     id: p?.id || 'current',
     username: p?.username || authState.userData?.username || 'kullanici',
     fullName: p?.full_name || authState.userData?.fullName || 'Kullanıcı',
     bio: p?.bio || 'Merhaba! 👋',
-    avatarUri: p?.avatar_url || avatarFallback,
-    avatars: p?.avatars?.length > 0 ? p.avatars : p?.avatar_url ? [p.avatar_url] : [avatarFallback],
-    avatar: p?.avatar_url || avatarFallback,
+    avatarUri: p?.avatar_url || null,
+    avatars: p?.avatars?.length > 0 ? p.avatars : p?.avatar_url ? [p.avatar_url] : [],
+    avatar: p?.avatar_url || null,
     skills: skills.length > 0 ? skills : [],
     talents: talentIds,
     following: p?.following_count ?? 0,
@@ -138,6 +135,7 @@ function buildProfile(authState: any) {
 // ─── Main Layout ─────────────────────────────────────────────────────
 export default function MainLayout() {
   const { authState } = useAuth();
+  const { syncAndroidSystemChrome } = useTheme();
   const insets = useSafeAreaInsets();
   const [tab, setTab] = useState(0);
   const [userProfileOpen, setUserProfileOpen] = useState(false);
@@ -167,13 +165,16 @@ export default function MainLayout() {
     if (authState.profile) setProfile(buildProfile(authState));
   }, [authState.profile]);
 
-  // ─── Status bar ──────────────────────────────────────────────────────
+  // ─── Android sistem çubukları (modal/klavye sonrası beyaza dönmesin) ─
+  useFocusEffect(
+    useCallback(() => {
+      syncAndroidSystemChrome();
+    }, [syncAndroidSystemChrome])
+  );
+
   useEffect(() => {
-    if (Platform.OS === 'android') {
-      StatusBar.setBackgroundColor(Colors.surface);
-      StatusBar.setBarStyle('dark-content');
-    }
-  }, []);
+    if (userProfileOpen) syncAndroidSystemChrome();
+  }, [userProfileOpen, syncAndroidSystemChrome]);
 
   // ─── Navigation helpers ──────────────────────────────────────────────
   const openProfile = useCallback((uid: string) => {
@@ -253,7 +254,7 @@ export default function MainLayout() {
   const isFullscreen = tab === 2 || userProfileOpen;
 
   return (
-    <View style={[styles.root, { paddingTop: insets.top }]}>
+    <View style={styles.root}>
       <View style={styles.content}>
         {/* Feed */}
         <LazyTabScreen visible={tab === 0 && !isFullscreen}>
@@ -324,7 +325,7 @@ export default function MainLayout() {
 
         {/* User Profile — fullscreen overlay */}
         <Modal visible={userProfileOpen} animationType="slide" transparent={true} onRequestClose={closeProfile}>
-          <View style={styles.fullscreen}>
+          <View style={[styles.fullscreen, styles.userProfileModalRoot]}>
             <UserProfileScreen
               isActive={userProfileOpen}
               onBackPress={closeProfile}
@@ -348,9 +349,9 @@ export default function MainLayout() {
           <TabBtn icon="add" active={false} isCreate onPress={() => requireAuthTab('create', () => setTab(2))} />
           <TabBtn icon={tab === 3 ? 'notifications' : 'notifications-outline'} active={tab === 3} onPress={() => requireAuthTab('general', () => setTab(3))} />
           <TabBtn
-            icon={tab === 4 ? 'person' : 'person-outline'}
+            icon={tab === 4 ? 'person-circle' : 'person-circle-outline'}
             active={tab === 4}
-            avatar={profile?.avatarUri || null}
+            avatar={profile?.avatarUri}
             onPress={() => requireAuthTab('general', () => setTab(4))}
           />
         </View>
@@ -378,6 +379,8 @@ const styles = StyleSheet.create({
   screen: { ...StyleSheet.absoluteFillObject },
   hidden: { opacity: 0, pointerEvents: 'none' },
   fullscreen: { ...StyleSheet.absoluteFillObject, zIndex: 100 },
+  /** Başka kullanıcı profili — Me / tab ekranlarıyla aynı koyu gri zemin + status bar surface */
+  userProfileModalRoot: { backgroundColor: Colors.tabScreenBackground },
   navbar: {
     flexDirection: 'row',
     backgroundColor: Colors.surface,

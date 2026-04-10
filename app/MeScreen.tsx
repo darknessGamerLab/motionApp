@@ -7,8 +7,10 @@ import VideoPlayerModal from "@/components/VideoPlayerModal";
 import Colors from "@/constants/Colors";
 import { getTalentById, getTalentByName } from "@/constants/Talents";
 import { useAuth } from "@/contexts/AuthContext";
+import { useTheme } from "@/contexts/ThemeContext";
 import { useVideoPlayer as usePlayerModal } from "@/hooks/useVideoPlayer";
 import { supabase } from "@/lib/supabase";
+import { eventBus } from "@/lib/eventBus";
 import { VideoItem } from "@/types/video";
 import { formatNumber } from "@/utils/format";
 import { Ionicons } from "@expo/vector-icons";
@@ -70,12 +72,19 @@ export default function MeScreen({
   onUserPress,
 }: MeScreenProps) {
   const insets = useSafeAreaInsets();
+  const { syncAndroidSystemChrome } = useTheme();
   // ── Video player modal — extracted to useVideoPlayer hook (replaces 3 manual states)
   const player = usePlayerModal();
 
   const [showSettings, setShowSettings] = useState(false);
   const [showEditProfile, setShowEditProfile] = useState(false);
   const { authState } = useAuth();
+
+  useEffect(() => {
+    if (showSettings || showEditProfile) {
+      syncAndroidSystemChrome();
+    }
+  }, [showSettings, showEditProfile, syncAndroidSystemChrome]);
   const userId = authState.user?.id;
 
   // DB'den kullanıcının kendi videoları
@@ -204,7 +213,30 @@ export default function MeScreen({
   useEffect(() => {
     hasFetchedRef.current = false;
     fetchMyData();
-  }, [userId]);
+
+    // ─── Realtime state sync via EventBus ────────────────────────────
+    const unsubLike = eventBus.on('video:liked', ({ videoId, isLiked }) => {
+      // If a video was liked, we might need to add it to liked list or update its status
+      // For simplicity, we just force a re-fetch of liked tab data if needed, 
+      // or optimistically add/remove from local state.
+      if (isLiked) {
+        // We don't have the full video item here, so a re-fetch is safest for consistency
+        fetchMyData(true);
+      } else {
+        setDbLikedVideos(prev => prev.filter(v => v.id !== videoId));
+      }
+    });
+
+    const unsubSave = eventBus.on('video:saved', ({ videoId, isSaved }) => {
+      if (!isSaved) {
+        setDbSavedVideos(prev => prev.filter(v => v.id !== videoId));
+      } else {
+        fetchMyData(true);
+      }
+    });
+
+    return () => { unsubLike(); unsubSave(); };
+  }, [userId, fetchMyData]);
 
   // userProfile'dan user bilgilerini al
   const user = useMemo(
@@ -212,15 +244,8 @@ export default function MeScreen({
       username: userProfile?.username || "kullanici",
       fullName: userProfile?.fullName || "Kullanıcı",
       bio: userProfile?.bio || "Merhaba! 👋",
-      // Use real avatar_urls array if available, else single avatar_url, else generated
-      avatars:
-        userProfile?.avatars?.length > 0
-          ? userProfile.avatars
-          : userProfile?.avatar
-            ? [userProfile.avatar]
-            : [
-              `https://ui-avatars.com/api/?name=${encodeURIComponent(userProfile?.username || "U")}&background=random&size=300`,
-            ],
+      avatar: userProfile?.avatar_url || null,
+      avatars: userProfile?.avatars?.length > 0 ? userProfile.avatars : userProfile?.avatar_url ? [userProfile.avatar_url] : [],
       skills: userProfile?.skills || [],
       following: userProfile?.following || 0,
       followers: userProfile?.followers || 0,
@@ -288,7 +313,7 @@ export default function MeScreen({
   if (dbLoading && dbUserVideos.length === 0) {
     return (
       <View style={styles.container}>
-        <View style={styles.header}>
+        <View style={[styles.header, { paddingTop: insets.top }]}>
           <SkeletonLoader width={120} height={16} borderRadius={8} />
           <SkeletonLoader width={32} height={32} borderRadius={16} />
         </View>
@@ -314,13 +339,13 @@ export default function MeScreen({
   return (
     <View style={styles.container}>
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top }]}>
         <Text style={styles.headerUsername}>@{user.username}</Text>
         <TouchableOpacity
           style={styles.headerButton}
           onPress={() => setShowSettings(true)}
         >
-          <Ionicons name="settings-outline" size={24} color="#000" />
+          <Ionicons name="settings-outline" size={24} color="#fff" />
         </TouchableOpacity>
       </View>
 
@@ -491,7 +516,7 @@ export default function MeScreen({
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
+  container: { flex: 1, backgroundColor: Colors.tabScreenBackground },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",

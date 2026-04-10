@@ -1,9 +1,19 @@
 import { Database } from '@/types/database';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
+import Constants from 'expo-constants';
 
-const supabaseUrl = 'https://mhgxrzejobmkuwylyelx.supabase.co';
-const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1oZ3hyemVqb2Jta3V3eWx5ZWx4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njc1ODY0NDksImV4cCI6MjA4MzE2MjQ0OX0.8IDCg303cgOsglyydOPm_-GBQaEJNKBFEZk8NrtSK24';
+type SupabaseExtra = { supabaseUrl?: string; supabaseAnonKey?: string };
+
+const extra = Constants.expoConfig?.extra as SupabaseExtra | undefined;
+const supabaseUrl = extra?.supabaseUrl?.trim() ?? '';
+const supabaseAnonKey = extra?.supabaseAnonKey?.trim() ?? '';
+
+if (!supabaseUrl || !supabaseAnonKey) {
+  throw new Error(
+    '[supabase] .env.local içinde SUPABASE_URL ve SUPABASE_ANON_KEY tanımlayın (app.config.js → extra). Örnek: .env.example'
+  );
+}
 
 export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
   auth: {

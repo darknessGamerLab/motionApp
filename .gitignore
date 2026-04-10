@@ -33,6 +33,9 @@ yarn-error.*
 # local env files
 .env*.local
 
+# Firebase Android (API key + project id; yerelde tut, repoya koyma)
+google-services.json
+
 # typescript
 *.tsbuildinfo
 
@@ -42,7 +45,25 @@ app-example
 /ios
 /android
 
-# logs
-tsc_errors.log
-tsc_final.log
+# logs & debug
+*.log
+*.txt
+check_video_size.js
+fetch_last_video.js
+test_anon_fetch.js
+rn_config.json
+scan_results.txt
+scripts/scan_large_files.ps1
 
+# Android build cache
+android/app/.cxx/
+android/app/build/
+android/build/
+android/.gradle/
+android/.kotlin/
+
+# Admin Panel
+ADMIN_PANEL/api/.env
+ADMIN_PANEL/api/node_modules/
+ADMIN_PANEL/web/node_modules/
+ADMIN_PANEL/web/dist/

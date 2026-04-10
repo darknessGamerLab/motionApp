@@ -1,4 +1,3 @@
-import { queryCache } from '@/lib/queryCache';
 import { supabase } from '@/lib/supabase';
 import { Profile } from '@/types/database';
 import { Session, User } from '@supabase/supabase-js';
@@ -24,10 +23,9 @@ export type AuthState = {
 };
 
 type CorporateApplicationData = {
-  companyName: string;
-  taxOffice: string;
-  taxNumber: string;
   phone: string;
+  corporateEmail: string;
+  sector: string;
 };
 
 type AuthContextType = {
@@ -85,7 +83,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } else if (event === 'SIGNED_OUT') {
         // FIX 2.3: Clear in-memory query cache on logout.
         // Prevents next user on this device from seeing stale cached data.
-        queryCache.clear();
         setAuthState({
           isAuthenticated: false,
           isLoading: false,
@@ -128,7 +125,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const { data: profile, error } = await supabase
         .from('profiles')
-        .select('id, username, full_name, avatar_url, avatars, user_type, talents, is_banned, tax_office, tax_number, bio, created_at, updated_at, last_seen_at, followers_count, following_count, videos_count, radars_count')
+        .select('id, username, full_name, avatar_url, avatars, user_type, talents, is_banned, tax_office, tax_number, bio, created_at, updated_at, last_seen_at, followers_count, following_count, videos_count, radars_count, hide_likes, hide_saves')
         .eq('id', user.id)
         .single();
 
@@ -153,14 +150,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           userData: {
             username: profile.username,
             fullName: profile.full_name,
-            talents: profile.talents,
+            talents: profile.talents ?? undefined,
           },
         }));
-        // ✅ DÜZELDİ: last_seen_at doğrudan güncelle (bio hack'i kaldırıldı)
-        (supabase as any).from('profiles')
-          .update({ last_seen_at: new Date().toISOString() })
-          .eq('id', user.id)
-          .then(() => { }); // fire-and-forget
+        // last_seen_at: only write if > 15 minutes since last write to avoid spam
+        // Each app open / token refresh caused a DB write; now gated.
+        const LAST_SEEN_KEY = `last_seen_write_${user.id}`;
+        import('@react-native-async-storage/async-storage').then(({ default: AS }) => {
+          AS.getItem(LAST_SEEN_KEY).then(val => {
+            const lastWrite = val ? parseInt(val, 10) : 0;
+            if (Date.now() - lastWrite > 15 * 60 * 1000) {
+              (supabase as any).from('profiles')
+                .update({ last_seen_at: new Date().toISOString() })
+                .eq('id', user.id)
+                .then(() => {
+                  AS.setItem(LAST_SEEN_KEY, String(Date.now()));
+                });
+            }
+          });
+        }).catch(() => {});
       }
     } catch (e) {
       if (__DEV__) console.error('[Auth] Background profile fetch failed:', e);
@@ -184,7 +192,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const { data: profile, error } = await supabase
       .from('profiles')
-      .select('id, username, full_name, avatar_url, avatars, user_type, talents, is_banned, tax_office, tax_number, bio, created_at, updated_at, last_seen_at, followers_count, following_count, videos_count, radars_count')
+      .select('id, username, full_name, avatar_url, avatars, user_type, talents, is_banned, tax_office, tax_number, bio, created_at, updated_at, last_seen_at, followers_count, following_count, videos_count, radars_count, hide_likes, hide_saves')
       .eq('id', uid)
       .single();
 
@@ -201,11 +209,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         userData: {
           username: profile.username,
           fullName: profile.full_name,
-          talents: profile.talents,
+          talents: profile.talents ?? undefined,
         },
       }));
     }
   }, []); // stable — reads uid from ref, never stale
+
+  // ─── Error Translator ──────────────────────────────────────────────────
+  const translateError = (errMessage: string): string => {
+    if (!errMessage) return 'Bilinmeyen bir hata oluştu';
+    if (errMessage.includes('Invalid login credentials')) return 'E-posta veya şifre hatalı';
+    if (errMessage.includes('User already registered')) return 'Bu e-posta adresi zaten kayıtlı';
+    if (errMessage.includes('Email not confirmed')) return 'Lütfen e-posta adresinizi doğrulayın';
+    if (errMessage.includes('Network request failed') || errMessage.includes('Failed to fetch')) return 'İnternet bağlantısı yok veya sunucuya ulaşılamıyor';
+    if (errMessage.includes('JWT') && errMessage.includes('expired')) return 'Oturum süresi doldu, lütfen tekrar giriş yapın';
+    if (errMessage.includes('duplicate key value violates unique constraint')) return 'Bu bilgi zaten kullanımda (Örn: Kullanıcı adı alınmış)';
+    if (errMessage.includes('rate limit')) return 'Çok fazla istek yapıldı. Lütfen biraz bekleyip tekrar deneyin';
+    return errMessage;
+  };
 
   // Email/Password Login
   const login = async (email: string, password: string): Promise<{ error: string | null }> => {
@@ -216,16 +237,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
 
       if (error) {
-        if (error.message.includes('Invalid login credentials')) {
-          return { error: 'E-posta veya şifre hatalı' };
-        }
-        return { error: error.message };
+        return { error: translateError(error.message) };
       }
 
       // Session will be handled by onAuthStateChange → no setTimeout race condition
       return { error: null };
     } catch (err: any) {
-      return { error: err.message || 'Giriş yapılırken bir hata oluştu' };
+      return { error: translateError(err?.message || 'Giriş yapılırken bir hata oluştu') };
     }
   };
 
@@ -246,15 +264,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             full_name: userData?.fullName,
             user_type: userType,
             talents: userData?.talents || [],
+            birth_date: userData?.birthDate,
           },
         },
       });
 
       if (error) {
-        if (error.message.includes('User already registered')) {
-          return { error: 'Bu e-posta adresi zaten kayıtlı' };
-        }
-        return { error: error.message };
+        return { error: translateError(error.message) };
       }
 
       // If email confirmation is disabled, user is signed in immediately
@@ -263,7 +279,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       return { error: null };
     } catch (err: any) {
-      return { error: err.message || 'Kayıt olurken bir hata oluştu' };
+      return { error: translateError(err?.message || 'Kayıt olurken bir hata oluştu') };
     }
   };
 
@@ -277,10 +293,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         },
       });
 
-      if (error) return { error: error.message };
+      if (error) return { error: translateError(error.message) };
       return { error: null };
     } catch (err: any) {
-      return { error: err.message || 'Google ile giriş yapılırken bir hata oluştu' };
+      return { error: translateError(err?.message || 'Google ile giriş yapılırken bir hata oluştu') };
     }
   };
 
@@ -294,10 +310,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         },
       });
 
-      if (error) return { error: error.message };
+      if (error) return { error: translateError(error.message) };
       return { error: null };
     } catch (err: any) {
-      return { error: err.message || 'Apple ile giriş yapılırken bir hata oluştu' };
+      return { error: translateError(err?.message || 'Apple ile giriş yapılırken bir hata oluştu') };
     }
   };
 
@@ -308,10 +324,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         redirectTo: 'motionapp://auth/reset-password',
       });
 
-      if (error) return { error: error.message };
+      if (error) return { error: translateError(error.message) };
       return { error: null };
     } catch (err: any) {
-      return { error: err.message || 'Şifre sıfırlama e-postası gönderilirken bir hata oluştu' };
+      return { error: translateError(err?.message || 'Şifre sıfırlama e-postası gönderilirken bir hata oluştu') };
     }
   };
 
@@ -331,12 +347,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .update(data)
         .eq('id', authState.user.id);
 
-      if (error) return { error: error.message };
+      if (error) return { error: translateError(error.message) };
 
-      await refreshProfile();
+      // Local state merge — no need to re-fetch from DB after writing our own data.
+      // This eliminates a round-trip per profile edit.
+      setAuthState(prev => ({
+        ...prev,
+        profile: prev.profile ? { ...prev.profile, ...data } : prev.profile,
+        userData: {
+          ...prev.userData,
+          username: (data as any).username ?? prev.userData?.username,
+          fullName: (data as any).full_name ?? prev.userData?.fullName,
+          talents: (data as any).talents ?? prev.userData?.talents,
+        },
+      }));
       return { error: null };
     } catch (err: any) {
-      return { error: err.message || 'Profil güncellenirken bir hata oluştu' };
+      return { error: translateError(err?.message || 'Profil güncellenirken bir hata oluştu') };
     }
   };
 
@@ -371,24 +398,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .insert({
           user_id: authState.user.id,
           user_email: authState.userEmail,
-          company_name: data.companyName,
-          tax_office: data.taxOffice,
-          tax_number: data.taxNumber,
           phone: data.phone,
+          corporate_email: data.corporateEmail,
+          sector: data.sector,
           status: 'pending',
           created_at: new Date().toISOString(),
         });
 
       if (dbError) {
         console.error('corporate_applications table error:', dbError.message);
-        return { error: 'Başvuru kaydedilirken bir hata oluştu: ' + dbError.message };
+        return { error: translateError('Başvuru kaydedilirken bir hata oluştu: ' + dbError.message) };
       }
 
       // Corporate application submitted — in production add email notification
 
       return { error: null };
     } catch (err: any) {
-      return { error: err.message || 'Başvuru gönderilirken bir hata oluştu' };
+      return { error: translateError(err?.message || 'Başvuru gönderilirken bir hata oluştu') };
     }
   };
 

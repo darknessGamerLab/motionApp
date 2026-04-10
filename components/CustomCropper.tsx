@@ -144,7 +144,7 @@ export default function CustomCropper({ visible, imageUri, onClose, onCrop }: Cu
                         { crop: { originX, originY, width: cropW, height: cropH } },
                         { resize: { width: 500, height: 500 } }
                     ],
-                    { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG }
+                    { compress: 0.8, format: ImageManipulator.SaveFormat.WEBP }
                 );
 
                 setLoading(false);

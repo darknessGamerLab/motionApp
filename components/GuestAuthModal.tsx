@@ -2,20 +2,22 @@
  * GuestAuthModal — Giriş yapılmamış kullanıcıya native bottom sheet popup
  * Like, yorum, takip gibi aksiyonlarda gösterilir.
  */
-import Colors from '@/constants/Colors';
-import { Ionicons } from '@expo/vector-icons';
+import { DarkPalette as Colors } from '@/constants/Colors';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import React, { useEffect, useRef } from 'react';
 import {
     Animated,
     Dimensions,
     Modal,
+    Platform,
     StyleSheet,
     Text,
     TouchableOpacity,
     TouchableWithoutFeedback,
     View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const { height: SCREEN_H } = Dimensions.get('window');
 const SHEET_H = 380;
@@ -61,6 +63,7 @@ const ACTION_COPY: Record<string, { icon: string; title: string; subtitle: strin
 };
 
 export default function GuestAuthModal({ visible, onClose, action = 'general' }: GuestAuthModalProps) {
+    const insets = useSafeAreaInsets();
     const slideAnim = useRef(new Animated.Value(SHEET_H)).current;
     const bgOpacity = useRef(new Animated.Value(0)).current;
 
@@ -68,11 +71,12 @@ export default function GuestAuthModal({ visible, onClose, action = 'general' }:
 
     useEffect(() => {
         if (visible) {
+            slideAnim.setValue(SHEET_H);
             Animated.parallel([
                 Animated.spring(slideAnim, {
                     toValue: 0,
-                    tension: 65,
-                    friction: 11,
+                    tension: 50,
+                    friction: 7,
                     useNativeDriver: true,
                 }),
                 Animated.timing(bgOpacity, {
@@ -111,7 +115,7 @@ export default function GuestAuthModal({ visible, onClose, action = 'general' }:
         <Modal
             transparent
             visible={visible}
-            animationType="none"
+            animationType="fade"
             statusBarTranslucent
             onRequestClose={onClose}
         >
@@ -122,7 +126,7 @@ export default function GuestAuthModal({ visible, onClose, action = 'general' }:
 
             {/* Bottom Sheet */}
             <Animated.View
-                style={[styles.sheet, { transform: [{ translateY: slideAnim }] }]}
+                style={[styles.sheet, { paddingBottom: Math.max(insets.bottom + 16, 36), transform: [{ translateY: slideAnim }] }]}
             >
                 {/* Handle bar */}
                 <View style={styles.handleBar} />
@@ -165,18 +169,11 @@ const styles = StyleSheet.create({
         bottom: 0,
         left: 0,
         right: 0,
-        height: SHEET_H,
-        backgroundColor: Colors.background,
-        borderTopLeftRadius: 24,
-        borderTopRightRadius: 24,
+        backgroundColor: '#111111', // 1 derece daha açık siyah
+        borderTopLeftRadius: 28,
+        borderTopRightRadius: 28,
         paddingHorizontal: 24,
-        paddingBottom: 32,
         alignItems: 'center',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: -4 },
-        shadowOpacity: 0.15,
-        shadowRadius: 16,
-        elevation: 20,
     },
     handleBar: {
         width: 40,
@@ -200,14 +197,14 @@ const styles = StyleSheet.create({
     title: {
         fontSize: 20,
         fontFamily: 'Poppins_700Bold',
-        color: Colors.text,
+        color: '#FFFFFF',
         textAlign: 'center',
         marginBottom: 8,
     },
     subtitle: {
         fontSize: 14,
         fontFamily: 'Poppins_400Regular',
-        color: Colors.textSecondary,
+        color: '#A0A0A0', // Daha açık gri
         textAlign: 'center',
         lineHeight: 20,
         marginBottom: 28,
@@ -236,15 +233,15 @@ const styles = StyleSheet.create({
         width: '100%',
         height: 52,
         borderRadius: 14,
-        backgroundColor: Colors.background,
+        backgroundColor: '#000000',
         borderWidth: 1.5,
-        borderColor: Colors.border,
+        borderColor: '#2C2C2E',
         alignItems: 'center',
         justifyContent: 'center',
         marginBottom: 12,
     },
     signupBtnText: {
-        color: Colors.text,
+        color: '#FFFFFF',
         fontSize: 16,
         fontFamily: 'Poppins_600SemiBold',
     },

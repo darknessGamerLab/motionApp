@@ -55,6 +55,33 @@ const timeAgo = (date: string) => {
   return `${Math.floor(days / 7)} hf`;
 };
 
+/** Tek satırda yalnızca @kullanıcı adı + kısa eylem metni; DB’deki mesajda ad/soyad tekrarını göstermeyiz. */
+function formatNotifHandle(username: string): string {
+  if (!username || username === 'Sistem' || username === 'Kullanıcı') return username;
+  return username.startsWith('@') ? username : `@${username}`;
+}
+
+function notificationDisplayContent(
+  type: NotifType,
+  rawMessage: string | null | undefined
+): string {
+  const m = (rawMessage ?? '').trim();
+  switch (type) {
+    case 'like':
+      return 'videonu beğendi';
+    case 'follow':
+      return 'seni takip etmeye başladı';
+    case 'radar':
+      return m || 'seni radara aldı';
+    case 'comment':
+      return m || 'yorum yaptı';
+    case 'system':
+      return m;
+    default:
+      return m;
+  }
+}
+
 // MOCK data removed — notifications are now 100% real from Supabase notifications table
 // Trigger `enrich_notification_thumbnail_trigger` auto-populates thumbnail_url on insert
 
@@ -160,7 +187,9 @@ const NotifRow = memo(function NotifRow({
         {/* Text */}
         <View style={s.textCol}>
           <Text style={s.rowText} numberOfLines={3}>
-            {item.type !== 'system' && <Text style={s.boldText}>{item.user.username} </Text>}
+            {item.type !== 'system' && (
+              <Text style={s.boldText}>{formatNotifHandle(item.user.username)} </Text>
+            )}
             <Text style={item.type === 'system' ? s.systemText : null}>{item.content}</Text>
           </Text>
           <Text style={s.timeText}>{item.time} önce</Text>
@@ -227,7 +256,7 @@ export default function NotificationsScreen({ isActive = true, onUserPress, onLo
       const { data, error } = await supabase
         .from('notifications')
         .select(`
-          id, type, message, created_at, is_read, from_user_id, video_id,
+          id, type, message, created_at, is_read, from_user_id, video_id, thumbnail_url,
           profiles!notifications_from_user_id_fkey (
             username,
             avatar_url
@@ -247,7 +276,7 @@ export default function NotificationsScreen({ isActive = true, onUserPress, onLo
           username: d.profiles?.username || 'Sistem',
           avatar: d.profiles?.avatar_url || 'https://i.pravatar.cc/100',
         },
-        content: d.message || '',
+        content: notificationDisplayContent(d.type as NotifType, d.message),
         time: timeAgo(d.created_at),
         isRead: d.is_read,
         thumbnail: d.thumbnail_url || undefined,
@@ -317,7 +346,7 @@ export default function NotificationsScreen({ isActive = true, onUserPress, onLo
                 username: data.profiles?.username || 'Kullanıcı',
                 avatar: data.profiles?.avatar_url || 'https://i.pravatar.cc/100',
               },
-              content: data.message || '',
+              content: notificationDisplayContent(data.type as NotifType, data.message),
               time: 'şimdi',
               isRead: false,
               thumbnail: undefined,
@@ -399,7 +428,7 @@ export default function NotificationsScreen({ isActive = true, onUserPress, onLo
   return (
     <View style={s.container}>
       {/* Header */}
-      <View style={s.header}>
+      <View style={[s.header, { paddingTop: insets.top }]}>
         <Text style={s.headerTitle}>Bildirimler</Text>
         {unread > 0 && (
           <TouchableOpacity onPress={markAll} style={s.markAllBtn}>
@@ -488,9 +517,11 @@ const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
 
   header: {
-    height: 52, flexDirection: 'row',
+    flexDirection: 'row',
     alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: 18,
+    paddingTop: 14,
+    paddingBottom: 14,
     backgroundColor: Colors.surface,
     borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: Colors.border,
   },

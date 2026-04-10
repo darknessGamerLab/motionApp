@@ -1,0 +1,11 @@
+# Supabase
+.branches
+.temp
+
+# SQL Editor taslakları (yanlışlıkla DELETE / tekrar policy commitlenmesin)
+snippets/
+
+# dotenvx
+.env.keys
+.env.local
+.env.*.local

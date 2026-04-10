@@ -1,7 +1,8 @@
-import Colors from '@/constants/Colors';
+import { DarkPalette as Colors } from '@/constants/Colors';
 import { useAuth } from '@/contexts/AuthContext';
+import { useDebounce } from '@/hooks/useDebounce';
 import { supabase } from '@/lib/supabase';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import React, { useRef, useState } from 'react';
 import {
@@ -26,12 +27,14 @@ export default function SignupScreen() {
   const [fullName, setFullName] = useState('');
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
+  const [birthDate, setBirthDate] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPass, setConfirmPass] = useState('');
   const [verificationCode, setVerificationCode] = useState('');
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
   const [verifyLoading, setVerifyLoading] = useState(false);
+  const verifyingRef = useRef(false); // BUG-08 FIX: prevent double-submit
   const [gLoading, setGLoading] = useState(false);
   const [error, setError] = useState('');
   const [usernameState, setUsernameState] = useState<'idle' | 'checking' | 'ok' | 'taken' | 'invalid'>('idle');
@@ -48,26 +51,58 @@ export default function SignupScreen() {
   const strengthLabel = ['', 'Zayıf', 'Orta', 'Güçlü'][passwordStrength];
   const strengthColor = ['', Colors.error, '#F5A623', Colors.success][passwordStrength];
 
-  const checkUsername = async (val: string) => {
+  // BUG-01 FIX: debounce the raw input then fire one DB check per settled value
+  const [usernameInput, setUsernameInput] = useState('');
+  const debouncedUsername = useDebounce(usernameInput, 400);
+
+  // When debounced value changes, run a single availability check
+  // (React.useEffect runs after render — no closure / race condition possible)
+  React.useEffect(() => {
+    const v = debouncedUsername;
+    if (!v || v.length < 3 || !/^[a-z0-9_]+$/.test(v)) return;
+    setUsernameState('checking');
+    checkUsernameAvailable(v).then(ok => {
+      setUsernameState(ok ? 'ok' : 'taken');
+    });
+  }, [debouncedUsername]);
+
+  const checkUsername = (val: string) => {
     const v = val.replace(/\s/g, '').toLowerCase();
     setUsername(v);
+    setUsernameInput(v);
     setError('');
     if (!v) { setUsernameState('idle'); return; }
     if (!/^[a-z0-9_]+$/.test(v)) { setUsernameState('invalid'); return; }
     if (v.length < 3) { setUsernameState('idle'); return; }
+    // Optimistically show 'checking' until debounce fires
     setUsernameState('checking');
-    const ok = await checkUsernameAvailable(v);
-    setUsernameState(ok ? 'ok' : 'taken');
   };
 
   const usernameColor =
     usernameState === 'ok' ? Colors.success :
       usernameState === 'taken' || usernameState === 'invalid' ? Colors.error : Colors.border;
+      
+  const handleDateChange = (t: string) => {
+    let v = t.replace(/[^0-9]/g, '');
+    if (v.length > 2) v = v.slice(0, 2) + '/' + v.slice(2);
+    if (v.length > 5) v = v.slice(0, 5) + '/' + v.slice(5);
+    setBirthDate(v.slice(0, 10));
+    setError('');
+  };
 
   const handleSignup = async () => {
-    if (!fullName.trim() || !username.trim() || !email.trim() || !password) {
+    if (!fullName.trim() || !username.trim() || !email.trim() || !password || !birthDate) {
       setError('Tüm alanları doldurun'); return;
     }
+    
+    // YYYY-MM-DD
+    if (birthDate.length !== 10) { setError('Doğum tarihini GG/AA/YYYY formatında girin'); return; }
+    const parts = birthDate.split('/');
+    const dob = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
+    if (isNaN(dob.getTime())) { setError('Geçersiz doğum tarihi'); return; }
+    const age = (Date.now() - dob.getTime()) / (1000 * 60 * 60 * 24 * 365.25);
+    if (age < 7) { setError('Kayıt olmak için en az 7 yaşında olmalısınız'); return; }
+
     if (usernameState === 'taken') { setError('Bu kullanıcı adı alınmış'); return; }
     if (usernameState === 'invalid') { setError('Geçersiz kullanıcı adı'); return; }
     if (password.length < 8) { setError('Şifre en az 8 karakter olmalı'); return; }
@@ -77,6 +112,7 @@ export default function SignupScreen() {
     const res = await signup(email.trim().toLowerCase(), password, 'individual', {
       username: username.toLowerCase(),
       fullName: fullName.trim(),
+      birthDate: `${parts[2]}-${parts[1]}-${parts[0]}`, // YYYY-MM-DD for DB
     });
     setLoading(false);
 
@@ -93,10 +129,12 @@ export default function SignupScreen() {
   };
 
   const handleVerify = async () => {
+    if (verifyingRef.current) return; // BUG-08 FIX: block double-tap
     if (verificationCode.length !== 6) {
       setError('6 haneli kodu giriniz');
       return;
     }
+    verifyingRef.current = true;
     setVerifyLoading(true);
     setError('');
 
@@ -107,6 +145,7 @@ export default function SignupScreen() {
     });
 
     setVerifyLoading(false);
+    verifyingRef.current = false;
 
     if (error) {
       setError(error.message || 'Kod hatalı veya süresi dolmuş');
@@ -120,7 +159,7 @@ export default function SignupScreen() {
     return (
       <View style={[s.root, s.verifyWrap, { paddingTop: insets.top }]}>
         <View style={s.verifyCard}>
-          <View style={[s.logoCircle, { backgroundColor: Colors.success + '20', marginBottom: 20 }]}>
+          <View style={{ width: 64, height: 64, borderRadius: 20, backgroundColor: Colors.success + '20', alignItems: 'center', justifyContent: 'center', marginBottom: 20 }}>
             <Ionicons name="mail-outline" size={32} color={Colors.success} />
           </View>
           <Text style={s.verifyTitle}>E-postanı Doğrula</Text>
@@ -187,9 +226,6 @@ export default function SignupScreen() {
           <TouchableOpacity style={s.backBtn} onPress={() => router.back()}>
             <Ionicons name="arrow-back" size={22} color={Colors.text} />
           </TouchableOpacity>
-          <View style={s.logoCircle}>
-            <Text style={s.logoText}>M</Text>
-          </View>
           <Text style={s.title}>Hesap Oluştur</Text>
           <Text style={s.subtitle}>Yeteneğini dünyayla paylaşmaya başla</Text>
         </View>
@@ -239,6 +275,20 @@ export default function SignupScreen() {
               onChangeText={t => { setEmail(t); setError(''); }}
               keyboardType="email-address"
               autoCapitalize="none"
+            />
+          </View>
+          
+          {/* Doğum Tarihi */}
+          <View style={s.inputWrap}>
+            <Ionicons name="calendar-outline" size={18} color={Colors.textMuted} style={s.inputIcon} />
+            <TextInput
+              style={s.input}
+              placeholder="Doğum Tarihi (GG/AA/YYYY)"
+              placeholderTextColor={Colors.textMuted}
+              value={birthDate}
+              onChangeText={handleDateChange}
+              keyboardType="number-pad"
+              maxLength={10}
             />
           </View>
 
@@ -315,6 +365,17 @@ export default function SignupScreen() {
             }
           </TouchableOpacity>
 
+          {/* Legal acceptance — no checkbox; registering = acceptance (Play Store + KVKK) */}
+          <Text style={s.legalText}>
+            {'Kayıt olarak '}
+            <Text style={s.legalLink} onPress={() => router.push('/legal/terms' as any)}>Kullanım Koşulları</Text>
+            {' ve '}
+            <Text style={s.legalLink} onPress={() => router.push('/legal/privacy' as any)}>Gizlilik Politikası</Text>
+            {' kabul etmiş sayılırsın. '}
+            <Text style={s.legalLink} onPress={() => router.push('/legal/kvkk' as any)}>KVKK</Text>
+          </Text>
+
+
           <View style={s.divider}>
             <View style={s.dividerLine} />
             <Text style={s.dividerText}>veya</Text>
@@ -328,10 +389,10 @@ export default function SignupScreen() {
             activeOpacity={0.85}
           >
             {gLoading ? (
-              <ActivityIndicator color={Colors.text} size="small" />
+              <ActivityIndicator color="#000000" size="small" />
             ) : (
               <>
-                <Text style={s.googleIcon}>G</Text>
+                <MaterialCommunityIcons name="google" size={20} color="#4285F4" />
                 <Text style={s.googleText}>Google ile Devam Et</Text>
               </>
             )}
@@ -355,8 +416,8 @@ export default function SignupScreen() {
 }
 
 const s = StyleSheet.create({
-  root: { flex: 1, backgroundColor: Colors.background },
-  inner: { flexGrow: 1, paddingHorizontal: 28, paddingBottom: 40 },
+  root: { flex: 1, backgroundColor: '#000000' },
+  inner: { flexGrow: 1, paddingHorizontal: 24, paddingBottom: 24 },
 
   // Verify step
   verifyWrap: { justifyContent: 'center', alignItems: 'center', paddingHorizontal: 32 },
@@ -382,24 +443,18 @@ const s = StyleSheet.create({
   },
 
   // Header
-  header: { alignItems: 'center', paddingTop: 40, paddingBottom: 36 },
-  backBtn: { position: 'absolute', left: 0, top: 40, padding: 4 },
-  logoCircle: {
-    width: 56, height: 56, borderRadius: 16,
-    backgroundColor: Colors.primary,
-    alignItems: 'center', justifyContent: 'center', marginBottom: 12,
-  },
-  logoText: { color: '#fff', fontSize: 28, fontFamily: 'Poppins_800ExtraBold' },
-  title: { fontSize: 22, fontFamily: 'Poppins_700Bold', color: Colors.text, letterSpacing: -0.5 },
-  subtitle: { fontSize: 14, color: Colors.textMuted, marginTop: 4, fontFamily: 'Poppins_400Regular' },
+  header: { alignItems: 'center', paddingTop: 24, paddingBottom: 20 },
+  backBtn: { position: 'absolute', left: 0, top: 24, padding: 4 },
+  title: { fontSize: 20, fontFamily: 'Poppins_700Bold', color: '#FFFFFF', letterSpacing: -0.5 },
+  subtitle: { fontSize: 13, color: '#A0A0A0', marginTop: 2, fontFamily: 'Poppins_400Regular' },
 
   // Form
-  form: { gap: 12 },
+  form: { gap: 8 },
   inputWrap: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: Colors.surface,
-    borderRadius: 12, borderWidth: 1, borderColor: Colors.border,
-    paddingHorizontal: 14, height: 52,
+    backgroundColor: '#111111',
+    borderRadius: 10,
+    paddingHorizontal: 12, height: 46,
   },
   inputIcon: { marginRight: 10 },
   input: { flex: 1, fontSize: 15, color: Colors.text, fontFamily: 'Poppins_400Regular' },
@@ -431,13 +486,11 @@ const s = StyleSheet.create({
   dividerText: { color: Colors.textMuted, fontSize: 13, fontFamily: 'Poppins_400Regular' },
 
   googleBtn: {
-    height: 52, borderRadius: 12,
-    backgroundColor: Colors.surface,
-    borderWidth: 1, borderColor: Colors.border,
+    height: 46, borderRadius: 10,
+    backgroundColor: '#FFFFFF',
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
   },
-  googleIcon: { fontSize: 18, fontFamily: 'Poppins_800ExtraBold', color: '#4285F4' },
-  googleText: { fontSize: 15, fontFamily: 'Poppins_600SemiBold', color: Colors.text },
+  googleText: { fontSize: 15, fontFamily: 'Poppins_600SemiBold', color: '#000000' },
 
   footer: { flexDirection: 'row', justifyContent: 'center', marginTop: 28 },
   footerText: { color: Colors.textSecondary, fontSize: 14, fontFamily: 'Poppins_400Regular' },
@@ -445,4 +498,19 @@ const s = StyleSheet.create({
 
   guestBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, marginTop: 12 },
   guestText: { color: Colors.textMuted, fontSize: 13, fontFamily: 'Poppins_400Regular' },
+
+  // Legal acceptance footer (no checkbox — registration implies acceptance)
+  legalText: {
+    color: Colors.textMuted,
+    fontSize: 11,
+    fontFamily: 'Poppins_400Regular',
+    textAlign: 'center',
+    lineHeight: 17,
+    marginTop: 8,
+  },
+  legalLink: {
+    color: Colors.primary,
+    textDecorationLine: 'underline',
+    fontFamily: 'Poppins_500Medium',
+  },
 });

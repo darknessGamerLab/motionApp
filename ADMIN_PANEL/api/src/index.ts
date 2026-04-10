@@ -8,10 +8,16 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// ─── Supabase Client ─────────────────────────────────────────────────
-const supabaseUrl = 'https://mhgxrzejobmkuwylyelx.supabase.co';
-const supabaseKey = process.env.SUPABASE_SERVICE_KEY ||
-    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1oZ3hyemVqb2Jta3V3eWx5ZWx4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njc1ODY0NDksImV4cCI6MjA4MzE2MjQ0OX0.8IDCg303cgOsglyydOPm_-GBQaEJNKBFEZk8NrtSK24';
+// ─── Supabase Client (yalnızca barındırılan proje; service_role .env’de) ─
+const supabaseUrl =
+    process.env.SUPABASE_URL?.trim() || 'https://mhgxrzejobmkuwylyelx.supabase.co';
+const supabaseKey = process.env.SUPABASE_SERVICE_KEY?.trim();
+if (!supabaseKey) {
+    console.error(
+        'ADMIN_PANEL/api: .env içinde SUPABASE_SERVICE_KEY (service_role) zorunlu. Örnek: .env.example'
+    );
+    process.exit(1);
+}
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 // ─── Middleware ──────────────────────────────────────────────────────
@@ -32,8 +38,12 @@ app.use(cors({
 app.use(express.json());
 
 // ─── Admin Auth Middleware ───────────────────────────────────────────
-// All /api/* routes require X-Admin-Key header
-const ADMIN_KEY = process.env.ADMIN_API_KEY || 'motionadmin-secret-2026';
+// All /api/* routes require X-Admin-Key header (asla repoda sabit şifre bırakma)
+const ADMIN_KEY = process.env.ADMIN_API_KEY?.trim();
+if (!ADMIN_KEY) {
+    console.error('ADMIN_PANEL/api: .env içinde ADMIN_API_KEY zorunlu. Örnek: .env.example');
+    process.exit(1);
+}
 
 app.use('/api', (req, res, next) => {
     const key = req.headers['x-admin-key'];
@@ -54,7 +64,7 @@ if (process.env.NODE_ENV !== 'production') {
 
 // Health Check — exempt from auth
 app.get('/', (_req, res) => {
-    res.json({ name: 'MotionApp Admin API', version: '2.0.4', status: 'ok' });
+    res.json({ name: 'MotionApp Admin API', version: '5.0.0', status: 'ok' });
 });
 
 // ═══════════════════════════════════════════════════════════════════
@@ -686,5 +696,5 @@ app.get('/api/saves', async (req, res) => {
 // ═══════════════════════════════════════════════════════════════════
 
 app.listen(PORT, () => {
-    console.log(`MotionApp Admin API v2.0.4 running on port ${PORT}`);
+    console.log(`MotionApp Admin API v5.0.0 running on port ${PORT}`);
 });

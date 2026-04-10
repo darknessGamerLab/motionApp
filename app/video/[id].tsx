@@ -3,7 +3,8 @@ import CommentsModal from "@/components/CommentsModal";
 import { CustomAlert } from '@/components/GlobalAlert';
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/lib/supabase";
-import { VideoItem } from "@/types/video";
+import { toVideoItem, VideoItem } from "@/types/video";
+import { annotateInteractions } from "@/utils/videoInteractions";
 import { Ionicons } from "@expo/vector-icons";
 import { FlashList } from "@shopify/flash-list";
 import { router, useLocalSearchParams } from "expo-router";
@@ -44,7 +45,8 @@ export default function VideoScreen() {
     // 1. Fetch exactly the subset of videos needed based on the feed context
     useEffect(() => {
         async function loadVideos() {
-            if (!currentUserId && !userId) return;
+            // Allow anon users to view videos (removed !currentUserId blocker)
+            if (!id && !userId) return;
 
             let fetched: VideoItem[] = [];
             try {
@@ -57,23 +59,7 @@ export default function VideoScreen() {
                         .limit(50);
 
                     if (!error && data) {
-                        fetched = data.map((row: any) => ({
-                            id: row.id,
-                            uri: row.video_url || "",
-                            thumbnail_url: row.thumbnail_url,
-                            user: {
-                                id: row.user_id,
-                                username: row.profiles?.username || "",
-                                avatar: row.profiles?.avatar_url,
-                            },
-                            description: row.description || "",
-                            topic: row.topic || "",
-                            likes: row.likes_count || 0,
-                            comments: row.comments_count || 0,
-                            shares: row.shares_count || 0,
-                            isLiked: false,
-                            isSaved: false,
-                        }));
+                        fetched = (data as any[]).map(toVideoItem);
                     }
                 } else if (feedType === "saved") {
                     const { data, error } = await (supabase as any)
@@ -84,25 +70,41 @@ export default function VideoScreen() {
                         .limit(50);
 
                     if (!error && data) {
-                        fetched = data
+                        fetched = (data as any[])
                             .filter((s: any) => s.videos)
-                            .map((s: any) => ({
-                                id: s.videos.id,
-                                uri: s.videos.video_url || "",
-                                thumbnail_url: s.videos.thumbnail_url,
-                                user: {
-                                    id: s.videos.user_id,
-                                    username: s.videos.profiles?.username || "",
-                                    avatar: s.videos.profiles?.avatar_url,
-                                },
-                                description: s.videos.description || "",
-                                topic: s.videos.topic || "",
-                                likes: s.videos.likes_count || 0,
-                                comments: s.videos.comments_count || 0,
-                                shares: s.videos.shares_count || 0,
-                                isLiked: false,
-                                isSaved: true,
-                            }));
+                            .map((s: any) => toVideoItem({ ...s.videos, is_saved: true }));
+                    }
+                } else {
+                    // ─── 1.5.1 Single Video + Feed Tandem Logic ───────────────
+                    // Used for deep-links where feedType is missing.
+                    // Fetch target video
+                    const targetQ = (supabase as any)
+                        .from("videos")
+                        .select("id, video_url, user_id, description, topic, likes_count, comments_count, shares_count, thumbnail_url, created_at, profiles!left(id, username, avatar_url)")
+                        .eq("id", id)
+                        .single();
+
+                    // Fetch some recent videos to make it "feed-like"
+                    const recentQ = (supabase as any)
+                        .from("videos")
+                        .select("id, video_url, user_id, description, topic, likes_count, comments_count, shares_count, thumbnail_url, created_at, profiles!left(id, username, avatar_url)")
+                        .neq("id", id)
+                        .order("created_at", { ascending: false })
+                        .limit(10);
+
+                    const [targetRes, recentRes] = await Promise.all([targetQ, recentQ]);
+                    
+                    let combined: any[] = [];
+                    if (!targetRes.error && targetRes.data) {
+                      combined.push(targetRes.data);
+                    }
+                    if (!recentRes.error && recentRes.data) {
+                      combined = [...combined, ...recentRes.data];
+                    }
+
+                    if (combined.length > 0) {
+                        const items = combined.map(toVideoItem);
+                        fetched = await annotateInteractions(items, currentUserId);
                     }
                 }
             } catch (e) {

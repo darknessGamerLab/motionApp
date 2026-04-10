@@ -432,12 +432,18 @@ export const VideoCard = memo(({
         <View style={s.left}>
           <View style={s.userRow}>
             <TouchableOpacity onPress={() => onUserPress?.(data.user.id)} activeOpacity={0.8}>
-              <Image
-                source={{ uri: data.user.avatar || 'https://i.pravatar.cc/100' }}
-                style={s.avatar}
-                contentFit="cover"
-                transition={150}
-              />
+              {data.user.avatar ? (
+                <Image
+                  source={{ uri: data.user.avatar }}
+                  style={s.avatar}
+                  contentFit="cover"
+                  transition={150}
+                />
+              ) : (
+                <View style={[s.avatar, { alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.1)' }]}>
+                  <Ionicons name="person-circle-outline" size={32} color="#fff" />
+                </View>
+              )}
             </TouchableOpacity>
             <View style={s.userMeta}>
               <TouchableOpacity onPress={() => onUserPress?.(data.user.id)}>

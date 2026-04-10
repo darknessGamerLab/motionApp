@@ -37,14 +37,12 @@ export const toVideoItem = (row: any): VideoItem => ({
     uri: row.video_url || row.uri || '',
     user: {
         id: row.author_id || row.user_id || row.profiles?.id || '',
-        username: row.author_username || row.profiles?.username || row.username || 'user',
+        username: row.username || row.profiles?.username || 'Guest',
         avatar:
             row.author_avatar ||
             row.profiles?.avatar_url ||
             row.avatar_url ||
-            `https://ui-avatars.com/api/?name=${encodeURIComponent(
-                row.author_username || row.profiles?.username || 'U'
-            )}&background=random&size=100`,
+            null,
     },
     description: row.description || '',
     topic: row.topic || row.category || undefined,
@@ -55,5 +53,9 @@ export const toVideoItem = (row: any): VideoItem => ({
     isLiked: row.is_liked ?? row.isLiked ?? false,
     isSaved: row.is_saved ?? row.isSaved ?? false,
     isFollowing: row.is_following ?? row.isFollowing ?? false,
-    thumbnail_url: row.thumbnail_url ?? undefined,
+    // SAFETY: Never use a video file URL as thumbnail — massive bandwidth waste
+    // Also guard against empty string (treated as missing)
+    thumbnail_url: (row.thumbnail_url && String(row.thumbnail_url).trim() !== '' && !String(row.thumbnail_url).includes('/storage/v1/object/public/videos/'))
+        ? row.thumbnail_url
+        : undefined,
 });

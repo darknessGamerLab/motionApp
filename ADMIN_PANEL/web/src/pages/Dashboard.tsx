@@ -11,10 +11,16 @@ import {
 import api from '../lib/api';
 
 
-const supabase = createClient(
-    'https://mhgxrzejobmkuwylyelx.supabase.co',
-    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1oZ3hyemVqb2Jta3V3eWx5ZWx4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njc1ODY0NDksImV4cCI6MjA4MzE2MjQ0OX0.8IDCg303cgOsglyydOPm_-GBQaEJNKBFEZk8NrtSK24'
-);
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+if (!supabaseUrl || !supabaseAnonKey) {
+    throw new Error(
+        'Admin web: .env.local içinde VITE_SUPABASE_URL ve VITE_SUPABASE_ANON_KEY tanımlayın (bkz. .env.example).'
+    );
+}
+
+const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 const COLORS = ['#2563eb', '#10b981', '#f59e0b', '#8b5cf6', '#ef4444', '#06b6d4'];
 

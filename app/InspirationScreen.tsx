@@ -27,6 +27,7 @@ import {
   TouchableOpacity,
   View
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 
 const { width: W, height: H } = Dimensions.get('window');
@@ -280,6 +281,7 @@ const MOCK: VideoItem[] = Array.from({ length: 90 }, (_, i) => {
 export default function InspirationScreen({
   isActive = false, videos = [], videosLoading = false, onVideoSaved, onVideoLiked, onVideoCommented, onUserPress, onRefresh, refreshing = false,
 }: Props) {
+  const insets = useSafeAreaInsets();
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all');
   // ── Video player modal — useVideoPlayer hook (replaces 3 manual states)
@@ -379,7 +381,7 @@ export default function InspirationScreen({
   return (
     <View style={s.container}>
       {/* ─── Search ─── */}
-      <View style={s.searchWrap}>
+      <View style={[s.searchWrap, { paddingTop: insets.top + 6 }]}>
         <View style={s.searchBar}>
           <Ionicons name="search" size={16} color={Colors.textMuted} />
           <TextInput
@@ -491,7 +493,7 @@ export default function InspirationScreen({
 
 // ─── Styles ─────────────────────────────────────────────────
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
+  container: { flex: 1, backgroundColor: Colors.tabScreenBackground },
 
   // Search
   searchWrap: {

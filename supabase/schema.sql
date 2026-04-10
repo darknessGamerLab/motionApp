@@ -261,8 +261,8 @@ DECLARE
 BEGIN
   SELECT user_id INTO video_owner_id FROM videos WHERE id = NEW.video_id;
   
-  -- Don't notify if user comments on their own video
-  IF video_owner_id != NEW.user_id THEN
+  -- Don't notify if user comments on their own video (comments.text — not "content")
+  IF video_owner_id IS NOT NULL AND video_owner_id != NEW.user_id THEN
     INSERT INTO notifications (user_id, type, from_user_id, video_id, message)
     VALUES (video_owner_id, 'comment', NEW.user_id, NEW.video_id, NEW.text);
   END IF;

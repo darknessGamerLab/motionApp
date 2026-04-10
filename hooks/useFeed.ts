@@ -109,12 +109,15 @@ export function useFeed({ userId, isAuth }: UseFeedOptions): UseFeedReturn {
                         const { data, error } = await (supabase as any)
                             .from('videos')
                             .select(
-                                'id, video_url, user_id, description, topic, likes_count, comments_count, shares_count, thumbnail_url, created_at, profiles(id, username, avatar_url)'
+                                'id, video_url, user_id, description, topic, likes_count, comments_count, shares_count, thumbnail_url, created_at, profiles!left(id, username, avatar_url)'
                             )
                             .order('created_at', { ascending: false })
                             .limit(PAGE_SIZE);
 
-                        if (error) throw error;
+                        if (error) {
+                            console.error('[useFeed] Initial fetch error:', error);
+                            throw error;
+                        }
                         return (data || []).map(toVideoItem);
                     },
                     FEED_CACHE_TTL,
@@ -183,12 +186,17 @@ export function useFeed({ userId, isAuth }: UseFeedOptions): UseFeedReturn {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
+    const prevUserIdRef = useRef(userId);
     useEffect(() => {
         // Re-fetch when user identity changes (update liked/saved states)
         if (hasInitiallyLoaded.current) {
-            // Invalidate cache on auth change so new user sees correct interaction states
-            queryCache.invalidate(`feed:${userId ?? 'anon'}`);
+            // Invalidate BOTH previous and current cache keys to ensure fresh data
+            if (prevUserIdRef.current !== userId) {
+                queryCache.invalidate(`feed:${prevUserIdRef.current ?? 'anon'}`);
+                queryCache.invalidate(`feed:${userId ?? 'anon'}`);
+            }
             fetchVideos(null, false, true);
+            prevUserIdRef.current = userId;
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [userId]);

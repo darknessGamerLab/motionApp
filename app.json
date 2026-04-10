@@ -2,12 +2,11 @@
   "expo": {
     "name": "motion-app",
     "slug": "motion-app",
-    "version": "2.0.7",
+    "version": "5.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/spotlights-app-icon.png",
     "scheme": "motionapp",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
@@ -17,38 +16,32 @@
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+        "foregroundImage": "./assets/images/spotlights-app-icon.png",
+        "backgroundColor": "#FFFFFF"
       },
-      "edgeToEdgeEnabled": false,
-      "predictiveBackGestureEnabled": false,
-      "navigationBarColor": "#0A0505",
       "backgroundColor": "#0A0505",
-      "windowSoftInputMode": "adjustResize",
+      "googleServicesFile": "./google-services.json",
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.RECORD_AUDIO",
-        "android.permission.WAKE_LOCK"
+        "android.permission.WAKE_LOCK",
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.VIBRATE"
       ],
-      "package": "com.anonymous.motionapp"
-    },
-    "web": {
-      "output": "static",
-      "favicon": "./assets/images/favicon.png"
+      "package": "com.spotlights.app"
     },
     "plugins": [
+      "./plugins/withNotifeeRepo.js",
       "expo-router",
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/splash-icon.png",
+          "image": "./assets/images/spotlight-splash.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#ffffff",
+          "backgroundColor": "#FFFFFF",
           "dark": {
-            "backgroundColor": "#000000"
+            "backgroundColor": "#FFFFFF"
           }
         }
       ],
@@ -57,11 +50,38 @@
         {
           "cameraPermissionText": "motionApp video çekmek için kamera erişimi gerektirir.",
           "microphonePermissionText": "motionApp video kaydı için mikrofon erişimi gerektirir.",
-          "enableCodeScanner": false
+          "enableCodeScanner": false,
+          "enableFrameProcessors": false,
+          "enableMicrophonePermission": true
         }
       ],
       "expo-web-browser",
-      "expo-video"
+      "expo-video",
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "useFrameworks": "static"
+          }
+        }
+      ],
+      [
+        "expo-system-ui",
+        {
+          "userInterfaceStyle": "automatic",
+          "backgroundColor": "#1C1C1E"
+        }
+      ],
+      [
+        "expo-navigation-bar",
+        {
+          "position": "relative",
+          "visibility": "visible",
+          "behavior": "overlay-swipe",
+          "backgroundColor": "#1C1C1E",
+          "barStyle": "light-content"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

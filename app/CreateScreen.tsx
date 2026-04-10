@@ -7,6 +7,7 @@ import {
   Animated,
   Dimensions,
   Easing,
+  InteractionManager,
   Platform,
   StatusBar,
   StyleSheet,
@@ -55,6 +56,8 @@ export default function CreateScreen({
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startTimeRef = useRef<number>(0);
   const isRecordingRef = useRef(false);
+  /** Çift stopRecording (ör. timer + parmak) native crash yapmasın */
+  const stopRecordingInFlightRef = useRef(false);
 
   // ─── Animations ────────────────────────────────────────────────────────
   const progressAnim = useRef(new Animated.Value(0)).current;
@@ -134,15 +137,32 @@ export default function CreateScreen({
 
   // ─── Recording logic ───────────────────────────────────────────────────
   const stopRecordingImperative = useCallback(async () => {
-    if (!cameraRef.current || !isRecordingRef.current) return;
-    const duration = (Date.now() - startTimeRef.current) / 1000;
-    if (duration < MIN_RECORDING_TIME) {
-      Alert.alert('Kayıt çok kısa', 'En az 1 saniye kayıt yapmalısınız.');
-      try { await cameraRef.current.stopRecording(); } catch { }
-      cleanup();
-      return;
+    if (!cameraRef.current || !isRecordingRef.current || stopRecordingInFlightRef.current) return;
+    stopRecordingInFlightRef.current = true;
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
     }
-    try { await cameraRef.current.stopRecording(); } catch { }
+    try {
+      const duration = (Date.now() - startTimeRef.current) / 1000;
+      if (duration < MIN_RECORDING_TIME) {
+        Alert.alert('Kayıt çok kısa', 'En az 1 saniye kayıt yapmalısınız.');
+        try {
+          await cameraRef.current.stopRecording();
+        } catch {
+          /* ignore */
+        }
+        cleanup();
+        return;
+      }
+      try {
+        await cameraRef.current.stopRecording();
+      } catch {
+        /* ignore */
+      }
+    } finally {
+      stopRecordingInFlightRef.current = false;
+    }
   }, [cleanup]);
 
   const startRecording = useCallback(async () => {
@@ -167,15 +187,22 @@ export default function CreateScreen({
       }, 100);
 
       cameraRef.current.startRecording({
+        fileType: 'mp4',
+        // Android: muxer kapanmadan Camera unmount olunca crash olabiliyor — gecikme + sabit codec
+        ...(Platform.OS === 'android'
+          ? { videoCodec: 'h264' as const }
+          : {}),
         onRecordingFinished: (video) => {
           cleanup();
-          // Give the native system a moment to release handles before unmounting Camera
-          setTimeout(() => {
-            if (video?.path) {
-              const uri = Platform.OS === 'android' ? `file://${video.path}` : video.path;
-              setRecordedVideoUri(uri);
-            }
-          }, 400);
+          const path = video?.path;
+          if (!path) return;
+          const uri = Platform.OS === 'android' ? `file://${path}` : path;
+          InteractionManager.runAfterInteractions(() => {
+            setTimeout(
+              () => setRecordedVideoUri(uri),
+              Platform.OS === 'android' ? 900 : 350
+            );
+          });
         },
         onRecordingError: (error) => {
           cleanup();
@@ -198,9 +225,10 @@ export default function CreateScreen({
 
   const handlePickVideo = useCallback(async () => {
     if (isRecording) return;
+    // Android + video + allowsEditing birçok cihazda crop ekranında crash eder
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['videos'],
-      allowsEditing: true,
+      allowsEditing: Platform.OS === 'ios',
       quality: 1,
     });
     if (!result.canceled && result.assets[0]) setRecordedVideoUri(result.assets[0].uri);
@@ -272,11 +300,12 @@ export default function CreateScreen({
       {isActive ? (
         <>
           <Camera
+            key={`${facing}-${hasMicPermission ? 'a1' : 'a0'}`}
             ref={cameraRef}
             style={StyleSheet.absoluteFill}
             device={device}
             isActive={isActive}
-            video={true}
+            video
             audio={hasMicPermission}
             videoHdr={false}
             enableZoomGesture

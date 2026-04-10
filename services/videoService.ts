@@ -242,5 +242,10 @@ export async function deleteVideo(videoId: string): Promise<void> {
 
 /** Increment view count for a video. Fire-and-forget, never throws. */
 export function incrementView(videoId: string): void {
-    void supabase.rpc('increment_video_view', { p_video_id: videoId }).then(() => { }).catch(() => { });
+    const runRpc = async () => {
+        try {
+            await supabase.rpc('increment_video_view', { p_video_id: videoId });
+        } catch (e) {}
+    };
+    runRpc();
 }

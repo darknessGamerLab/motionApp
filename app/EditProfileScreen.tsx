@@ -3,12 +3,15 @@ import { CustomAlert as Alert } from '@/components/GlobalAlert';
 import Colors from '@/constants/Colors';
 import { TALENTS, getTalentById } from '@/constants/Talents';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/lib/supabase';
+import { useTheme } from '@/contexts/ThemeContext';
+import { supabase, STORAGE_URL } from '@/lib/supabase';
+// Local anon JWT fallback for storage uploads when no session exists
+const LOCAL_ANON_JWT = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -21,6 +24,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { mergeTopInset } from '@/utils/safeInsets';
 
 interface EditProfileScreenProps {
   onClose: () => void;
@@ -38,7 +42,13 @@ interface EditProfileScreenProps {
 
 export default function EditProfileScreen({ onClose, userProfile, onSave }: EditProfileScreenProps) {
   const insets = useSafeAreaInsets();
+  const topInset = mergeTopInset(insets);
+  const { syncAndroidSystemChrome } = useTheme();
   const { authState, setUserData, updateProfile } = useAuth();
+
+  useEffect(() => {
+    syncAndroidSystemChrome();
+  }, [syncAndroidSystemChrome]);
 
   const [fullName, setFullName] = useState(userProfile.fullName);
   const [bio, setBio] = useState(userProfile.bio || '');
@@ -114,45 +124,34 @@ export default function EditProfileScreen({ onClose, userProfile, onSave }: Edit
       let finalAvatarUrl = avatarUri;
       let finalAvatars = [...avatars];
 
-      // ✅ SUPABASE'E KAYDET (bu eksikti!)
+      // ✅ SUPABASE'E KAYDET
       if (authState.user) {
+        const session = (await supabase.auth.getSession()).data.session;
+        const authToken = session?.access_token ?? LOCAL_ANON_JWT;
+        const uploadBase = `${STORAGE_URL.replace('/object/public', '/object')}/avatars`;
 
-        const { data: sessionData } = await supabase.auth.getSession();
-        const session = sessionData.session;
-        const uploadUrlBase = `${process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://mhgxrzejobmkuwylyelx.supabase.co'}/storage/v1/object/avatars/${authState.user.id}`;
-
-        // Upload new avatars in the array
+        // Upload new avatars via FormData + fetch (works with Android content:// URIs)
         for (let i = 0; i < finalAvatars.length; i++) {
           const uri = finalAvatars[i];
           if (uri && !uri.startsWith('http')) {
             try {
-              const formData = new FormData();
-              const uniqueName = `avatar_${i}_${Date.now()}.jpg`;
-              formData.append('file', {
-                uri: uri,
-                name: uniqueName,
-                type: 'image/jpeg',
-              } as any);
+              const uniqueName = `${authState.user.id}/avatar_${i}_${Date.now()}.webp`;
 
-              const response = await fetch(`${uploadUrlBase}/${uniqueName}`, {
+              const avatarForm = new FormData();
+              avatarForm.append('file', { uri, name: `avatar_${i}.webp`, type: 'image/webp' } as any);
+
+              const resp = await fetch(`${uploadBase}/${uniqueName}`, {
                 method: 'POST',
-                headers: {
-                  'Authorization': `Bearer ${session?.access_token}`,
-                },
-                body: formData as any,
+                headers: { 'Authorization': `Bearer ${authToken}`, 'x-upsert': 'true' },
+                body: avatarForm as any,
               });
 
-              if (response.ok) {
-                const resData: any = await response.json();
-                const pUrlNode = await (supabase as any).storage.from('avatars').getPublicUrl(resData.Key?.split('/').slice(1).join('/') || `${authState.user.id}/${uniqueName}`);
-                finalAvatars[i] = pUrlNode.data?.publicUrl || uri;
-
-                // If it's the first avatar (index 0), update finalAvatarUrl
-                if (i === 0) {
-                  finalAvatarUrl = pUrlNode.data?.publicUrl || uri;
-                }
+              if (resp.ok) {
+                const { data: pUrlNode } = supabase.storage.from('avatars').getPublicUrl(uniqueName);
+                finalAvatars[i] = pUrlNode.publicUrl || uri;
+                if (i === 0) finalAvatarUrl = pUrlNode.publicUrl || uri;
               } else {
-                console.error(`Avatar ${i} upload response not OK:`, await response.text());
+                console.error(`Avatar ${i} upload error:`, await resp.text());
               }
             } catch (uploadError) {
               console.error(`Avatar ${i} upload error:`, uploadError);
@@ -192,7 +191,7 @@ export default function EditProfileScreen({ onClose, userProfile, onSave }: Edit
   };
 
   return (
-    <View style={[s.container, { paddingTop: insets.top }]}>
+    <View style={[s.container, { paddingTop: topInset }]}>
       {/* Header */}
       <View style={s.header}>
         <TouchableOpacity style={s.headerBtn} onPress={onClose}>
@@ -306,7 +305,7 @@ export default function EditProfileScreen({ onClose, userProfile, onSave }: Edit
             </View>
           </View>
 
-          <View style={{ height: 48 }} />
+          <View style={{ height: Math.max(48, insets.bottom + 24) }} />
         </ScrollView>
       </KeyboardAvoidingView>
 
@@ -322,7 +321,7 @@ export default function EditProfileScreen({ onClose, userProfile, onSave }: Edit
 }
 
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
+  container: { flex: 1, backgroundColor: Colors.tabScreenBackground },
 
   header: {
     height: 54, flexDirection: 'row',
@@ -361,7 +360,7 @@ const s = StyleSheet.create({
     width: 22, height: 22, borderRadius: 11,
     backgroundColor: Colors.primary,
     alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1.5, borderColor: Colors.background,
+    borderWidth: 1.5, borderColor: Colors.tabScreenBackground,
   },
 
   inputRow: {

@@ -14,14 +14,31 @@ import {
   KeyboardAvoidingView,
   Modal,
   Platform,
+  StatusBar,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const { height: H } = Dimensions.get('window');
+
+/**
+ * RN Modal ayrı pencerede açılır; üst SafeAreaProvider’daki bottom inset çoğu cihazda 0 kalır.
+ * Gesture / 3 tuşlu çubuk için screen−window farkından tahmin + minimum yedek.
+ */
+function androidModalBottomPad(): number {
+  const sh = Dimensions.get('screen').height;
+  const wh = Dimensions.get('window').height;
+  const diff = Math.round(sh - wh);
+  const statusH = StatusBar.currentHeight ?? 0;
+  if (diff > statusH + 12) {
+    return Math.min(Math.max(diff - statusH, 24), 68);
+  }
+  return 52;
+}
 
 interface Comment {
   id: string;
@@ -102,8 +119,13 @@ const cs = StyleSheet.create({
   likeCount: { fontSize: 11, fontFamily: 'Poppins_400Regular', color: Colors.textMuted },
 });
 
-export default function CommentsModal({ visible, onClose, videoId, commentCount, onCommentAdded }: Props) {
+function CommentsModalInner({ visible, onClose, videoId, commentCount, onCommentAdded }: Props) {
   const { authState } = useAuth();
+  const insets = useSafeAreaInsets();
+  const sheetBottomPad =
+    Platform.OS === 'android'
+      ? Math.max(insets.bottom, androidModalBottomPad())
+      : Math.max(insets.bottom, 12);
   const [comments, setComments] = useState<Comment[]>([]);
   const [text, setText] = useState('');
   const [loading, setLoading] = useState(false);
@@ -136,7 +158,7 @@ export default function CommentsModal({ visible, onClose, videoId, commentCount,
     try {
       const { data, error } = await supabase.rpc('get_video_comments', {
         p_video_id: videoId,
-        p_viewer_id: authState.user?.id || null
+        p_viewer_id: authState.user?.id || undefined
       });
 
       if (error) {
@@ -195,8 +217,7 @@ export default function CommentsModal({ visible, onClose, videoId, commentCount,
         .insert({
           video_id: videoId,
           user_id: authState.user.id,
-          content,
-          text: content, // DB has 'text' column; 'content' added as alias
+          text: content,
         });
 
       if (error) {
@@ -208,14 +229,17 @@ export default function CommentsModal({ visible, onClose, videoId, commentCount,
     }
   };
 
-  if (!visible) return null;
-
   return (
-    <Modal visible={visible} animationType="none" transparent onRequestClose={onClose}>
+    <>
       {/* Backdrop */}
       <TouchableOpacity style={ms.backdrop} activeOpacity={1} onPress={onClose} />
 
-      <Animated.View style={[ms.sheet, { transform: [{ translateY: slideAnim }] }]}>
+      <Animated.View
+        style={[
+          ms.sheet,
+          { transform: [{ translateY: slideAnim }], paddingBottom: sheetBottomPad },
+        ]}
+      >
         {/* Handle */}
         <View style={ms.handleWrap}>
           <View style={ms.handle} />
@@ -234,14 +258,15 @@ export default function CommentsModal({ visible, onClose, videoId, commentCount,
 
         {/* Comments — skeleton while loading, list when ready */}
         {loading ? (
-          <>
+          <View style={ms.listFlex}>
             {Array.from({ length: 6 }).map((_, i) => (
               <SkeletonLoader.NotifRow key={i} />
             ))}
-          </>
+          </View>
         ) : (
           <FlashList
             ref={listRef}
+            style={ms.listFlex}
             data={comments}
             renderItem={({ item }) => <CommentRow item={item} />}
             keyExtractor={i => i.id}
@@ -257,7 +282,6 @@ export default function CommentsModal({ visible, onClose, videoId, commentCount,
           />
         )}
 
-        {/* Input */}
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <View style={ms.inputRow}>
             <Image
@@ -289,6 +313,21 @@ export default function CommentsModal({ visible, onClose, videoId, commentCount,
           </View>
         </KeyboardAvoidingView>
       </Animated.View>
+    </>
+  );
+}
+
+export default function CommentsModal(props: Props) {
+  const { visible, onClose } = props;
+  if (!visible) return null;
+
+  return (
+    <Modal visible animationType="none" transparent onRequestClose={onClose}>
+      <SafeAreaProvider style={ms.modalRoot}>
+        <View style={ms.modalRoot}>
+          <CommentsModalInner {...props} />
+        </View>
+      </SafeAreaProvider>
     </Modal>
   );
 }
@@ -296,6 +335,7 @@ export default function CommentsModal({ visible, onClose, videoId, commentCount,
 const SHEET_H = H * 0.75;
 
 const ms = StyleSheet.create({
+  modalRoot: { flex: 1 },
   backdrop: {
     flex: 1, backgroundColor: 'rgba(0,0,0,0.35)',
   },
@@ -307,7 +347,9 @@ const ms = StyleSheet.create({
     shadowColor: '#000', shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.12, shadowRadius: 12,
     elevation: 12,
+    flexDirection: 'column',
   },
+  listFlex: { flex: 1, minHeight: 0 },
   handleWrap: { alignItems: 'center', paddingTop: 10 },
   handle: { width: 38, height: 4, borderRadius: 2, backgroundColor: Colors.border },
   header: {

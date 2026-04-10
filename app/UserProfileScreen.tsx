@@ -6,6 +6,7 @@ import VideoPlayerModal from '@/components/VideoPlayerModal';
 import Colors from '@/constants/Colors';
 import { getTalentById, getTalentByName } from '@/constants/Talents';
 import { useAuth } from '@/contexts/AuthContext';
+import { useTheme } from '@/contexts/ThemeContext';
 import { useProfile } from '@/hooks/useProfile';
 import { useVideoActions } from '@/hooks/useVideoActions';
 import { useVideoPlayer as usePlayerModal } from '@/hooks/useVideoPlayer';
@@ -28,6 +29,8 @@ import {
   TouchableOpacity,
   View
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { mergeTopInset } from '@/utils/safeInsets';
 
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -60,6 +63,13 @@ export default function UserProfileScreen({
   onUserPress,
 }: UserProfileScreenProps) {
   const { authState } = useAuth();
+  const insets = useSafeAreaInsets();
+  const topInset = mergeTopInset(insets);
+  const { syncAndroidSystemChrome } = useTheme();
+
+  useEffect(() => {
+    syncAndroidSystemChrome();
+  }, [syncAndroidSystemChrome]);
   const [showReportMenu, setShowReportMenu] = useState(false);
   // ── Video player modal — useVideoPlayer hook
   const player = usePlayerModal();
@@ -193,7 +203,7 @@ export default function UserProfileScreen({
   // ─── Loading state: skeleton göster ─────────────────────────────────────────
   if (loading) {
     return (
-      <View style={styles.container}>
+      <View style={[styles.container, { paddingTop: topInset }]}>
         <View style={styles.header}>
           <View style={styles.headerLeft}>
             <TouchableOpacity style={styles.headerButton} onPress={onBackPress}>
@@ -219,7 +229,7 @@ export default function UserProfileScreen({
   }
 
   return (
-    <Animated.View style={[styles.container, { opacity: screenOpacity }]}>
+    <Animated.View style={[styles.container, { opacity: screenOpacity, paddingTop: topInset }]}>
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
@@ -357,18 +367,20 @@ export default function UserProfileScreen({
 
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
+  container: { flex: 1, backgroundColor: Colors.tabScreenBackground },
   header: {
-    height: 50, flexDirection: 'row',
+    flexDirection: 'row',
     justifyContent: 'space-between', alignItems: 'center',
     paddingHorizontal: 16,
+    paddingBottom: 12,
+    paddingTop: 12,
     backgroundColor: Colors.surface,
     borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: Colors.border,
   },
   headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   headerButton: { padding: 4 },
   headerUsername: { fontSize: 16, fontFamily: 'Poppins_700Bold', color: Colors.text },
-  scrollView: { flex: 1 },
+  scrollView: { flex: 1, backgroundColor: Colors.tabScreenBackground },
   profileSection: { paddingHorizontal: 20, paddingTop: 10, alignItems: 'center' },
   fullName: { fontSize: 17, fontFamily: 'Poppins_600SemiBold', color: Colors.text, marginBottom: 4 },
   bio: { fontSize: 13, fontFamily: 'Poppins_400Regular', color: Colors.textSecondary, textAlign: 'center', marginBottom: 10, maxWidth: '80%' },

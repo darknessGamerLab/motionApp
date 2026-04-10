@@ -1,6 +1,6 @@
-import Colors from '@/constants/Colors';
+import { DarkPalette as Colors } from '@/constants/Colors';
 import { useAuth } from '@/contexts/AuthContext';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import React, { useState } from 'react';
 import {
@@ -55,10 +55,7 @@ export default function LoginScreen() {
       >
         {/* Logo */}
         <View style={s.logoWrap}>
-          <View style={s.logoCircle}>
-            <Text style={s.logoText}>M</Text>
-          </View>
-          <Text style={s.appName}>Motion</Text>
+          <Text style={s.appName}>Spotlights</Text>
           <Text style={s.tagline}>Yeteneğini dünyayla paylaş</Text>
         </View>
 
@@ -137,10 +134,10 @@ export default function LoginScreen() {
             activeOpacity={0.85}
           >
             {gLoading ? (
-              <ActivityIndicator color={Colors.text} size="small" />
+              <ActivityIndicator color="#000000" size="small" />
             ) : (
               <>
-                <Text style={s.googleIcon}>G</Text>
+                <MaterialCommunityIcons name="google" size={20} color="#4285F4" />
                 <Text style={s.googleText}>Google ile Devam Et</Text>
               </>
             )}
@@ -166,29 +163,21 @@ export default function LoginScreen() {
 }
 
 const s = StyleSheet.create({
-  root: { flex: 1, backgroundColor: Colors.background },
-  inner: { flexGrow: 1, paddingHorizontal: 28, paddingBottom: 40 },
+  root: { flex: 1, backgroundColor: '#000000' },
+  inner: { flexGrow: 1, paddingHorizontal: 24, paddingBottom: 24 },
 
   // Logo
-  logoWrap: { alignItems: 'center', paddingTop: 60, paddingBottom: 48 },
-  logoCircle: {
-    width: 64, height: 64, borderRadius: 20,
-    backgroundColor: Colors.primary,
-    alignItems: 'center', justifyContent: 'center',
-    marginBottom: 14,
-  },
-  logoText: { color: '#fff', fontSize: 32, fontFamily: 'Poppins_800ExtraBold', letterSpacing: -1 },
-  appName: { fontSize: 26, fontFamily: 'Poppins_700Bold', color: Colors.text, letterSpacing: -0.5 },
-  tagline: { fontSize: 14, color: Colors.textMuted, marginTop: 4, fontFamily: 'Poppins_400Regular' },
+  logoWrap: { alignItems: 'center', paddingTop: 48, paddingBottom: 36 },
+  appName: { fontSize: 26, fontFamily: 'Poppins_700Bold', color: '#FFFFFF', letterSpacing: -0.5 },
+  tagline: { fontSize: 14, color: '#A0A0A0', marginTop: 4, fontFamily: 'Poppins_400Regular' },
 
   // Form
-  form: { gap: 12 },
+  form: { gap: 8 },
   inputWrap: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: Colors.surface,
-    borderRadius: 12,
-    borderWidth: 1, borderColor: Colors.border,
-    paddingHorizontal: 14, height: 52,
+    backgroundColor: '#111111',
+    borderRadius: 10,
+    paddingHorizontal: 12, height: 46,
   },
   inputIcon: { marginRight: 10 },
   input: { flex: 1, fontSize: 15, color: Colors.text, fontFamily: 'Poppins_400Regular' },
@@ -218,13 +207,11 @@ const s = StyleSheet.create({
   dividerText: { color: Colors.textMuted, fontSize: 13, fontFamily: 'Poppins_400Regular' },
 
   googleBtn: {
-    height: 52, borderRadius: 12,
-    backgroundColor: Colors.surface,
-    borderWidth: 1, borderColor: Colors.border,
+    height: 46, borderRadius: 10,
+    backgroundColor: '#FFFFFF',
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
   },
-  googleIcon: { fontSize: 18, fontFamily: 'Poppins_800ExtraBold', color: '#4285F4' },
-  googleText: { fontSize: 15, fontFamily: 'Poppins_600SemiBold', color: Colors.text },
+  googleText: { fontSize: 15, fontFamily: 'Poppins_600SemiBold', color: '#000000' },
 
   // Footer
   footer: { flexDirection: 'row', justifyContent: 'center', marginTop: 32 },
