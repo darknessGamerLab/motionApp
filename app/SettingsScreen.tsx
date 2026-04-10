@@ -2,7 +2,7 @@ import { CustomAlert as Alert } from '@/components/GlobalAlert';
 import Colors from '@/constants/Colors';
 import { useAuth } from '@/contexts/AuthContext';
 import { Ionicons } from '@expo/vector-icons';
-import Constants from 'expo-constants';
+import packageJson from '../package.json';
 import { useFocusEffect } from 'expo-router';
 import React, { useCallback, useState } from 'react';
 import {
@@ -335,7 +335,7 @@ export default function SettingsScreen({ onBackPress, onEditProfile }: SettingsS
           />
         </View>
 
-        <Text style={styles.versionText}>Versiyon {Constants.expoConfig?.version ?? '—'}</Text>
+        <Text style={styles.versionText}>Versiyon {packageJson.version}</Text>
       </ScrollView>
 
       <CorporateUpgradeModal
