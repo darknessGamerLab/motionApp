@@ -134,7 +134,7 @@ function Header() {
           color: 'var(--color-primary)', padding: '0.125rem 0.5rem',
           borderRadius: '999px', marginLeft: '0.25rem',
         }}>
-          v5.0.0
+          v5.0.1
         </span>
       </div>
 

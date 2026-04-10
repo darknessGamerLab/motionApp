@@ -2,7 +2,7 @@
   "expo": {
     "name": "motion-app",
     "slug": "motion-app",
-    "version": "5.0.0",
+    "version": "5.0.1",
     "orientation": "portrait",
     "icon": "./assets/images/spotlights-app-icon.png",
     "scheme": "motionapp",

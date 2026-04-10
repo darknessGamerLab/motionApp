@@ -1,4 +1,4 @@
-# Spotlights / motionApp — Kıdemli İnceleme Özeti (v5.0.0)
+# Spotlights / motionApp — Kıdemli İnceleme Özeti (v5.0.1)
 
 Bu belge, **Kaan Bey** ve ekip için uygulamanın amacı, mimarisi, teknoloji yığını, klasör yapısı, admin paneli, geliştirme akışı, bilinen riskler ve kodda dikkat çeken blokların anlamını özetler.  
 **Repoda gizli anahtar bulunmamalıdır:** `service_role`, kişisel erişim token’ları, `.env.local`, `google-services.json` ve `ADMIN_PANEL/api/.env` `.gitignore` ile dışarıda bırakılmıştır; inceleme öncesi `git status` ve gerekiyorsa `git secrets` / manuel arama önerilir.
@@ -69,7 +69,7 @@ Bu belge, **Kaan Bey** ve ekip için uygulamanın amacı, mimarisi, teknoloji y�
 - **`contexts/ThemeContext.tsx`:** `Colors` singleton’ını palette ile mutate eder; Android status/navigation bar senkronu.
 - **`utils/safeInsets.ts`:** `mergeTopInset` — Android’de `insets.top` 0 iken status bar yüksekliği ile birleştirme.
 - **`ADMIN_PANEL/web/src/lib/api.ts`:** `axios.create({ baseURL })` + `X-Admin-Key` interceptor (giriş sonrası `localStorage.adminToken`).
-- **`ADMIN_PANEL/api/src/index.ts`:** Tüm `/api/*` uçları; `SUPABASE_SERVICE_KEY` zorunlu; `ADMIN_API_KEY` veya kodda zayıf varsayılan (aşağıda risk).
+- **`ADMIN_PANEL/api/src/index.ts`:** Tüm `/api/*` uçları; `SUPABASE_SERVICE_KEY` ve `ADMIN_API_KEY` `.env` içinde zorunlu.
 
 ---
 
@@ -96,7 +96,7 @@ Bu belge, **Kaan Bey** ve ekip için uygulamanın amacı, mimarisi, teknoloji y�
 | Categories | `/categories` | `categories` tablosu |
 | Settings | `/settings` | `system_config` |
 
-**v5.0.0 öncesi düzeltme:** `web/src/lib/api.ts` içinde `axios` instance tanımı eksikti (sadece interceptor vardı); bu sürümde `axios.create({ baseURL })` eklendi — panel giriş ve tüm istekler çalışır hale geldi.
+**v5.0.x:** `web/src/lib/api.ts` içinde `axios.create({ baseURL })` ile ortak istemci; admin girişi `X-Admin-Key` = API’deki `ADMIN_API_KEY` ile aynı olmalı.
 
 ---
 
@@ -112,7 +112,7 @@ Bu belge, **Kaan Bey** ve ekip için uygulamanın amacı, mimarisi, teknoloji y�
 
 ## 8. Muhtemel hatalar ve teknik borç
 
-1. **Admin güvenlik:** API’de `ADMIN_API_KEY` yoksa zayıf bir varsayılan string kullanılıyor; production’da **mutlaka** güçlü `ADMIN_API_KEY` ve web tarafında `VITE_*` ile hizalama (veya sadece sunucu tarafı secret).
+1. **Admin güvenlik:** `ADMIN_API_KEY` repoda yok; üretimde güçlü değer seçilmeli ve yalnızca güvenli kanalla paylaşılmalı. Panel şifresi bu anahtar ile aynı.
 2. **Bildirim tipi `system`:** Repo `schema.sql` içinde `notification_type` enum’unda `'system'` yok; uygulama ve admin bazı yerlerde `system` kullanıyor. Canlı DB’de enum genişletilmiş olabilir — tutarsızlık riski.
 3. **Demo JWT:** Bazı ekranlarda storage upload için yerel demo anon JWT fallback’i geçmişte kullanılmış olabilir — production’da kaldırılmalı; yalnızca oturum token’ı kullanılmalı.
 4. **Edge-to-edge / NavigationBar:** Android’de `expo-navigation-bar` uyarıları; tema senkronu kısmen `StatusBar` ile yapılıyor.
@@ -130,11 +130,30 @@ Bu belge, **Kaan Bey** ve ekip için uygulamanın amacı, mimarisi, teknoloji y�
 
 ---
 
-## 10. Ek referans
+## 10. Yazılımcıya repodan **ayrı** iletmen gerekenler (gizli / ortam)
+
+Repoda bilerek yoktur; incelemenin tıkanmaması için güvenli kanal (1Password, şifreli zip, kurumsal vault vb.) ile paylaş:
+
+| Ne | Nerede kullanılır | Not |
+|----|-------------------|-----|
+| **Supabase `SUPABASE_URL` + anon key** | Mobil `.env.local` → `app.config.js` → `extra` | Sadece **publishable/anon**; `service_role` mobilde kullanılmaz. |
+| **Supabase `service_role`** | `ADMIN_PANEL/api/.env` | Yüksek yetki; asla istemciye ve repoya koyma. |
+| **`ADMIN_API_KEY`** | `ADMIN_PANEL/api/.env` + panel giriş şifresi | API `X-Admin-Key` ile doğrular; web’de girişte yazılan değerle aynı olmalı. |
+| **`google-services.json`** | Android Firebase / FCM | Repoda `.gitignore`; derleme ve push testi için dosyayı ayrı ver. |
+| **`VITE_API_URL`** (isteğe bağlı) | Admin web | Boşsa varsayılan `http://localhost:5000`. Uzak API’ye bağlanacaksa tam taban URL. |
+| **Test hesabı** | Uygulama + (isteğe bağlı) admin akışları | Örn. demo kullanıcı e-posta/şifre veya “kayıt serbest” beklentisi. |
+| **Supabase proje erişimi** | Şema, SQL Editor, Logs | İnceleyen kişi migration / RLS / trigger kontrolü yapacaksa davet veya read erişimi. |
+| **Firebase / Apple** | Push, iOS imza | Sadece ilgili inceleme kapsamı varsa (ör. production push). |
+
+**Özet:** Repo + bu belge yeterli değil; **en azından** mobil `.env.local` içeriği (anon ile), admin API `.env` (service_role + admin key) ve Android `google-services.json` ayrıca gider.
+
+---
+
+## 11. Ek referans
 
 - Daha kısa klasör haritası: `ARCHITECTURE_REPORT.md`
 - Veritabanı: `supabase/schema.sql`, `supabase/migrations/`
 
 ---
 
-*Sürüm: **5.0.0** — İnceleme süreci için gönderilen güncel commit ile uyumludur.*
+*Sürüm: **5.0.1** — İnceleme / el değiştirme için güncel uygulama sürümü (`package.json`, `app.json`) ile uyumludur.*
