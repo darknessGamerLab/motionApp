@@ -2,13 +2,12 @@
   "expo": {
     "name": "motion-app",
     "slug": "motion-app",
-    "version": "5.0.3",
+    "version": "5.0.4",
     "orientation": "portrait",
     "icon": "./assets/images/spotlights-app-icon.png",
     "scheme": "motionapp",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "buildNumber": "503",
       "supportsTablet": true,
       "infoPlist": {
         "NSCameraUsageDescription": "Uygulamanın fotoğraf ve video çekmek için kameraya erişmesine izin verin.",
@@ -16,7 +15,6 @@
       }
     },
     "android": {
-      "versionCode": 5003,
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/spotlights-app-icon.png",
         "backgroundColor": "#FFFFFF"
