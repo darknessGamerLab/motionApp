@@ -1,4 +1,4 @@
-# Spotlights / motionApp — Kıdemli İnceleme Özeti (v5.0.2)
+# Spotlights / motionApp — Kıdemli İnceleme Özeti (v5.0.3)
 
 Bu belge, **Kaan Bey** ve ekip için uygulamanın amacı, mimarisi, teknoloji yığını, klasör yapısı, admin paneli, geliştirme akışı, bilinen riskler ve kodda dikkat çeken blokların anlamını özetler.  
 **Repoda gizli anahtar bulunmamalıdır:** `service_role`, kişisel erişim token’ları, `.env.local`, `google-services.json` ve `ADMIN_PANEL/api/.env` `.gitignore` ile dışarıda bırakılmıştır; inceleme öncesi `git status` ve gerekiyorsa `git secrets` / manuel arama önerilir.
@@ -96,7 +96,7 @@ Bu belge, **Kaan Bey** ve ekip için uygulamanın amacı, mimarisi, teknoloji y�
 | Categories | `/categories` | `categories` tablosu |
 | Settings | `/settings` | `system_config` |
 
-**v5.0.2:** `web/src/lib/api.ts` içinde `axios.create({ baseURL })` ile ortak istemci; admin girişi `X-Admin-Key` = API’deki `ADMIN_API_KEY` ile aynı olmalı.
+**v5.0.3:** `web/src/lib/api.ts` içinde `axios.create({ baseURL })` ile ortak istemci; admin girişi `X-Admin-Key` = API’deki `ADMIN_API_KEY` ile aynı olmalı. `app.json`: `android.versionCode` / `ios.buildNumber` EAS/prebuild ile mağaza sürümü için senkron.
 
 ---
 
@@ -156,4 +156,4 @@ Repoda bilerek yoktur; incelemenin tıkanmaması için güvenli kanal (1Password
 
 ---
 
-*Sürüm: **5.0.2** — `package.json` ve `app.json` ile uyumludur.*
+*Sürüm: **5.0.3** — `package.json` ve `app.json` ile uyumludur.*

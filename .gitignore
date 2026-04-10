@@ -36,6 +36,9 @@ yarn-error.*
 # Firebase Android (API key + project id; yerelde tut, repoya koyma)
 google-services.json
 
+# WhatsApp / güvenli kanal ile yazılımcıya gidecek notlar (repoya girmez)
+WHATSAPP_YAZILIMCI_EL_DEGISTIRME.md
+
 # typescript
 *.tsbuildinfo
 
