@@ -64,7 +64,7 @@ if (process.env.NODE_ENV !== 'production') {
 
 // Health Check — exempt from auth
 app.get('/', (_req, res) => {
-    res.json({ name: 'MotionApp Admin API', version: '5.0.4', status: 'ok' });
+    res.json({ name: 'MotionApp Admin API', version: '5.0.5', status: 'ok' });
 });
 
 // ═══════════════════════════════════════════════════════════════════
@@ -696,5 +696,5 @@ app.get('/api/saves', async (req, res) => {
 // ═══════════════════════════════════════════════════════════════════
 
 app.listen(PORT, () => {
-    console.log(`MotionApp Admin API v5.0.4 running on port ${PORT}`);
+    console.log(`MotionApp Admin API v5.0.5 running on port ${PORT}`);
 });
